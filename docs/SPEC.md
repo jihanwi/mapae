@@ -1,0 +1,64 @@
+# MAPAE(마패) 스마트 컨트랙트 스펙 (SSOT)
+
+> 이 문서는 MAPAE 컨트랙트 개발의 단일 기준(Single Source of Truth)이다.
+> 모든 코딩 세션은 이 문서를 기준으로 진행한다.
+
+MAPAE: GIWA 체인(업비트/두나무의 이더리움 L2) 위의 크리에이터 온체인 회원권 플랫폼.
+검증된 크리에이터가 실명 지갑으로 발행하는 고정 공급 양도가능 회원권 ERC-20.
+발행은 정가 공모, 유통은 AMM, 소비(리딤)는 원화 고정가.
+
+## 모듈 구성 (8개 — 이번 제출 최소 범위는 1–4번)
+
+1. **MapaeFactory** — 크리에이터별 토큰+공모 배포. `createOffering(P, R, T, L, refundMode, creatorMeta)` → MembershipToken·Offering·(Vesting) 배포. 호출자는 Dojang Verified Address 필수 (`IDojang.isVerified(msg.sender)` — **fail-closed**: 조회 실패 시 거부), 지갑당 발행 1회.
+2. **MembershipToken (ERC-20)** — 고정 공급: 공모 확정 시 1회 민트 후 민트 권한 영구 소각. `burn/burnFrom`. 전송 훅 옵션: 지갑당 보유 상한(예: 총공급 3%), 상장 후 N일 양도 잠금.
+3. **Offering (공모)** — 정가 단일 공모 (본딩커브·변동가 발행 금지):
+   - 파라미터: `P` 발행가(결제토큰 기준), `R` 모금 목표, `T` 공모 기간(48~72h 권장), `L` 지갑당 한도, `refundMode`
+   - 파생: 공모 물량 `Q_sale = R/P`, 총공급 `S = Q_sale/0.60` (개설 시점 확정)
+   - `commit(amount)`: 결제토큰 전액 예치. Dojang 검증 + 지갑당 누적 ≤ L 강제. **발행자 지갑 자기 응모 컨트랙트 차단**
+   - `cancel`: **마감 2시간 전까지만** 허용 (이후 프리즈 — 막판 일괄취소 어뷰징 차단)
+   - `settle()`: 마감 후 균등+추첨 배정을 **오프체인 결정론적 계산** → 배정 머클루트만 온체인 커밋. 배정 규칙: ① 전원 min(신청량, floor(공모물량/참여자수)) 균등 배정 ② 잔여분 미충족 신청량 가중 추첨. 랜덤니스: 테스트넷 blockhash / 프로덕션 지연 블록해시 + 참가자 머클루트 커밋 (VRF 가용 시 교체). 시드 공개 → 누구나 재계산 검증 가능
+   - `claim()`: 배정·환불 수령은 각자 풀(pull) 방식 — 참여자 수 무관 확장
+   - 미달 시: 모드 A(올오어낫싱) 전액 환불·토큰 미발행 / 모드 B(부분 진행) 실판매분만 발행, 미판매분 `burnUnsold()` 소각
+   - **공모 종료 전 토큰 전송·상장 불가.** 공모 대금 배분: 크리에이터 80 / LP 시딩 10 / 플랫폼 10 (가안)
+4. **RedeemManager** — `createRedeemable(id, burnAmount, maxClaims, deadline)` (크리에이터), `redeem(id)` (소각 + 클레임 기록). 교환비는 장수 고정, 시세 무관.
+5. **Vesting** (확장) — 크리에이터 25%, 36mo linear + 6mo cliff.
+6. **Sponsorship** (확장) — `sponsorKRWs(krwAmount)`: X%(기본 10) 스왑→소각, 나머지 크리에이터 이체. 이벤트에 KRW 표시액 기록.
+7. **LP** (확장) — AMM 풀 시딩 + LP 토큰 영구 락업. 불변식: LP 토큰 비율 l = LP 대금 비율 c × 공모 비율 f → 상장가 = 공모가 P (기본 f=60%, c=20% → l=12%).
+8. **BuybackVault** (확장) — 온체인 매출의 환원율(0~30%)만큼 수신 → TWAP 분할 매수(일일 상한 = 풀 깊이 β%) 후 전량 즉시 소각. 매입 토큰 재분배 경로 없음.
+
+## 토크노믹스 (총공급 S 기준)
+
+공모 60% / 크리에이터 25% (36mo 베스팅, 6mo 클리프) / LP 시딩 l=c×f (기본 12%) / 플랫폼 5% / 커뮤니티 리저브 잔여 (합계 100% 흡수)
+
+## 파라미터 밴드 (Factory 검증 로직 기준, 가안)
+
+- 공모 비율 f: 50~70% (기본 60%) / 크리에이터 배분: 15~30%, 베스팅 12~48mo, 클리프 ≥3mo
+- LP 대금 비율 c: **최소 15%**~30% (기본 20%)
+- 스왑 로열티 0~1.5% / 스왑 소각률 0~1.0% / 후원 소각률 X 0~20% / 환원율 0~30%
+- 최소 응모 금액: 플랫폼 하한 이상. P·R·L 밴드는 오너 확정 대기 (가안: P 1천 원~10만 원 상당, R 5백만 원~5억 원 상당, L 공모 물량의 0.1~5%)
+
+## 설계 원칙
+
+- **결제 토큰은 컨트랙트 파라미터** (IERC20 주입) — 테스트넷 MockKRW → 메인넷 USDT → KRWs 전환 경로. decimals 하드코딩 금지, `decimals()` 동적 처리
+- 전 모듈 **논업그레이더블**, OpenZeppelin v5 외 의존성 금지
+- Dojang 검증은 commit 시점 스냅샷 — 이후 KYC 만료는 기배정에 소급 적용하지 않음
+
+## 불변식 (Invariants — 전부 Foundry invariant/fuzz 테스트 대상)
+
+1. 총공급은 공모 확정 후 증가 불가 (`totalSupply` 단조 감소만 허용)
+2. 공모가 미확정이면 어떤 토큰도 유통 불가
+3. 지갑당 공모 배정 ≤ L, (옵션 활성 시) 지갑 보유 ≤ 상한
+4. 모드 A에서 목표 미달 → 모든 예치금 환불 가능, 토큰 발행 0
+5. 소각분은 어떤 경로로도 재발행·회수 불가
+6. 크리에이터 베스팅 물량은 클리프 이전 이동 불가
+7. LP 락업 토큰은 영구 인출 불가
+8. 발행자 지갑은 자기 공모에 commit 불가
+9. 공모 종료 전 전송·상장 불가 (공모와 AMM 공존 구간 없음)
+10. 모드 B 미판매분은 소각 외 어떤 경로도 없음
+11. LP 시딩은 l = c×f 준수 → 상장가 = 공모가 (파라미터 무관)
+12. BuybackVault 매입 토큰은 소각 외 어떤 전송 경로도 없음 (홀더 분배 불가)
+
+## 배포 환경
+
+- GIWA Sepolia: chain ID 91342, RPC https://sepolia-rpc.giwa.io, Blockscout https://sepolia-explorer.giwa.io (verify: `--verifier blockscout --verifier-url https://sepolia-explorer.giwa.io/api`, API key 불필요)
+- Dojang 실 주소: EAS `0x4200000000000000000000000000000000000021`, SchemaRegistry `0x4200000000000000000000000000000000000020`, DojangScroll `0xd5077b67dcb56caC8b270C7788FC3E6ee03F17B9`, Verified Address Schema UID `0x072d75e18b2be4f89a13a7147240477481c4b526d5795802acba59046b426e08`

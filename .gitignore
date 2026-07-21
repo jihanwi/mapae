@@ -1,0 +1,14 @@
+# Compiler files
+cache/
+out/
+
+# Broadcast logs
+broadcast/
+
+# Dotenv file
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
