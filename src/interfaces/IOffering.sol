@@ -56,6 +56,7 @@ interface IOffering {
         IERC20 paymentToken;
         IDojang dojang;
         address creator;
+        address platformOwner; // settle authority (Ownable owner) — always the platform ops wallet
         string tokenName;
         string tokenSymbol;
         uint256 price; // P: payment-token wei per 1e18 token wei
@@ -64,6 +65,8 @@ interface IOffering {
         uint256 walletLimit; // L: max cumulative commit per wallet (payment wei)
         uint256 minCommit; // minimum first commit (payment wei)
         uint16 fBps; // sale fraction of total supply, in bps (5000–7000)
+        uint16 cBps; // LP share of proceeds, in bps (1500–3000); token side l = c × f
+        uint16 creatorTokenBps; // creator share of S', in bps (1500–3000)
         RefundMode refundMode;
         uint256 transferLockDuration; // optional post-settle transfer lock; 0 = none
         uint16 holdingCapBps; // optional per-wallet holding cap in bps of supply; 0 = none
@@ -149,6 +152,9 @@ interface IOffering {
     error InvalidConfig();
     /// @notice Cancel amount exceeds the wallet's current commitment.
     error ExceedsCommitted(uint256 requested, uint256 current);
+    /// @notice Cancel must leave either zero or at least minCommit — a dust
+    ///         residue would inflate the equal-share participant count (A1).
+    error ResidualBelowMinCommit(uint256 remaining, uint256 minimum);
     /// @notice Mode A settle requires the raise target to have been met.
     error TargetNotReached();
     /// @notice Mode A refunds require the raise target to have been missed.

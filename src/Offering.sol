@@ -38,14 +38,13 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
 
     uint16 public constant MIN_F_BPS = 5000;
     uint16 public constant MAX_F_BPS = 7000;
+    uint16 public constant MIN_C_BPS = 1500;
+    uint16 public constant MAX_C_BPS = 3000;
+    uint16 public constant MIN_CREATOR_TOKEN_BPS = 1500;
+    uint16 public constant MAX_CREATOR_TOKEN_BPS = 3000;
 
-    /// @dev Token allocation shares of effective supply S' (docs/SPEC.md tokenomics).
-    uint16 public constant CREATOR_TOKEN_BPS = 2500;
+    /// @dev Platform shares are fixed; creator/LP shares are parameterized (M2 Part B).
     uint16 public constant PLATFORM_TOKEN_BPS = 500;
-
-    /// @dev Proceeds split (D4): creator 80 / LP seeding 10 / platform 10.
-    uint16 public constant CREATOR_PROCEEDS_BPS = 8000;
-    uint16 public constant LP_PROCEEDS_BPS = 1000;
     uint16 public constant PLATFORM_PROCEEDS_BPS = 1000;
 
     uint16 public constant BPS = 10_000;
@@ -69,9 +68,13 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
     /// @notice L: per-wallet cumulative commit limit.
     uint256 public immutable walletLimit;
     uint256 public immutable minCommit;
-    /// @notice Sale fraction of total supply in bps (invariant 11: LP share = c × f).
+    /// @notice Sale fraction of total supply in bps.
     uint16 public immutable fBps;
-    /// @notice LP token share of S' in bps = LP_PROCEEDS_BPS × fBps / BPS.
+    /// @notice LP share of proceeds in bps (parameterized, band 1500–3000).
+    uint16 public immutable cBps;
+    /// @notice Creator share of S' in bps (parameterized, band 1500–3000).
+    uint16 public immutable creatorTokenBps;
+    /// @notice LP token share of S' in bps = cBps × fBps / BPS (invariant 11: l = c × f).
     uint16 public immutable lpTokenBps;
     RefundMode public immutable refundMode;
     /// @inheritdoc IOffering
@@ -104,7 +107,7 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
     uint256 public claimedTokens;
     uint256 public refundedPayment;
 
-    constructor(OfferingParams memory p) Ownable(msg.sender) {
+    constructor(OfferingParams memory p) Ownable(p.platformOwner) {
         if (
             address(p.paymentToken) == address(0) || address(p.dojang) == address(0) || p.creator == address(0)
                 || p.recipients.creatorVesting == address(0) || p.recipients.lpEscrow == address(0)
@@ -113,6 +116,10 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
         if (p.price == 0 || p.raiseTarget == 0 || p.walletLimit == 0 || p.minCommit == 0) revert InvalidConfig();
         if (p.minCommit > p.walletLimit) revert InvalidConfig();
         if (p.fBps < MIN_F_BPS || p.fBps > MAX_F_BPS) revert InvalidConfig();
+        if (p.cBps < MIN_C_BPS || p.cBps > MAX_C_BPS) revert InvalidConfig();
+        if (p.creatorTokenBps < MIN_CREATOR_TOKEN_BPS || p.creatorTokenBps > MAX_CREATOR_TOKEN_BPS) {
+            revert InvalidConfig();
+        }
 
         // 기획 v4.5: duration band enforced on-chain. MIN 12h > freeze 2h means
         // a cancel window always exists.
@@ -123,10 +130,11 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
         uint256 qSale_ = p.raiseTarget * WAD / p.price;
         if (qSale_ == 0) revert InvalidConfig();
 
-        // Invariant 11: LP token share l = c × f, with c fixed by the 80/10/10
-        // proceeds split. All allocation shares must fit within 100% of S'.
-        uint16 lpTokenBps_ = uint16(uint256(LP_PROCEEDS_BPS) * p.fBps / BPS);
-        if (uint256(p.fBps) + CREATOR_TOKEN_BPS + PLATFORM_TOKEN_BPS + lpTokenBps_ > BPS) revert InvalidConfig();
+        // Invariant 11: LP token share l = c × f → listing price equals P.
+        // Combined feasibility: every share must fit within 100% of S', so
+        // reserve = remainder ≥ 0 always holds and settle can never underflow.
+        uint16 lpTokenBps_ = uint16(uint256(p.cBps) * p.fBps / BPS);
+        if (uint256(p.fBps) + p.creatorTokenBps + PLATFORM_TOKEN_BPS + lpTokenBps_ > BPS) revert InvalidConfig();
 
         paymentToken = p.paymentToken;
         dojang = p.dojang;
@@ -137,6 +145,8 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
         walletLimit = p.walletLimit;
         minCommit = p.minCommit;
         fBps = p.fBps;
+        cBps = p.cBps;
+        creatorTokenBps = p.creatorTokenBps;
         lpTokenBps = lpTokenBps_;
         refundMode = p.refundMode;
         qSale = qSale_;
@@ -183,11 +193,15 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
 
         uint256 current = committed[msg.sender];
         if (amount > current) revert ExceedsCommitted(amount, current);
+        // A1: residue must be 0 or ≥ minCommit — else dust wallets could inflate
+        // the equal-share participant count in the allocation.
+        uint256 remaining = current - amount;
+        if (remaining != 0 && remaining < minCommit) revert ResidualBelowMinCommit(remaining, minCommit);
 
-        committed[msg.sender] = current - amount;
+        committed[msg.sender] = remaining;
         totalCommitted -= amount;
         paymentToken.safeTransfer(msg.sender, amount);
-        emit Cancelled(msg.sender, amount, current - amount);
+        emit Cancelled(msg.sender, amount, remaining);
     }
 
     // ---------------------------------------------------------------------
@@ -219,7 +233,7 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
         // D4 ①: effective supply from actual sales; sale fraction stays fBps.
         uint256 supply = totalSold_ * BPS / fBps;
         uint256 unsold = qSale - totalSold_;
-        uint256 creatorAmount = supply * CREATOR_TOKEN_BPS / BPS;
+        uint256 creatorAmount = supply * creatorTokenBps / BPS;
         uint256 lpAmount = supply * lpTokenBps / BPS;
         uint256 platformAmount = supply * PLATFORM_TOKEN_BPS / BPS;
         // Reserve absorbs all rounding (D4); safe because share bps sum <= 100%.
@@ -249,9 +263,10 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
             emit UnsoldBurned(unsold);
         }
 
-        // D4 ⑥: proceeds split 80/10/10; rounding remainder goes to the creator
-        // (dust must never accrue to the platform — D1).
-        uint256 lpProceeds = totalRaised_ * LP_PROCEEDS_BPS / BPS;
+        // D4 ⑥: proceeds split creator/LP/platform = (BPS − cBps − 1000)/cBps/1000;
+        // rounding remainder goes to the creator (dust must never accrue to the
+        // platform — D1).
+        uint256 lpProceeds = totalRaised_ * cBps / BPS;
         uint256 platformProceeds = totalRaised_ * PLATFORM_PROCEEDS_BPS / BPS;
         uint256 creatorProceeds = totalRaised_ - lpProceeds - platformProceeds;
         if (lpProceeds > 0) paymentToken.safeTransfer(recipients.lpEscrow, lpProceeds);

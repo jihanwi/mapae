@@ -3,6 +3,7 @@ pragma solidity ^0.8.26;
 
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC20Burnable} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
+import {ERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
 import {IMembershipToken} from "./interfaces/IMembershipToken.sol";
 
 /// @title MembershipToken
@@ -25,7 +26,7 @@ import {IMembershipToken} from "./interfaces/IMembershipToken.sol";
 ///           allocation recipients (vesting/LP/platform/reserve) are exempt.
 ///
 ///         Lock and cap parameters are constructor-injected and immutable.
-contract MembershipToken is ERC20, ERC20Burnable, IMembershipToken {
+contract MembershipToken is ERC20, ERC20Burnable, ERC20Permit, IMembershipToken {
     error NotMinter();
     error TransfersNotEnabled();
     error TransferLocked(uint256 lockedUntil);
@@ -64,7 +65,7 @@ contract MembershipToken is ERC20, ERC20Burnable, IMembershipToken {
         uint256 transferLockDuration_,
         uint16 holdingCapBps_,
         address[] memory capExempt_
-    ) ERC20(name_, symbol_) {
+    ) ERC20(name_, symbol_) ERC20Permit(name_) {
         if (minter_ == address(0)) revert ZeroAddress();
         offering = minter_;
         minter = minter_;
@@ -105,6 +106,12 @@ contract MembershipToken is ERC20, ERC20Burnable, IMembershipToken {
     ///      require settlement, respect the optional transfer lock (offering
     ///      claim payouts exempt), and the optional holding cap (recipients
     ///      on the exempt list pass).
+    ///
+    ///      Claim payouts (`from == offering`) are ALSO cap-exempt (M2 PM
+    ///      decision): primary allocations are already bounded by the KYC'd
+    ///      per-wallet limit L — the cap only targets secondary-market whale
+    ///      accumulation. Without this exemption, a mode B undersell can make
+    ///      cap = S'×bps smaller than a legitimate allocation and brick claims.
     function _update(address from, address to, uint256 value) internal override {
         if (from != address(0) && to != address(0)) {
             if (!transfersEnabled) revert TransfersNotEnabled();
@@ -113,7 +120,7 @@ contract MembershipToken is ERC20, ERC20Burnable, IMembershipToken {
             }
         }
         super._update(from, to, value);
-        if (to != address(0) && holdingCap != 0 && !capExempt[to] && balanceOf(to) > holdingCap) {
+        if (to != address(0) && holdingCap != 0 && !capExempt[to] && from != offering && balanceOf(to) > holdingCap) {
             revert OverHoldingCap(to, balanceOf(to), holdingCap);
         }
     }

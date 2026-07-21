@@ -16,7 +16,11 @@ abstract contract OfferingTestBase is Test {
     uint256 internal constant RAISE = 1_000_000e18; // 1,000,000 KRWs
     uint256 internal constant WALLET_LIMIT = 300_000e18;
     uint256 internal constant MIN_COMMIT = 10_000e18;
+    // Owner-confirmed default preset (2026-07-21): proceeds 75/15/10,
+    // tokens 60/25/9/5/1 (sale/creator/LP/platform/reserve).
     uint16 internal constant F_BPS = 6000;
+    uint16 internal constant C_BPS = 1500;
+    uint16 internal constant CREATOR_TOKEN_BPS = 2500;
 
     MockKRW internal krw;
     MockDojang internal dojang;
@@ -37,6 +41,7 @@ abstract contract OfferingTestBase is Test {
         p.paymentToken = IERC20(address(krw));
         p.dojang = IDojang(address(dojang));
         p.creator = creator;
+        p.platformOwner = address(this); // tests act as the platform ops wallet
         p.tokenName = "Creator Membership";
         p.tokenSymbol = "CRTM";
         p.price = PRICE;
@@ -45,6 +50,8 @@ abstract contract OfferingTestBase is Test {
         p.walletLimit = WALLET_LIMIT;
         p.minCommit = MIN_COMMIT;
         p.fBps = F_BPS;
+        p.cBps = C_BPS;
+        p.creatorTokenBps = CREATOR_TOKEN_BPS;
         p.refundMode = mode;
         p.transferLockDuration = 0;
         p.holdingCapBps = 0;

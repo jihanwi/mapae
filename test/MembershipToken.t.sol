@@ -116,15 +116,28 @@ contract MembershipTokenTest is Test {
         assertEq(token.balanceOf(bob), 1e18);
     }
 
-    /// 불변식 3(옵션): recipient balance must stay under the holding cap.
+    /// 불변식 3(옵션): secondary-market transfers must respect the holding cap.
     function test_HoldingCap_BlocksExcess() public {
         _mintDefault();
         uint256 cap = token.holdingCap(); // 30 tokens
         vm.warp(block.timestamp + LOCK_DURATION);
-        token.transfer(alice, cap); // exactly at cap: ok
-        assertEq(token.balanceOf(alice), cap);
-        vm.expectRevert(abi.encodeWithSelector(MembershipToken.OverHoldingCap.selector, alice, cap + 1, cap));
-        token.transfer(alice, 1);
+        token.transfer(alice, cap + 10e18); // claim payout path (from == offering): exempt
+        vm.startPrank(alice);
+        token.transfer(bob, cap); // bob exactly at cap: ok
+        assertEq(token.balanceOf(bob), cap);
+        vm.expectRevert(abi.encodeWithSelector(MembershipToken.OverHoldingCap.selector, bob, cap + 1, cap));
+        token.transfer(bob, 1);
+        vm.stopPrank();
+    }
+
+    /// M2 PM 결정: claim payouts (from == offering) bypass the cap — primary
+    /// allocations are already bounded by the KYC'd wallet limit L, and a mode B
+    /// undersell could otherwise make cap < allocation and brick claims.
+    function test_HoldingCap_ClaimPayoutsExempt() public {
+        _mintDefault();
+        uint256 cap = token.holdingCap();
+        token.transfer(alice, cap + 50e18); // over cap, straight from the offering
+        assertEq(token.balanceOf(alice), cap + 50e18);
     }
 
     function test_HoldingCap_ExemptAddressesBypass() public {

@@ -87,9 +87,9 @@ contract OfferingE2ETest is OfferingTestBase {
         assertEq(token.balanceOf(address(offering)), 0);
         assertEq(krw.balanceOf(address(offering)), 0);
 
-        // Proceeds 80/10/10 of totalRaised (=R here).
-        assertEq(krw.balanceOf(creator), 800_000e18);
-        assertEq(krw.balanceOf(lpEscrow), 100_000e18);
+        // Proceeds 75/15/10 of totalRaised (=R here).
+        assertEq(krw.balanceOf(creator), 750_000e18);
+        assertEq(krw.balanceOf(lpEscrow), 150_000e18);
         assertEq(krw.balanceOf(platform), 100_000e18);
 
         // Supply S' = totalSold / 0.6 with all shares minted (no unsold to burn).
@@ -117,9 +117,9 @@ contract OfferingE2ETest is OfferingTestBase {
         // S' = 60/0.6 = 100 tokens; unsold burned so it never circulates.
         assertEq(token.totalSupply(), 100e18);
         assertEq(token.balanceOf(creatorVesting), 25e18);
-        assertEq(token.balanceOf(lpEscrow), 6e18); // l = 10% × 60% = 6%
+        assertEq(token.balanceOf(lpEscrow), 9e18); // l = c×f = 15% × 60% = 9%
         assertEq(token.balanceOf(platform), 5e18);
-        assertEq(token.balanceOf(reserve), 4e18);
+        assertEq(token.balanceOf(reserve), 1e18);
 
         _claimAll(offering, f);
 
@@ -132,9 +132,9 @@ contract OfferingE2ETest is OfferingTestBase {
         assertEq(token.balanceOf(address(offering)), 0);
         assertEq(krw.balanceOf(address(offering)), 0);
 
-        // Proceeds 80/10/10 of 600k.
-        assertEq(krw.balanceOf(creator), 480_000e18);
-        assertEq(krw.balanceOf(lpEscrow), 60_000e18);
+        // Proceeds 75/15/10 of 600k.
+        assertEq(krw.balanceOf(creator), 450_000e18);
+        assertEq(krw.balanceOf(lpEscrow), 90_000e18);
         assertEq(krw.balanceOf(platform), 60_000e18);
     }
 

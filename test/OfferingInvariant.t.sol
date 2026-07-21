@@ -188,6 +188,12 @@ contract HandlerModeA is HandlerBase {
 ///         reference docs/SPEC.md 불변식.
 contract OfferingInvariantModeBTest is Test {
     HandlerModeB internal handler;
+
+    /// Tokenomics preset under test; overridden by the edge-preset suite.
+    function _preset() internal pure virtual returns (uint16 fBps, uint16 cBps, uint16 creatorTokenBps) {
+        return (6000, 1500, 2500); // owner-confirmed default
+    }
+
     Offering internal offering;
     MembershipToken internal token;
     MockKRW internal krw;
@@ -202,6 +208,7 @@ contract OfferingInvariantModeBTest is Test {
         p.paymentToken = IERC20(address(krw));
         p.dojang = IDojang(address(dojang));
         p.creator = creator;
+        p.platformOwner = address(this);
         p.tokenName = "Creator Membership";
         p.tokenSymbol = "CRTM";
         p.price = PRICE;
@@ -209,7 +216,7 @@ contract OfferingInvariantModeBTest is Test {
         p.deadline = block.timestamp + 24 hours;
         p.walletLimit = WALLET_LIMIT;
         p.minCommit = MIN_COMMIT;
-        p.fBps = 6000;
+        (p.fBps, p.cBps, p.creatorTokenBps) = _preset();
         p.refundMode = IOffering.RefundMode.Partial;
         p.recipients = IOffering.AllocationRecipients({
             creatorVesting: makeAddr("creatorVesting"),
@@ -284,6 +291,11 @@ contract OfferingInvariantModeBTest is Test {
 /// @notice Invariants over the mode A (AllOrNothing) refund lifecycle.
 contract OfferingInvariantModeATest is Test {
     HandlerModeA internal handler;
+
+    function _preset() internal pure returns (uint16 fBps, uint16 cBps, uint16 creatorTokenBps) {
+        return (6000, 1500, 2500);
+    }
+
     Offering internal offering;
     MockKRW internal krw;
     address internal creator = makeAddr("creator");
@@ -297,6 +309,7 @@ contract OfferingInvariantModeATest is Test {
         p.paymentToken = IERC20(address(krw));
         p.dojang = IDojang(address(dojang));
         p.creator = creator;
+        p.platformOwner = address(this);
         p.tokenName = "Creator Membership";
         p.tokenSymbol = "CRTM";
         p.price = PRICE;
@@ -304,7 +317,7 @@ contract OfferingInvariantModeATest is Test {
         p.deadline = block.timestamp + 24 hours;
         p.walletLimit = WALLET_LIMIT;
         p.minCommit = MIN_COMMIT;
-        p.fBps = 6000;
+        (p.fBps, p.cBps, p.creatorTokenBps) = _preset();
         p.refundMode = IOffering.RefundMode.AllOrNothing;
         p.recipients = IOffering.AllocationRecipients({
             creatorVesting: makeAddr("creatorVesting"),
@@ -340,5 +353,13 @@ contract OfferingInvariantModeATest is Test {
         for (uint256 i = 0; i < handler.actorCount(); i++) {
             assertLe(offering.committed(handler.actors(i)), WALLET_LIMIT);
         }
+    }
+}
+
+/// @notice Same mode B invariants at the feasibility edge of the bands:
+///         f 6900 + creator 1500 + platform 500 + lp 1035 = 9935 bps.
+contract OfferingInvariantModeBEdgeTest is OfferingInvariantModeBTest {
+    function _preset() internal pure override returns (uint16, uint16, uint16) {
+        return (6900, 1500, 1500);
     }
 }

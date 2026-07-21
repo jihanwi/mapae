@@ -24,7 +24,9 @@ contract OfferingUnitTest is OfferingTestBase {
 
     function test_Constructor_Derivations() public view {
         assertEq(offering.qSale(), RAISE * 1e18 / PRICE); // 100 tokens
-        assertEq(offering.lpTokenBps(), 600); // 10% × 6000bps
+        assertEq(offering.lpTokenBps(), 900); // c 1500 × f 6000 / 10000 (l = c×f)
+        assertEq(offering.cBps(), 1500);
+        assertEq(offering.creatorTokenBps(), 2500);
         assertEq(offering.freezeWindow(), 2 hours);
         assertEq(address(offering.token().offering()), address(offering));
         assertEq(offering.token().minter(), address(offering));
@@ -57,12 +59,31 @@ contract OfferingUnitTest is OfferingTestBase {
         vm.expectRevert(IOffering.InvalidConfig.selector);
         new Offering(p);
         // 7000 is inside the nominal band but breaks Σ shares ≤ 100%
-        // (70 + 25 + 5 + 7 = 107%) — must revert until the band is re-cut.
+        // (70 + 25 + 5 + 10.5 = 110.5%) — must revert.
         p.fBps = 7000;
         vm.expectRevert(IOffering.InvalidConfig.selector);
         new Offering(p);
         p.fBps = 6000;
-        new Offering(p); // 60 + 25 + 5 + 6 = 96% ✓
+        new Offering(p); // 60 + 25 + 5 + 9 = 99% ✓
+    }
+
+    function test_Constructor_CBpsAndCreatorTokenBpsBands() public {
+        IOffering.OfferingParams memory p = defaultParams(IOffering.RefundMode.Partial);
+        p.cBps = 1499;
+        vm.expectRevert(IOffering.InvalidConfig.selector);
+        new Offering(p);
+        p.cBps = 3001;
+        vm.expectRevert(IOffering.InvalidConfig.selector);
+        new Offering(p);
+        p.cBps = 1500;
+        p.creatorTokenBps = 1499;
+        vm.expectRevert(IOffering.InvalidConfig.selector);
+        new Offering(p);
+        p.creatorTokenBps = 3001;
+        vm.expectRevert(IOffering.InvalidConfig.selector);
+        new Offering(p);
+        p.creatorTokenBps = 1500;
+        new Offering(p); // both at band minimum: 60 + 15 + 5 + 9 = 89% ✓
     }
 
     // ------------------------------------------------------------------
@@ -193,6 +214,77 @@ contract OfferingUnitTest is OfferingTestBase {
         offering.cancel(50_001e18);
     }
 
+    /// A1: cancel must leave 0 or ≥ minCommit — dust residues would inflate
+    /// the equal-share participant count (에어드랍 헌터 완화책 우회 차단).
+    function test_Cancel_ResidualBoundary() public {
+        commitAs(offering, fan1, 50_000e18);
+        vm.startPrank(fan1);
+        // residue exactly minCommit: allowed
+        offering.cancel(50_000e18 - MIN_COMMIT);
+        assertEq(offering.committed(fan1), MIN_COMMIT);
+        // residue minCommit − 1: rejected
+        vm.expectRevert(abi.encodeWithSelector(IOffering.ResidualBelowMinCommit.selector, MIN_COMMIT - 1, MIN_COMMIT));
+        offering.cancel(1);
+        // full cancel: allowed
+        offering.cancel(MIN_COMMIT);
+        assertEq(offering.committed(fan1), 0);
+        vm.stopPrank();
+    }
+
+    /// A1: the 1-wei-residue dust wallet attack is dead.
+    function test_Cancel_DustWalletAttackBlocked() public {
+        commitAs(offering, fan1, MIN_COMMIT);
+        vm.prank(fan1);
+        vm.expectRevert(abi.encodeWithSelector(IOffering.ResidualBelowMinCommit.selector, 1, MIN_COMMIT));
+        offering.cancel(MIN_COMMIT - 1);
+    }
+
+    // ------------------------------------------------------------------
+    // A2: settle never underflows anywhere inside the parameter bands
+    // ------------------------------------------------------------------
+
+    /// Fuzz every (fBps, cBps, creatorTokenBps, totalSold) combination in the
+    /// bands: feasible combos must settle with exact share accounting; combos
+    /// breaking Σ shares ≤ 100% must be rejected at construction.
+    function testFuzz_SettleFeasibleAcrossBands(uint16 fBps, uint16 cBps, uint16 ctBps, uint256 totalSold) public {
+        fBps = uint16(bound(fBps, 5000, 7000));
+        cBps = uint16(bound(cBps, 1500, 3000));
+        ctBps = uint16(bound(ctBps, 1500, 3000));
+
+        IOffering.OfferingParams memory p = defaultParams(IOffering.RefundMode.Partial);
+        p.fBps = fBps;
+        p.cBps = cBps;
+        p.creatorTokenBps = ctBps;
+        p.walletLimit = RAISE; // let one fan cover any totalSold
+        uint256 lpBps = uint256(cBps) * fBps / 10_000;
+
+        if (uint256(fBps) + ctBps + 500 + lpBps > 10_000) {
+            vm.expectRevert(IOffering.InvalidConfig.selector);
+            new Offering(p);
+            return;
+        }
+        Offering o = new Offering(p);
+
+        commitAs(o, fan1, RAISE);
+        totalSold = bound(totalSold, 1, o.qSale());
+        uint256 totalRaised = totalSold * PRICE / 1e18;
+        vm.warp(p.deadline);
+        o.settle(leafFor(fan1, totalSold, RAISE - totalRaised), totalSold, totalRaised, bytes32(0));
+
+        // No underflow anywhere and every share accounted for: Σ balances == S'.
+        MembershipToken token = o.token();
+        uint256 supply = totalSold * 10_000 / fBps;
+        assertEq(
+            token.balanceOf(address(o)) + token.balanceOf(creatorVesting) + token.balanceOf(lpEscrow)
+                + token.balanceOf(platform) + token.balanceOf(reserve),
+            supply
+        );
+        assertEq(token.totalSupply(), supply);
+        assertGe(supply, totalSold + token.balanceOf(creatorVesting)); // reserve ≥ 0 held implicitly
+        // Proceeds fully distributed: creator remainder + LP + platform == totalRaised.
+        assertEq(krw.balanceOf(creator) + krw.balanceOf(lpEscrow) + krw.balanceOf(platform), totalRaised);
+    }
+
     // ------------------------------------------------------------------
     // settle — authority, timing, sanity checks (D2)
     // ------------------------------------------------------------------
@@ -254,20 +346,20 @@ contract OfferingUnitTest is OfferingTestBase {
         offering.settle(leafFor(fan1, totalSold, 0), totalSold, totalRaised, bytes32(uint256(42)));
 
         MembershipToken token = offering.token();
-        // S' = 30 / 0.6 = 50 tokens; creator 25% = 12.5, LP 6% = 3, platform 5% = 2.5,
-        // reserve = 50 − 30 − 12.5 − 3 − 2.5 = 2
+        // S' = 30 / 0.6 = 50 tokens; creator 25% = 12.5, LP 9% = 4.5, platform 5% = 2.5,
+        // reserve = 50 − 30 − 12.5 − 4.5 − 2.5 = 0.5
         assertEq(token.totalSupply(), 50e18);
         assertEq(token.balanceOf(address(offering)), 30e18);
         assertEq(token.balanceOf(creatorVesting), 12.5e18);
-        assertEq(token.balanceOf(lpEscrow), 3e18);
+        assertEq(token.balanceOf(lpEscrow), 4.5e18);
         assertEq(token.balanceOf(platform), 2.5e18);
-        assertEq(token.balanceOf(reserve), 2e18);
+        assertEq(token.balanceOf(reserve), 0.5e18);
         // mint authority permanently revoked (불변식 5)
         assertEq(token.minter(), address(0));
         assertTrue(token.transfersEnabled());
-        // proceeds 80/10/10
-        assertEq(krw.balanceOf(creator), 240_000e18);
-        assertEq(krw.balanceOf(lpEscrow), 30_000e18);
+        // proceeds 75/15/10
+        assertEq(krw.balanceOf(creator), 225_000e18);
+        assertEq(krw.balanceOf(lpEscrow), 45_000e18);
         assertEq(krw.balanceOf(platform), 30_000e18);
         assertEq(krw.balanceOf(address(offering)), 0); // raised == committed, nothing left
         assertEq(uint8(offering.phase()), uint8(IOffering.Phase.Settled));
