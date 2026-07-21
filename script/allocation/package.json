@@ -1,0 +1,15 @@
+{
+  "name": "mapae-allocation",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Deterministic off-chain allocation (equal share + weighted lottery) for MAPAE offerings",
+  "scripts": {
+    "test": "node test.js",
+    "genfixtures": "node genfixtures.js"
+  },
+  "dependencies": {
+    "@openzeppelin/merkle-tree": "^1.0.7",
+    "ethereum-cryptography": "^2.2.1"
+  }
+}

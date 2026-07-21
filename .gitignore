@@ -12,3 +12,14 @@ broadcast/
 
 # OS
 .DS_Store
+
+# Node
+node_modules/
+
+# Internal planning docs — repo may be shared with reviewers; docs/SPEC.md is the SSOT
+product_spec.md
+deck_plan.md
+qna_prep.md
+contract_plan.md
+m*_prompt.md
+*.pptx

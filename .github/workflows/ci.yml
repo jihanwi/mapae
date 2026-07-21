@@ -28,3 +28,14 @@ jobs:
 
       - name: Test
         run: forge test -vvv
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Allocation script tests
+        working-directory: script/allocation
+        run: |
+          npm ci
+          npm test

@@ -2,7 +2,7 @@
 
 GIWA 체인(업비트/두나무의 이더리움 L2) 위의 크리에이터 온체인 회원권 플랫폼 — 검증된 크리에이터가 실명 지갑으로 발행하는 고정 공급 양도가능 회원권 ERC-20. 발행은 정가 공모, 유통은 AMM, 소비(리딤)는 원화 고정가.
 
-스펙 단일 기준(SSOT): [`docs/SPEC.md`](docs/SPEC.md) · Dojang 연동: [`docs/DOJANG.md`](docs/DOJANG.md)
+스펙 단일 기준(SSOT): [`docs/SPEC.md`](docs/SPEC.md) · 신뢰 모델: [`docs/TRUST.md`](docs/TRUST.md) · Dojang 연동: [`docs/DOJANG.md`](docs/DOJANG.md) · 배정 스크립트: [`script/allocation/`](script/allocation/README.md)
 
 ## 모듈 구성
 
@@ -22,7 +22,7 @@ GIWA 체인(업비트/두나무의 이더리움 L2) 위의 크리에이터 온�
 | 단계 | 내용 | 상태 |
 |---|---|---|
 | M0 | 리포 스캐폴드 — 인터페이스·목업·체인 설정·CI | ✅ 완료 |
-| M1 | Offering + MembershipToken 구현 및 테스트 | 예정 |
+| M1 | Offering + MembershipToken 구현, 배정 스크립트, invariant 테스트 | ✅ 완료 |
 | M2 | Factory + RedeemManager 구현, invariant 테스트 | 예정 |
 | M3 | Dojang EAS 어댑터 실 연동 | 예정 |
 | M4 | GIWA Sepolia verified 배포 (제출: ~2026-07-31, GASOK 1기) | 예정 |
