@@ -9,6 +9,7 @@ import {Offering} from "../../src/Offering.sol";
 import {MembershipToken} from "../../src/MembershipToken.sol";
 import {MockKRW} from "../../src/mocks/MockKRW.sol";
 import {MockDojang} from "../../src/mocks/MockDojang.sol";
+import {PoolFactory} from "../../src/PoolFactory.sol";
 
 /// @notice Shared scaffolding: mocks, default params, and participant helpers.
 abstract contract OfferingTestBase is Test {
@@ -24,6 +25,7 @@ abstract contract OfferingTestBase is Test {
 
     MockKRW internal krw;
     MockDojang internal dojang;
+    PoolFactory internal poolFactory;
 
     address internal creator = makeAddr("creator");
     address internal creatorVesting = makeAddr("creatorVesting");
@@ -35,6 +37,7 @@ abstract contract OfferingTestBase is Test {
         vm.warp(1_750_000_000); // realistic clock so deadline math is sane
         krw = new MockKRW();
         dojang = new MockDojang();
+        poolFactory = new PoolFactory();
     }
 
     function defaultParams(IOffering.RefundMode mode) internal view returns (IOffering.OfferingParams memory p) {
@@ -55,9 +58,11 @@ abstract contract OfferingTestBase is Test {
         p.refundMode = mode;
         p.transferLockDuration = 0;
         p.holdingCapBps = 0;
-        p.recipients = IOffering.AllocationRecipients({
-            creatorVesting: creatorVesting, lpEscrow: lpEscrow, platform: platform, reserve: reserve
-        });
+        p.poolFactory = poolFactory;
+        p.swapRoyaltyBps = 100;
+        p.swapBurnBps = 50;
+        p.recipients =
+            IOffering.AllocationRecipients({creatorVesting: creatorVesting, platform: platform, reserve: reserve});
     }
 
     function newOffering(IOffering.RefundMode mode) internal returns (Offering) {

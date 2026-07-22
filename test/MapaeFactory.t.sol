@@ -23,7 +23,8 @@ abstract contract MapaeFactoryTestBase is OfferingTestBase {
             IDojang(address(dojang)),
             IERC20(address(krw)),
             address(this), // platform ops wallet (settle authority)
-            MapaeFactory.FeeRecipients({platform: platform, reserve: reserve, lpEscrow: lpEscrow}),
+            poolFactory,
+            MapaeFactory.FeeRecipients({platform: platform, reserve: reserve}),
             // Test guide: wide enough for the E2E fixtures (L = 30% of R).
             MapaeFactory.Guide({
                 minPrice: 1000e18,
@@ -52,6 +53,11 @@ abstract contract MapaeFactoryTestBase is OfferingTestBase {
         cp.refundMode = IOffering.RefundMode.AllOrNothing;
         cp.transferLockDuration = 0;
         cp.holdingCapBps = 0;
+        cp.swapRoyaltyBps = 100;
+        cp.swapBurnBps = 50;
+        cp.sponsorBurnBps = 1000;
+        cp.vestingDuration = 1080 days; // 36mo
+        cp.vestingCliff = 180 days; // 6mo
     }
 
     function createAs(address who) internal returns (Offering, MembershipToken, RedeemManager) {
@@ -75,16 +81,18 @@ contract MapaeFactoryTest is MapaeFactoryTestBase {
         assertEq(address(o.token()), address(t));
         // settle authority is the platform ops wallet, not the factory
         assertEq(o.owner(), address(this));
-        // recipients wired from factory config, creatorVesting = creator EOA (M2)
-        (address cv, address lp, address pf, address rs) = o.recipients();
-        assertEq(cv, creator);
-        assertEq(lp, lpEscrow);
+        // recipients wired from factory config; creatorVesting is the Vesting
+        // contract from M4 (D10)
+        (address cv, address pf, address rs) = o.recipients();
+        assertEq(cv, factory.vestingOf(address(o)));
         assertEq(pf, platform);
         assertEq(rs, reserve);
         // registry
         assertEq(factory.allOfferings().length, 1);
         assertEq(factory.offeringsByCreator(creator)[0], address(o));
         assertEq(factory.redeemManagerOf(address(o)), address(rm));
+        assertTrue(factory.vestingOf(address(o)) != address(0));
+        assertTrue(factory.sponsorshipOf(address(o)) != address(0));
     }
 
     function test_Create_RevertUnverified() public {
@@ -97,7 +105,7 @@ contract MapaeFactoryTest is MapaeFactoryTestBase {
     function test_Create_EmitsEvent() public {
         vm.prank(creator);
         vm.expectEmit(true, false, false, false); // only creator topic predictable pre-deploy
-        emit MapaeFactory.OfferingCreated(creator, address(0), address(0), address(0));
+        emit MapaeFactory.OfferingCreated(creator, address(0), address(0), address(0), address(0), address(0));
         factory.createOffering(defaultCreateParams());
     }
 

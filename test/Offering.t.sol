@@ -5,6 +5,7 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IOffering} from "../src/interfaces/IOffering.sol";
 import {Offering} from "../src/Offering.sol";
 import {MembershipToken} from "../src/MembershipToken.sol";
+import {MapaePool} from "../src/MapaePool.sol";
 import {OfferingTestBase} from "./utils/OfferingTestBase.sol";
 
 contract OfferingUnitTest is OfferingTestBase {
@@ -271,18 +272,26 @@ contract OfferingUnitTest is OfferingTestBase {
         vm.warp(p.deadline);
         o.settle(leafFor(fan1, totalSold, RAISE - totalRaised), totalSold, totalRaised, bytes32(0));
 
-        // No underflow anywhere and every share accounted for: Σ balances == S'.
+        // No underflow anywhere and every share accounted for: Σ balances == S'
+        // (the LP share now sits in the pool; unlisted dust cases have pool 0).
         MembershipToken token = o.token();
         uint256 supply = totalSold * 10_000 / fBps;
+        address poolAddr = address(o.pool());
+        uint256 poolTokens = poolAddr == address(0) ? 0 : token.balanceOf(poolAddr);
+        uint256 poolKrw = poolAddr == address(0) ? 0 : krw.balanceOf(poolAddr);
         assertEq(
-            token.balanceOf(address(o)) + token.balanceOf(creatorVesting) + token.balanceOf(lpEscrow)
-                + token.balanceOf(platform) + token.balanceOf(reserve),
+            token.balanceOf(address(o)) + token.balanceOf(creatorVesting) + poolTokens + token.balanceOf(platform)
+                + token.balanceOf(reserve),
             supply
         );
         assertEq(token.totalSupply(), supply);
-        assertGe(supply, totalSold + token.balanceOf(creatorVesting)); // reserve ≥ 0 held implicitly
-        // Proceeds fully distributed: creator remainder + LP + platform == totalRaised.
-        assertEq(krw.balanceOf(creator) + krw.balanceOf(lpEscrow) + krw.balanceOf(platform), totalRaised);
+        // Proceeds fully distributed: creator + platform + pool seed == totalRaised.
+        assertEq(krw.balanceOf(creator) + poolKrw + krw.balanceOf(platform), totalRaised);
+        // At-par listing: whenever a pool exists, spot ≈ P (1e-6 rel tolerance
+        // for the krwSeed floor on odd prices).
+        if (poolAddr != address(0)) {
+            assertApproxEqRel(MapaePool(poolAddr).spotPrice(), PRICE, 1e12);
+        }
     }
 
     // ------------------------------------------------------------------
@@ -346,20 +355,26 @@ contract OfferingUnitTest is OfferingTestBase {
         offering.settle(leafFor(fan1, totalSold, 0), totalSold, totalRaised, bytes32(uint256(42)));
 
         MembershipToken token = offering.token();
-        // S' = 30 / 0.6 = 50 tokens; creator 25% = 12.5, LP 9% = 4.5, platform 5% = 2.5,
-        // reserve = 50 − 30 − 12.5 − 4.5 − 2.5 = 0.5
+        // S' = 30 / 0.6 = 50 tokens; creator 25% = 12.5, LP 9% = 4.5 (seeded into
+        // the pool), platform 5% = 2.5, reserve = 50 − 30 − 12.5 − 4.5 − 2.5 = 0.5
         assertEq(token.totalSupply(), 50e18);
         assertEq(token.balanceOf(address(offering)), 30e18);
         assertEq(token.balanceOf(creatorVesting), 12.5e18);
-        assertEq(token.balanceOf(lpEscrow), 4.5e18);
         assertEq(token.balanceOf(platform), 2.5e18);
         assertEq(token.balanceOf(reserve), 0.5e18);
         // mint authority permanently revoked (불변식 5)
         assertEq(token.minter(), address(0));
         assertTrue(token.transfersEnabled());
-        // proceeds 75/15/10
+        // D8 at-par listing: pool seeded with LP share, spot == P exactly
+        MapaePool pool = offering.pool();
+        assertEq(token.balanceOf(address(pool)), 4.5e18);
+        assertEq(krw.balanceOf(address(pool)), 45_000e18);
+        assertEq(pool.spotPrice(), PRICE);
+        // LP shares permanently at 0xdEaD (불변식 7)
+        assertEq(pool.balanceOf(pool.DEAD()), pool.totalSupply());
+        assertEq(token.pool(), address(pool));
+        // proceeds: platform 10%, LP 15% seeded, creator = remainder
         assertEq(krw.balanceOf(creator), 225_000e18);
-        assertEq(krw.balanceOf(lpEscrow), 45_000e18);
         assertEq(krw.balanceOf(platform), 30_000e18);
         assertEq(krw.balanceOf(address(offering)), 0); // raised == committed, nothing left
         assertEq(uint8(offering.phase()), uint8(IOffering.Phase.Settled));

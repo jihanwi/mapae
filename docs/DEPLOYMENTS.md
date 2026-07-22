@@ -60,10 +60,17 @@
 
 ```mermaid
 flowchart TB
-    subgraph 온체인["GIWA Sepolia 온체인"]
-        F[MapaeFactory] -->|createOffering<br/>Dojang 검증 + 밴드 검증| O[Offering]
-        O -->|constructor에서 배포<br/>1회 민트 후 권한 소각| T[MembershipToken<br/>ERC-20 + Permit]
+    subgraph 온체인["GIWA Sepolia 온체인 — 세 개의 시장"]
+        F[MapaeFactory] -->|createOffering<br/>Dojang 검증 + 밴드 검증| O["Offering (발행)"]
+        F -->|배포·와이어링| V[MapaeVesting<br/>36mo linear + 6mo cliff]
         F -->|배포·와이어링| RM[RedeemManager]
+        F -->|배포·와이어링| SP["Sponsorship (소비)<br/>X% 매수·소각 + 오버레이 이벤트"]
+        O -->|constructor에서 배포<br/>1회 민트 후 권한 소각| T[MembershipToken<br/>ERC-20 + Permit]
+        O -->|"settle: 정가 시딩<br/>LP 지분 → 0xdEaD (영구 락업)"| P["MapaePool (유통)<br/>CPAMM, 수수료 2% 3분할"]
+        PF[PoolFactory] -->|토큰당 1풀| P
+        P -->|"로열티 (KRWs/토큰)"| CR[크리에이터]
+        P -->|"convertAndBurn<br/>(미니 바이백)"| T
+        SP -->|풀 매수 후 소각| P
         RM -->|burnFrom 소각| T
         DA[DojangEASAdapter] -->|getVerifiedAddressAttestationUid| DS[DojangScroll<br/>0xd507...17B9]
         DA -->|getAttestation 검증| EAS[EAS predeploy<br/>0x4200...0021]
@@ -76,6 +83,9 @@ flowchart TB
     O -->|Committed/Cancelled 이벤트| S
     ST -->|settle root, seed| O
 ```
+
+> **M4 주의**: 위 주소 테이블은 M3 배포 기준. M4(AMM 상장·베스팅·후원)는 컨트랙트가
+> 확장되어 **7/28~29 최종 클린 재배포 예정** — 재배포 후 이 문서가 갱신된다.
 
 ## 재현 (제3자 검증)
 

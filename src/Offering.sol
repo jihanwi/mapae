@@ -9,6 +9,8 @@ import {MerkleProof} from "@openzeppelin/contracts/utils/cryptography/MerkleProo
 import {IDojang} from "./interfaces/IDojang.sol";
 import {IOffering} from "./interfaces/IOffering.sol";
 import {MembershipToken} from "./MembershipToken.sol";
+import {MapaePool} from "./MapaePool.sol";
+import {PoolFactory} from "./PoolFactory.sol";
 
 /// @title Offering
 /// @notice Fixed-price single offering. Deploys its own MembershipToken; the
@@ -79,8 +81,16 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
     RefundMode public immutable refundMode;
     /// @inheritdoc IOffering
     uint256 public immutable qSale;
+    /// @notice Deploys the AMM pool at settle (D8 at-par listing).
+    PoolFactory public immutable poolFactory;
+    uint16 public immutable swapRoyaltyBps;
+    uint16 public immutable swapBurnBps;
 
     AllocationRecipients public recipients;
+
+    /// @notice The AMM pool, set at settle (address(0) before, or if the seed
+    ///         rounded to zero on a dust-sized raise).
+    MapaePool public pool;
 
     // ---------------------------------------------------------------------
     // State
@@ -110,9 +120,11 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
     constructor(OfferingParams memory p) Ownable(p.platformOwner) {
         if (
             address(p.paymentToken) == address(0) || address(p.dojang) == address(0) || p.creator == address(0)
-                || p.recipients.creatorVesting == address(0) || p.recipients.lpEscrow == address(0)
+                || address(p.poolFactory) == address(0) || p.recipients.creatorVesting == address(0)
                 || p.recipients.platform == address(0) || p.recipients.reserve == address(0)
         ) revert InvalidConfig();
+        // Pool fee bands (spec 4-B); the pool constructor re-validates.
+        if (p.swapRoyaltyBps > 150 || p.swapBurnBps > 100) revert InvalidConfig();
         if (p.price == 0 || p.raiseTarget == 0 || p.walletLimit == 0 || p.minCommit == 0) revert InvalidConfig();
         if (p.minCommit > p.walletLimit) revert InvalidConfig();
         if (p.fBps < MIN_F_BPS || p.fBps > MAX_F_BPS) revert InvalidConfig();
@@ -150,13 +162,15 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
         lpTokenBps = lpTokenBps_;
         refundMode = p.refundMode;
         qSale = qSale_;
+        poolFactory = p.poolFactory;
+        swapRoyaltyBps = p.swapRoyaltyBps;
+        swapBurnBps = p.swapBurnBps;
         recipients = p.recipients;
 
-        address[] memory capExempt = new address[](4);
+        address[] memory capExempt = new address[](3);
         capExempt[0] = p.recipients.creatorVesting;
-        capExempt[1] = p.recipients.lpEscrow;
-        capExempt[2] = p.recipients.platform;
-        capExempt[3] = p.recipients.reserve;
+        capExempt[1] = p.recipients.platform;
+        capExempt[2] = p.recipients.reserve;
         token = new MembershipToken(
             p.tokenName, p.tokenSymbol, address(this), p.transferLockDuration, p.holdingCapBps, capExempt
         );
@@ -232,6 +246,18 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
 
         // D4 ①: effective supply from actual sales; sale fraction stays fBps.
         uint256 supply = totalSold_ * BPS / fBps;
+        _mintAndBurnUnsold(totalSold_, supply);
+        uint256 krwSeed = _listAtPar(totalRaised_, supply);
+        _distributeProceeds(totalRaised_, krwSeed);
+
+        emit Settled(allocationRoot_, totalSold_, totalRaised_, seed_);
+    }
+
+    /// @dev D4 ②③: one-shot mint (sold + unsold + LP seed to this contract for
+    ///      claims/burn/seeding, allocations to recipients; enables transfers,
+    ///      revokes mint authority forever), then burn unsold — the Transfer→0x0
+    ///      event is the on-explorer proof the token "was born scarcer" (불변식 10).
+    function _mintAndBurnUnsold(uint256 totalSold_, uint256 supply) internal {
         uint256 unsold = qSale - totalSold_;
         uint256 creatorAmount = supply * creatorTokenBps / BPS;
         uint256 lpAmount = supply * lpTokenBps / BPS;
@@ -239,41 +265,58 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
         // Reserve absorbs all rounding (D4); safe because share bps sum <= 100%.
         uint256 reserveAmount = supply - totalSold_ - creatorAmount - lpAmount - platformAmount;
 
-        // D4 ②: one-shot mint — sold + unsold to this contract (claims + burn),
-        // allocations to the injected recipients. Also enables transfers (⑤)
-        // and revokes mint authority forever (④).
-        address[] memory to = new address[](5);
-        uint256[] memory amounts = new uint256[](5);
+        address[] memory to = new address[](4);
+        uint256[] memory amounts = new uint256[](4);
         to[0] = address(this);
-        amounts[0] = totalSold_ + unsold;
+        amounts[0] = totalSold_ + unsold + lpAmount; // LP share seeds the pool below
         to[1] = recipients.creatorVesting;
         amounts[1] = creatorAmount;
-        to[2] = recipients.lpEscrow;
-        amounts[2] = lpAmount;
-        to[3] = recipients.platform;
-        amounts[3] = platformAmount;
-        to[4] = recipients.reserve;
-        amounts[4] = reserveAmount;
+        to[2] = recipients.platform;
+        amounts[2] = platformAmount;
+        to[3] = recipients.reserve;
+        amounts[3] = reserveAmount;
         token.mintAllocations(to, amounts);
 
-        // D4 ③: burn unsold immediately — the Transfer→0x0 event is the
-        // on-explorer proof that the token "was born scarcer" (invariant 10).
         if (unsold > 0) {
             token.burn(unsold);
             emit UnsoldBurned(unsold);
         }
+    }
 
-        // D4 ⑥: proceeds split creator/LP/platform = (BPS − cBps − 1000)/cBps/1000;
-        // rounding remainder goes to the creator (dust must never accrue to the
-        // platform — D1).
-        uint256 lpProceeds = totalRaised_ * cBps / BPS;
+    /// @dev D8: at-par listing. Seed the pool so the spot price equals P:
+    ///      tokenSeed = lpProceeds / P (capped by the minted LP share — the bps
+    ///      double-floor can make lpAmount a hair smaller than the exact c×f
+    ///      cut), krwSeed = tokenSeed × P. LP shares go straight to 0xdEaD:
+    ///      permanently unownable (불변식 7). Rounding dust: leftover tokens →
+    ///      reserve, leftover KRWs → creator via _distributeProceeds (D1).
+    function _listAtPar(uint256 totalRaised_, uint256 supply) internal returns (uint256 krwSeed) {
+        uint256 lpAmount = supply * lpTokenBps / BPS;
+        uint256 tokenSeed = totalRaised_ * cBps / BPS * WAD / price;
+        if (tokenSeed > lpAmount) tokenSeed = lpAmount;
+        krwSeed = tokenSeed * price / WAD;
+
+        if (tokenSeed > 0 && krwSeed > 0) {
+            MapaePool pool_ = poolFactory.createPool(token, paymentToken, creator, swapRoyaltyBps, swapBurnBps);
+            token.registerPool(address(pool_));
+            pool = pool_;
+            IERC20(address(token)).safeTransfer(address(pool_), tokenSeed);
+            paymentToken.safeTransfer(address(pool_), krwSeed);
+            uint256 lpShares = pool_.mint(pool_.DEAD());
+            emit Listed(address(pool_), tokenSeed, krwSeed, lpShares);
+        }
+        if (lpAmount > tokenSeed) {
+            IERC20(address(token)).safeTransfer(recipients.reserve, lpAmount - tokenSeed);
+        }
+    }
+
+    /// @dev Proceeds split: platform fixed 10%, LP share seeded into the pool
+    ///      (krwSeed), creator = remainder including all KRW rounding dust
+    ///      (never the platform — D1).
+    function _distributeProceeds(uint256 totalRaised_, uint256 krwSeed) internal {
         uint256 platformProceeds = totalRaised_ * PLATFORM_PROCEEDS_BPS / BPS;
-        uint256 creatorProceeds = totalRaised_ - lpProceeds - platformProceeds;
-        if (lpProceeds > 0) paymentToken.safeTransfer(recipients.lpEscrow, lpProceeds);
+        uint256 creatorProceeds = totalRaised_ - krwSeed - platformProceeds;
         if (platformProceeds > 0) paymentToken.safeTransfer(recipients.platform, platformProceeds);
         if (creatorProceeds > 0) paymentToken.safeTransfer(creator, creatorProceeds);
-
-        emit Settled(allocationRoot_, totalSold_, totalRaised_, seed_);
     }
 
     // ---------------------------------------------------------------------

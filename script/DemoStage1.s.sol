@@ -135,5 +135,10 @@ contract DemoStage1 is Script {
         cp.refundMode = mode;
         cp.transferLockDuration = 0;
         cp.holdingCapBps = 0;
+        cp.swapRoyaltyBps = 100; // 1% creator royalty per swap
+        cp.swapBurnBps = 50; // 0.5% burn per swap
+        cp.sponsorBurnBps = 1000; // 10% of sponsorships burn
+        cp.vestingDuration = 1080 days; // 36mo
+        cp.vestingCliff = 180 days; // 6mo
     }
 }

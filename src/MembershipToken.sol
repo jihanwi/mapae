@@ -28,6 +28,8 @@ import {IMembershipToken} from "./interfaces/IMembershipToken.sol";
 ///         Lock and cap parameters are constructor-injected and immutable.
 contract MembershipToken is ERC20, ERC20Burnable, ERC20Permit, IMembershipToken {
     error NotMinter();
+    error NotOffering();
+    error PoolAlreadyRegistered();
     error TransfersNotEnabled();
     error TransferLocked(uint256 lockedUntil);
     error OverHoldingCap(address account, uint256 balance, uint256 cap);
@@ -36,6 +38,8 @@ contract MembershipToken is ERC20, ERC20Burnable, ERC20Permit, IMembershipToken 
 
     /// @notice Emitted once when mintAllocations completes and mint authority is revoked.
     event MintFinalized(uint256 totalMinted, uint256 holdingCap, uint256 transferLockUntil);
+    /// @notice Emitted once when the offering registers the AMM pool at settle.
+    event PoolRegistered(address indexed pool);
 
     uint16 internal constant BPS = 10_000;
 
@@ -48,6 +52,10 @@ contract MembershipToken is ERC20, ERC20Burnable, ERC20Permit, IMembershipToken 
 
     /// @notice The only address allowed to mint; zeroed forever after the one mint.
     address public minter;
+    /// @notice The AMM pool, registered once by the offering during settle (D9).
+    ///         Cap-exempt and lock-exempt AS SENDER: during the transfer lock,
+    ///         fans can BUY from the pool but cannot sell into it (anti-flipping).
+    address public pool;
     /// @notice True once settlement has minted supply; gates all transfers before.
     bool public transfersEnabled;
     /// @inheritdoc IMembershipToken
@@ -115,7 +123,7 @@ contract MembershipToken is ERC20, ERC20Burnable, ERC20Permit, IMembershipToken 
     function _update(address from, address to, uint256 value) internal override {
         if (from != address(0) && to != address(0)) {
             if (!transfersEnabled) revert TransfersNotEnabled();
-            if (block.timestamp < transferLockUntil && from != offering) {
+            if (block.timestamp < transferLockUntil && from != offering && from != pool) {
                 revert TransferLocked(transferLockUntil);
             }
         }
@@ -123,6 +131,17 @@ contract MembershipToken is ERC20, ERC20Burnable, ERC20Permit, IMembershipToken 
         if (to != address(0) && holdingCap != 0 && !capExempt[to] && from != offering && balanceOf(to) > holdingCap) {
             revert OverHoldingCap(to, balanceOf(to), holdingCap);
         }
+    }
+
+    /// @notice Register the AMM pool. Offering-only, once — same trust pattern
+    ///         as the minter: after settle the wiring is immutable.
+    function registerPool(address pool_) external {
+        if (msg.sender != offering) revert NotOffering();
+        if (pool != address(0)) revert PoolAlreadyRegistered();
+        if (pool_ == address(0)) revert ZeroAddress();
+        pool = pool_;
+        capExempt[pool_] = true;
+        emit PoolRegistered(pool_);
     }
 
     /// @inheritdoc IMembershipToken

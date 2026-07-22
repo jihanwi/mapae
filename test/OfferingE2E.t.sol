@@ -4,6 +4,7 @@ pragma solidity ^0.8.26;
 import {IOffering} from "../src/interfaces/IOffering.sol";
 import {Offering} from "../src/Offering.sol";
 import {MembershipToken} from "../src/MembershipToken.sol";
+import {MapaePool} from "../src/MapaePool.sol";
 import {OfferingTestBase} from "./utils/OfferingTestBase.sol";
 
 /// @notice End-to-end tests driven by fixtures produced by script/allocation
@@ -87,10 +88,14 @@ contract OfferingE2ETest is OfferingTestBase {
         assertEq(token.balanceOf(address(offering)), 0);
         assertEq(krw.balanceOf(address(offering)), 0);
 
-        // Proceeds 75/15/10 of totalRaised (=R here).
-        assertEq(krw.balanceOf(creator), 750_000e18);
-        assertEq(krw.balanceOf(lpEscrow), 150_000e18);
+        // Proceeds: platform 10%, LP 15% seeded into the pool at par, creator =
+        // remainder + KRW seed rounding dust (10000 wei here — never the platform).
+        MapaePool poolA = offering.pool();
+        assertEq(krw.balanceOf(address(poolA)), 149_999_999_999_999_999_990_000);
+        assertEq(krw.balanceOf(creator), 750_000e18 + 10_000);
         assertEq(krw.balanceOf(platform), 100_000e18);
+        assertEq(poolA.spotPrice(), PRICE); // 상장가 == 공모가
+        assertEq(poolA.balanceOf(poolA.DEAD()), poolA.totalSupply()); // LP 영구 락업
 
         // Supply S' = totalSold / 0.6 with all shares minted (no unsold to burn).
         assertEq(token.totalSupply(), f.totalSold * 10_000 / F_BPS);
@@ -117,7 +122,7 @@ contract OfferingE2ETest is OfferingTestBase {
         // S' = 60/0.6 = 100 tokens; unsold burned so it never circulates.
         assertEq(token.totalSupply(), 100e18);
         assertEq(token.balanceOf(creatorVesting), 25e18);
-        assertEq(token.balanceOf(lpEscrow), 9e18); // l = c×f = 15% × 60% = 9%
+        assertEq(token.balanceOf(address(offering.pool())), 9e18); // l = c×f = 9%, seeded
         assertEq(token.balanceOf(platform), 5e18);
         assertEq(token.balanceOf(reserve), 1e18);
 
@@ -132,10 +137,12 @@ contract OfferingE2ETest is OfferingTestBase {
         assertEq(token.balanceOf(address(offering)), 0);
         assertEq(krw.balanceOf(address(offering)), 0);
 
-        // Proceeds 75/15/10 of 600k.
+        // Proceeds of 600k: platform 10%, LP 15% seeded at par, creator remainder.
+        MapaePool poolB = offering.pool();
+        assertEq(krw.balanceOf(address(poolB)), 90_000e18);
         assertEq(krw.balanceOf(creator), 450_000e18);
-        assertEq(krw.balanceOf(lpEscrow), 90_000e18);
         assertEq(krw.balanceOf(platform), 60_000e18);
+        assertEq(poolB.spotPrice(), PRICE); // 상장가 == 공모가 (모드 B 미달에서도)
     }
 
     /// Mode A undersubscribed: target missed → refunds, zero supply (불변식 4).

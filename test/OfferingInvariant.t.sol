@@ -12,6 +12,7 @@ import {Offering} from "../src/Offering.sol";
 import {MembershipToken} from "../src/MembershipToken.sol";
 import {MockKRW} from "../src/mocks/MockKRW.sol";
 import {MockDojang} from "../src/mocks/MockDojang.sol";
+import {PoolFactory} from "../src/PoolFactory.sol";
 
 uint256 constant PRICE = 10_000e18;
 uint256 constant RAISE = 1_000_000e18;
@@ -218,11 +219,11 @@ contract OfferingInvariantModeBTest is Test {
         p.minCommit = MIN_COMMIT;
         (p.fBps, p.cBps, p.creatorTokenBps) = _preset();
         p.refundMode = IOffering.RefundMode.Partial;
+        p.poolFactory = new PoolFactory();
+        p.swapRoyaltyBps = 100;
+        p.swapBurnBps = 50;
         p.recipients = IOffering.AllocationRecipients({
-            creatorVesting: makeAddr("creatorVesting"),
-            lpEscrow: makeAddr("lpEscrow"),
-            platform: makeAddr("platform"),
-            reserve: makeAddr("reserve")
+            creatorVesting: makeAddr("creatorVesting"), platform: makeAddr("platform"), reserve: makeAddr("reserve")
         });
         offering = new Offering(p);
         token = offering.token();
@@ -319,11 +320,11 @@ contract OfferingInvariantModeATest is Test {
         p.minCommit = MIN_COMMIT;
         (p.fBps, p.cBps, p.creatorTokenBps) = _preset();
         p.refundMode = IOffering.RefundMode.AllOrNothing;
+        p.poolFactory = new PoolFactory();
+        p.swapRoyaltyBps = 100;
+        p.swapBurnBps = 50;
         p.recipients = IOffering.AllocationRecipients({
-            creatorVesting: makeAddr("creatorVesting"),
-            lpEscrow: makeAddr("lpEscrow"),
-            platform: makeAddr("platform"),
-            reserve: makeAddr("reserve")
+            creatorVesting: makeAddr("creatorVesting"), platform: makeAddr("platform"), reserve: makeAddr("reserve")
         });
         offering = new Offering(p);
 

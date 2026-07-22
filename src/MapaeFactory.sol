@@ -7,8 +7,12 @@ import {IDojang} from "./interfaces/IDojang.sol";
 import {IOffering} from "./interfaces/IOffering.sol";
 import {Offering} from "./Offering.sol";
 import {OfferingDeployer} from "./OfferingDeployer.sol";
+import {StackDeployer} from "./StackDeployer.sol";
 import {MembershipToken} from "./MembershipToken.sol";
 import {RedeemManager} from "./RedeemManager.sol";
+import {MapaeVesting} from "./MapaeVesting.sol";
+import {Sponsorship} from "./Sponsorship.sol";
+import {PoolFactory} from "./PoolFactory.sol";
 
 /// @title MapaeFactory
 /// @notice Deploys and wires the per-creator stack: MembershipToken (via
@@ -35,12 +39,11 @@ contract MapaeFactory is Ownable {
     error ZeroAddress();
 
     /// @notice Platform-side allocation recipients wired into every offering.
-    ///         lpEscrow custodies LP-designated tokens/proceeds until the LP
-    ///         module exists (M4).
+    ///         (The LP share needs no recipient since M4: it seeds the AMM pool
+    ///         at settle with LP shares locked at 0xdEaD.)
     struct FeeRecipients {
         address platform;
         address reserve;
-        address lpEscrow;
     }
 
     /// @notice Platform guide bands for creator-chosen parameters.
@@ -70,10 +73,20 @@ contract MapaeFactory is Ownable {
         IOffering.RefundMode refundMode;
         uint256 transferLockDuration;
         uint16 holdingCapBps;
+        uint16 swapRoyaltyBps; // pool royalty (0–150, 기본 100)
+        uint16 swapBurnBps; // pool burn share (0–100, 기본 50)
+        uint16 sponsorBurnBps; // sponsorship burn share X (0–2000, 기본 1000)
+        uint64 vestingDuration; // 12–48mo (기본 36mo)
+        uint64 vestingCliff; // ≥3mo (기본 6mo)
     }
 
     event OfferingCreated(
-        address indexed creator, address indexed offering, address indexed token, address redeemManager
+        address indexed creator,
+        address indexed offering,
+        address indexed token,
+        address redeemManager,
+        address vesting,
+        address sponsorship
     );
     event GuideUpdated(
         uint256 minPrice,
@@ -90,6 +103,13 @@ contract MapaeFactory is Ownable {
     address public immutable platformOwner;
     /// @notice Holds the Offering creation bytecode (EIP-170 size split).
     OfferingDeployer public immutable offeringDeployer;
+    /// @notice Holds the RedeemManager/Vesting/Sponsorship creation bytecode.
+    StackDeployer public immutable stackDeployer;
+    /// @notice Global AMM pool factory (one pool per token, D7/D8).
+    PoolFactory public immutable poolFactory;
+
+    /// @notice Sponsorship burn-buy slippage tolerance vs spot (§8-B ②).
+    uint16 public constant SPONSOR_MAX_SLIPPAGE_BPS = 500;
 
     FeeRecipients public feeRecipients;
     Guide public guide;
@@ -97,23 +117,28 @@ contract MapaeFactory is Ownable {
     address[] internal _allOfferings;
     mapping(address creator => address[] offerings) internal _offeringsByCreator;
     mapping(address offering => address redeemManager) public redeemManagerOf;
+    mapping(address offering => address vesting) public vestingOf;
+    mapping(address offering => address sponsorship) public sponsorshipOf;
 
     constructor(
         IDojang dojang_,
         IERC20 paymentToken_,
         address platformOwner_,
+        PoolFactory poolFactory_,
         FeeRecipients memory feeRecipients_,
         Guide memory guide_
     ) Ownable(platformOwner_) {
         if (
             address(dojang_) == address(0) || address(paymentToken_) == address(0)
-                || feeRecipients_.platform == address(0) || feeRecipients_.reserve == address(0)
-                || feeRecipients_.lpEscrow == address(0)
+                || address(poolFactory_) == address(0) || feeRecipients_.platform == address(0)
+                || feeRecipients_.reserve == address(0)
         ) revert ZeroAddress();
         dojang = dojang_;
         paymentToken = paymentToken_;
         platformOwner = platformOwner_;
+        poolFactory = poolFactory_;
         offeringDeployer = new OfferingDeployer();
+        stackDeployer = new StackDeployer();
         feeRecipients = feeRecipients_;
         _setGuide(guide_);
     }
@@ -132,7 +157,8 @@ contract MapaeFactory is Ownable {
         emit GuideUpdated(g.minPrice, g.maxPrice, g.minRaise, g.maxRaise, g.minWalletLimitBps, g.maxWalletLimitBps);
     }
 
-    /// @notice Deploy a new offering stack for the caller (the creator).
+    /// @notice Deploy a new offering stack for the caller (the creator):
+    ///         Vesting → Offering(+Token) → RedeemManager + Sponsorship.
     function createOffering(CreateParams calldata cp)
         external
         returns (address offering, address token, address redeemManager)
@@ -156,6 +182,11 @@ contract MapaeFactory is Ownable {
                 || cp.walletLimit > cp.raiseTarget * guide.maxWalletLimitBps / 10_000
         ) revert WalletLimitOutOfBand(cp.walletLimit);
 
+        // Creator allocation vests from the offering deadline (≈ settle time),
+        // linear with cliff (D10) — irrevocable, non-upgradeable (불변식 6).
+        MapaeVesting vesting =
+            stackDeployer.deployVesting(msg.sender, uint64(cp.deadline), cp.vestingDuration, cp.vestingCliff);
+
         IOffering.OfferingParams memory p;
         p.paymentToken = paymentToken;
         p.dojang = dojang;
@@ -174,24 +205,25 @@ contract MapaeFactory is Ownable {
         p.refundMode = cp.refundMode;
         p.transferLockDuration = cp.transferLockDuration;
         p.holdingCapBps = cp.holdingCapBps;
-        // M2: creatorVesting is the creator EOA; replaced by the Vesting
-        // contract in M4 (D4 recipients-injection design).
+        p.poolFactory = poolFactory;
+        p.swapRoyaltyBps = cp.swapRoyaltyBps;
+        p.swapBurnBps = cp.swapBurnBps;
         p.recipients = IOffering.AllocationRecipients({
-            creatorVesting: msg.sender,
-            lpEscrow: feeRecipients.lpEscrow,
-            platform: feeRecipients.platform,
-            reserve: feeRecipients.reserve
+            creatorVesting: address(vesting), platform: feeRecipients.platform, reserve: feeRecipients.reserve
         });
 
         Offering o = offeringDeployer.deploy(p);
         MembershipToken t = o.token();
-        RedeemManager rm = new RedeemManager(t, msg.sender);
+        (RedeemManager rm, Sponsorship sp) =
+            stackDeployer.deployPeripherals(t, paymentToken, msg.sender, cp.sponsorBurnBps, SPONSOR_MAX_SLIPPAGE_BPS);
 
         _allOfferings.push(address(o));
         prior.push(address(o));
         redeemManagerOf[address(o)] = address(rm);
+        vestingOf[address(o)] = address(vesting);
+        sponsorshipOf[address(o)] = address(sp);
 
-        emit OfferingCreated(msg.sender, address(o), address(t), address(rm));
+        emit OfferingCreated(msg.sender, address(o), address(t), address(rm), address(vesting), address(sp));
         return (address(o), address(t), address(rm));
     }
 

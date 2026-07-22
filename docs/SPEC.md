@@ -21,10 +21,10 @@ MAPAE: GIWA 체인(업비트/두나무의 이더리움 L2) 위의 크리에이�
    - 미달 시: 모드 A(올오어낫싱) 전액 환불·토큰 미발행 / 모드 B(부분 진행) 실판매분만 발행, 미판매분 `burnUnsold()` 소각
    - **공모 종료 전 토큰 전송·상장 불가.** 공모 대금 배분: 크리에이터 80 / LP 시딩 10 / 플랫폼 10 (가안)
 4. **RedeemManager** — `createRedeemable(id, burnAmount, maxClaims, deadline)` (크리에이터), `redeem(id)` (소각 + 클레임 기록). 교환비는 장수 고정, 시세 무관.
-5. **Vesting** (확장) — 크리에이터 25%, 36mo linear + 6mo cliff.
-6. **Sponsorship** (확장) — `sponsorKRWs(krwAmount)`: X%(기본 10) 스왑→소각, 나머지 크리에이터 이체. 이벤트에 KRW 표시액 기록.
-7. **LP** (확장) — AMM 풀 시딩 + LP 토큰 영구 락업. 불변식: LP 토큰 비율 l = LP 대금 비율 c × 공모 비율 f → 상장가 = 공모가 P (기본 f=60%, c=20% → l=12%).
-8. **BuybackVault** (확장) — 온체인 매출의 환원율(0~30%)만큼 수신 → TWAP 분할 매수(일일 상한 = 풀 깊이 β%) 후 전량 즉시 소각. 매입 토큰 재분배 경로 없음.
+5. **Vesting** ✅ **(M4 구현)** — 크리에이터 배분 수령처 = `MapaeVesting`(OZ VestingWalletCliff). 리니어 + 클리프, 밴드 12~48mo(기본 36) / 클리프 ≥3mo(기본 6), beneficiary = creator, 시작 = 공모 deadline, 철회 불가·논업그레이더블. `release()` 풀 방식.
+6. **Sponsorship** ✅ **(M4 구현)** — `sponsorKRWs(krwAmount, message)`: X%(파라미터, 밴드 0~2000bps, 기본 1000) 풀에서 매수→즉시 소각, 나머지 크리에이터 이체. 이벤트에 KRW 표시액 + 메시지(오버레이용, 해시 인덱싱). `sponsorToken`은 스팟 환산액 기록. **슬리피지 가드**: 소각 매수는 스팟·수수료 반영 기대치 대비 최대 500bps 편차 내에서만 (얕은 풀 조작 방지 — §8-B ②). 후원 규모는 풀 깊이에 비례 제한됨.
+7. **AMM/LP** ✅ **(M4 구현, D7·D8)** — 자체 미니멀 CPAMM `MapaePool`(x·y=k, UniV2 포크 아님) + `PoolFactory`(토큰당 1풀, 생성은 해당 토큰의 Offering만 — 프론트런 DoS 차단). **상장은 settle 원자 실행**: lpProceeds(c×모금액)와 토큰을 정확히 스팟가 P로 시딩, **LP 지분은 0xdEaD로 직접 민트** (영구 락업이 explorer에서 검증 가능 — 불변식 7·11). 스왑 수수료 2% 입력액 기준 3분할: 크리에이터 로열티(0~150bps, 기본 100) + 소각(0~100bps, 기본 50 — 토큰 입력은 즉시 소각, KRWs 입력은 burnBuffer 적립 후 누구나 `convertAndBurn()`으로 매수·소각하는 미니 바이백) + LP 강화(50bps 고정, 풀 잔류 → k 단조 증가). 전송 게이트 연동(D9): 풀은 cap 면제 + 양도 잠금 중 송신자로서 면제 — 락 중 매수 가능, 매도 불가.
+8. **BuybackVault** (스트레치, 미구현) — TWAP 분할 매수 볼트는 로드맵. 소각 수수료의 `convertAndBurn()` 미니 바이백(모듈 7)이 "매출→매수→소각" 내러티브를 부분 커버.
 
 ## 토크노믹스 (총공급 S' 기준 — M2 파라미터화, 오너 확정 2026-07-21)
 

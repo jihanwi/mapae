@@ -3,6 +3,7 @@ pragma solidity ^0.8.26;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IDojang} from "./IDojang.sol";
+import {PoolFactory} from "../PoolFactory.sol";
 
 /// @title IOffering
 /// @notice Fixed-price single offering for a MembershipToken. No bonding curves,
@@ -43,10 +44,11 @@ interface IOffering {
     }
 
     /// @notice Token allocation recipients, injected at construction (D4).
-    ///         M1: EOAs; M2: wired by the Factory; M4: Vesting/LP contracts.
+    ///         creatorVesting is the Vesting contract from M4 on. The LP share
+    ///         no longer has a recipient: it is seeded into the AMM pool at
+    ///         settle with LP shares minted to 0xdEaD (D8).
     struct AllocationRecipients {
         address creatorVesting;
-        address lpEscrow;
         address platform;
         address reserve;
     }
@@ -70,6 +72,9 @@ interface IOffering {
         RefundMode refundMode;
         uint256 transferLockDuration; // optional post-settle transfer lock; 0 = none
         uint16 holdingCapBps; // optional per-wallet holding cap in bps of supply; 0 = none
+        PoolFactory poolFactory; // deploys the AMM pool at settle (D8 at-par listing)
+        uint16 swapRoyaltyBps; // pool swap royalty to creator (0–150, default 100)
+        uint16 swapBurnBps; // pool swap burn share (0–100, default 50)
         AllocationRecipients recipients;
     }
 
@@ -110,6 +115,13 @@ interface IOffering {
     /// @notice Emitted when unsold tokens are burned during settlement.
     /// @param amount Membership tokens burned.
     event UnsoldBurned(uint256 amount);
+
+    /// @notice Emitted when the AMM pool is seeded at settle (D8).
+    /// @param pool The MapaePool created for this token.
+    /// @param tokenSeed Membership tokens seeded (= krwSeed / P → spot price P).
+    /// @param krwSeed Payment tokens seeded from the LP proceeds share.
+    /// @param lpShares LP shares minted to 0xdEaD (permanently locked — 불변식 7).
+    event Listed(address indexed pool, uint256 tokenSeed, uint256 krwSeed, uint256 lpShares);
 
     /// @notice Emitted when the offering enters Refunding.
     /// @param emergency False = mode A target missed (enableRefunds),

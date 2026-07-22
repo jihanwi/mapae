@@ -21,6 +21,7 @@ import {IDojang} from "../src/interfaces/IDojang.sol";
 import {IEAS, IDojangScroll} from "../src/interfaces/IEAS.sol";
 import {GiwaSepolia} from "../src/Constants.sol";
 import {MapaeFactory} from "../src/MapaeFactory.sol";
+import {PoolFactory} from "../src/PoolFactory.sol";
 import {DojangEASAdapter} from "../src/DojangEASAdapter.sol";
 import {MockKRW} from "../src/mocks/MockKRW.sol";
 import {MockDojang} from "../src/mocks/MockDojang.sol";
@@ -32,6 +33,7 @@ contract Deploy is Script {
 
         MockKRW krw = new MockKRW();
         MockDojang mockDojang = new MockDojang();
+        PoolFactory poolFactory = new PoolFactory();
 
         // Platform guide. L max is 30% of R for the demo (only ~6 fan wallets
         // must be able to oversubscribe R); production 가안 is 0.1~5%.
@@ -44,18 +46,19 @@ contract Deploy is Script {
             maxWalletLimitBps: 3000
         });
         MapaeFactory.FeeRecipients memory recipients =
-            MapaeFactory.FeeRecipients({platform: deployer, reserve: deployer, lpEscrow: deployer});
+            MapaeFactory.FeeRecipients({platform: deployer, reserve: deployer});
 
         // Stack 1: main demo (mock verification, fully controllable)
-        MapaeFactory factoryMock =
-            new MapaeFactory(IDojang(address(mockDojang)), IERC20(address(krw)), deployer, recipients, guide);
+        MapaeFactory factoryMock = new MapaeFactory(
+            IDojang(address(mockDojang)), IERC20(address(krw)), deployer, poolFactory, recipients, guide
+        );
 
         // Stack 2: GIWA-native showcase (live Dojang attestation stack)
         DojangEASAdapter adapter = new DojangEASAdapter(
             IEAS(GiwaSepolia.EAS), IDojangScroll(GiwaSepolia.DOJANG_SCROLL), GiwaSepolia.VERIFIED_ADDRESS_SCHEMA_UID
         );
         MapaeFactory factoryDojang =
-            new MapaeFactory(IDojang(address(adapter)), IERC20(address(krw)), deployer, recipients, guide);
+            new MapaeFactory(IDojang(address(adapter)), IERC20(address(krw)), deployer, poolFactory, recipients, guide);
 
         vm.stopBroadcast();
 
@@ -63,6 +66,7 @@ contract Deploy is Script {
         vm.serializeUint(json, "chainId", block.chainid);
         vm.serializeAddress(json, "deployer", deployer);
         vm.serializeAddress(json, "mockKRW", address(krw));
+        vm.serializeAddress(json, "poolFactory", address(poolFactory));
         vm.serializeAddress(json, "mockDojang", address(mockDojang));
         vm.serializeAddress(json, "factoryMock", address(factoryMock));
         vm.serializeAddress(json, "dojangEASAdapter", address(adapter));
@@ -70,6 +74,7 @@ contract Deploy is Script {
         vm.writeJson(out, "deployments/giwa-sepolia.json");
 
         console.log("MockKRW:          ", address(krw));
+        console.log("PoolFactory:      ", address(poolFactory));
         console.log("MockDojang:       ", address(mockDojang));
         console.log("MapaeFactory(mock):", address(factoryMock));
         console.log("DojangEASAdapter: ", address(adapter));
