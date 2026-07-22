@@ -55,9 +55,15 @@ const deadline = BigInt(await callView(offering, "deadline()"));
 // --- event replay: final committed = last `cumulative` per wallet ---
 // Committed(address indexed participant, uint256 amount, uint256 cumulative)
 // Cancelled(address indexed participant, uint256 amount, uint256 cumulative)
+// GIWA's RPC caps eth_getLogs at 100k blocks — default to the last 90k,
+// overridable with --from-block for offerings older than that.
+const latestNum = BigInt(await rpc("eth_blockNumber", []));
+const fromBlock = args["from-block"]
+    ? "0x" + BigInt(args["from-block"]).toString(16)
+    : "0x" + (latestNum > 90_000n ? latestNum - 90_000n : 0n).toString(16);
 const topics = [topic("Committed(address,uint256,uint256)"), topic("Cancelled(address,uint256,uint256)")];
 const logs = await rpc("eth_getLogs", [
-    {address: offering, fromBlock: "0x0", toBlock: "latest", topics: [topics]},
+    {address: offering, fromBlock, toBlock: "latest", topics: [topics]},
 ]);
 logs.sort((a, b) => {
     const d = Number(BigInt(a.blockNumber) - BigInt(b.blockNumber));

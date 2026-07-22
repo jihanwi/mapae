@@ -2,22 +2,28 @@
 
 체인: GIWA Sepolia (chain ID `91342`) · Explorer: https://sepolia-explorer.giwa.io
 
-> **상태: 배포 대기.** 아래 표는 `forge script script/Deploy.s.sol ... --broadcast --verify` 실행 후
-> `deployments/giwa-sepolia.json` 기준으로 갱신된다. (keystore 패스워드는 오너 보유 — README 배포 절차 참조)
+> **상태: 배포 완료 (2026-07-22), 전 컨트랙트 verified ✅.**
+> 배포자: `0x67a29AE83f3320C5E9b81D8a1531dE8FcCBED00C` · 데모 Stage 1 완료,
+> **Stage 2 실행 가능 시각: 2026-07-22 20:11:24 UTC (= 2026-07-23 05:11:24 KST) 이후**
 
-## 컨트랙트 주소
+## 컨트랙트 주소 (전부 verified ✅)
 
-| 컨트랙트 | 주소 | Explorer | Verify |
-|---|---|---|---|
-| MockKRW (KRWs) | _배포 대기_ | — | — |
-| MockDojang | _배포 대기_ | — | — |
-| MapaeFactory (데모, MockDojang) | _배포 대기_ | — | — |
-| DojangEASAdapter | _배포 대기_ | — | — |
-| MapaeFactory (실 Dojang 연동) | _배포 대기_ | — | — |
-| Offering A + Token + RedeemManager | _Stage 1 후_ | — | verify-children.js |
-| Offering B + Token + RedeemManager | _Stage 1 후_ | — | verify-children.js |
+| 컨트랙트 | 주소 |
+|---|---|
+| MockKRW (KRWs) | [`0xD76E01E39dc5414028Fc800B28De72A6ef6233C9`](https://sepolia-explorer.giwa.io/address/0xD76E01E39dc5414028Fc800B28De72A6ef6233C9) |
+| MockDojang | [`0x3b7f6eff2933dEd3a7e6334b0c6D06c0fE37fBAc`](https://sepolia-explorer.giwa.io/address/0x3b7f6eff2933dEd3a7e6334b0c6D06c0fE37fBAc) |
+| **MapaeFactory (메인 데모)** | [`0x41329c0D53Bcebf72C499AF0b0dDCDb11cE40F1F`](https://sepolia-explorer.giwa.io/address/0x41329c0D53Bcebf72C499AF0b0dDCDb11cE40F1F) |
+| **DojangEASAdapter (실 Dojang 연동)** | [`0xbdbd941432Ec4cf3e8762007C4F1948308756410`](https://sepolia-explorer.giwa.io/address/0xbdbd941432Ec4cf3e8762007C4F1948308756410) |
+| MapaeFactory (GIWA-Native 쇼케이스) | [`0xd651615E4d7146E9A2d606A0bBCe65EE41f264BB`](https://sepolia-explorer.giwa.io/address/0xd651615E4d7146E9A2d606A0bBCe65EE41f264BB) |
+| Offering A (모드 A, 초과 응모) | [`0x5cfa0C147ea1A2B7DF7811Df0653164b81257bAA`](https://sepolia-explorer.giwa.io/address/0x5cfa0C147ea1A2B7DF7811Df0653164b81257bAA) |
+| MembershipToken A (MAPA) | [`0x7F00952e1e397C6b5eF00123BceCf7020cd2f69B`](https://sepolia-explorer.giwa.io/address/0x7F00952e1e397C6b5eF00123BceCf7020cd2f69B) |
+| RedeemManager A | [`0x6d14006864793f4F16EC6E177c0C89eB7500A9D5`](https://sepolia-explorer.giwa.io/address/0x6d14006864793f4F16EC6E177c0C89eB7500A9D5) |
+| Offering B (모드 B, 미달→소각) | [`0xc13f54b25d030053F4f146516B7283AC427217d0`](https://sepolia-explorer.giwa.io/address/0xc13f54b25d030053F4f146516B7283AC427217d0) |
+| MembershipToken B (MAPB) | [`0xDd7315Fbcdfd682E505A326CfE14D123e6860A9b`](https://sepolia-explorer.giwa.io/address/0xDd7315Fbcdfd682E505A326CfE14D123e6860A9b) |
+| RedeemManager B | [`0xBb7d10E8C8576cBd639B245aF2A72B0d5cbE812A`](https://sepolia-explorer.giwa.io/address/0xBb7d10E8C8576cBd639B245aF2A72B0d5cbE812A) |
 
-배포 후 각 주소는 `https://sepolia-explorer.giwa.io/address/<주소>` 형식으로 링크한다.
+데모 현황 (Stage 1 완료): Offering A **5.1M / 5M KRWs 초과 응모** (부분 취소 1건 포함) ·
+Offering B **3M / 5M (60%)** — 마감: 2026-07-22 20:11:24 UTC.
 
 ## 이원 구성 (심사위원용)
 

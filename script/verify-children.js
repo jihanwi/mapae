@@ -29,9 +29,13 @@ function call(to, sig, ...callArgs) {
 }
 
 // ---- collect children from OfferingCreated(creator, offering, token, redeemManager) ----
+// GIWA's RPC caps eth_getLogs at 100k blocks — default to the last 90k,
+// overridable with --from-block for older factories.
+const latestBlock = parseInt(cast("block-number", "--rpc-url", args.rpc), 10);
+const fromBlock = args["from-block"] ?? String(Math.max(0, latestBlock - 90_000));
 const topic0 = cast("keccak", "OfferingCreated(address,address,address,address)");
 const raw = cast(
-    "logs", "--rpc-url", args.rpc, "--from-block", "0", "--to-block", "latest",
+    "logs", "--rpc-url", args.rpc, "--from-block", fromBlock, "--to-block", "latest",
     "--address", args.factory, topic0, "--json"
 );
 const logs = JSON.parse(raw);
