@@ -22,8 +22,21 @@
 | MembershipToken B (MAPB) | [`0xDd7315Fbcdfd682E505A326CfE14D123e6860A9b`](https://sepolia-explorer.giwa.io/address/0xDd7315Fbcdfd682E505A326CfE14D123e6860A9b) |
 | RedeemManager B | [`0xBb7d10E8C8576cBd639B245aF2A72B0d5cbE812A`](https://sepolia-explorer.giwa.io/address/0xBb7d10E8C8576cBd639B245aF2A72B0d5cbE812A) |
 
-데모 현황 (Stage 1 완료): Offering A **5.1M / 5M KRWs 초과 응모** (부분 취소 1건 포함) ·
-Offering B **3M / 5M (60%)** — 마감: 2026-07-22 20:11:24 UTC.
+## 데모 히스토리 (Stage 1 + 2 완료 ✅, 2026-07-23)
+
+- **Offering A** (모드 A): 5.1M / 5M KRWs 초과 응모 (부분 취소 1건) → 마감 →
+  [settle](https://sepolia-explorer.giwa.io/tx/0xbac0152dd643eb3070056da0d3c815de397ade69cd0d2203777de7e54adde0d9)
+  (배정 500 토큰, 균등+가중추첨, 시드 = 마감 후 첫 블록 `31405968`의 해시) → 6개 지갑 전원 claim →
+  [createRedeemable](https://sepolia-explorer.giwa.io/tx/0xb0a44358ca23250748a545d696236d0ee698bdb4106dc7ab5423e564298667c4) →
+  리딤(소각) 2건 ([1](https://sepolia-explorer.giwa.io/tx/0x060c56c75e4f9d8b58e7827089a6578d7d6e74e013170c50156f17a2db3c57cb),
+  [2](https://sepolia-explorer.giwa.io/tx/0xef4a3d5ba63c43e76add40ff7cd0a3814361adef8a689108aed1581332e4abd3)).
+  최종 공급 813.33 토큰 (S′ 833.33 − 리딤 소각 20)
+- **Offering B** (모드 B): 3M / 5M (60%) 미달 →
+  [settle](https://sepolia-explorer.giwa.io/tx/0x7700f9707a199afbf1c64f7cbcb9e7f3fc915e8743de2d088af2ad7dc49ba439)
+  — **UnsoldBurned 200 토큰** (`Transfer → 0x0`, "더 희소하게 태어난다" 온체인 증빙) → 전원 claim.
+  최종 공급 500 토큰 = S′
+- 제3자 검증: settle 트랜잭션의 `Settled` 이벤트에서 시드를 읽어 `script/allocation/`으로
+  재계산하면 위 머클루트가 재현된다 (절차: 아래 "재현" 섹션)
 
 ## 이원 구성 (심사위원용)
 
