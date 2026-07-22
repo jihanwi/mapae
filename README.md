@@ -2,6 +2,48 @@
 
 GIWA 체인(업비트/두나무의 이더리움 L2) 위의 크리에이터 온체인 회원권 플랫폼 — 검증된 크리에이터가 실명 지갑으로 발행하는 고정 공급 양도가능 회원권 ERC-20. 발행은 정가 공모, 유통은 AMM, 소비(리딤)는 원화 고정가.
 
+## 🏛 GASOK 1기 제출물 (GIWA Sepolia)
+
+- **배포 주소·verify 상태·데모 히스토리**: [`docs/DEPLOYMENTS.md`](docs/DEPLOYMENTS.md)
+- **GIWA-Native**: [`DojangEASAdapter`](src/DojangEASAdapter.sol)가 실 DojangScroll + EAS predeploy를 조회 — Verified Address(업비트 KYC 증명) 지갑이 곧 크리에이터 온보딩 ([`docs/DOJANG.md`](docs/DOJANG.md))
+- **데모**: Offering A(초과 응모·추첨 배정) / Offering B(미달·미판매분 소각) 2단계 시나리오 — 아래 "데모 실행 절차"
+- **재현**: 배정은 결정론적 — `Settled` 이벤트의 시드로 누구나 재계산 검증 가능 ([`script/allocation/`](script/allocation/README.md))
+
+### 데모 실행 절차 (오너 런북)
+
+```sh
+source .env
+# 0) 최초 1회: 배포 + 직접 배포분 verify (keystore 패스워드 입력 필요)
+forge script script/Deploy.s.sol --account deployer --rpc-url $GIWA_SEPOLIA_RPC_URL \
+  --broadcast --verify --verifier blockscout --verifier-url $BLOCKSCOUT_API_URL
+
+# 1) Stage 1: 데모 지갑 세팅 + Offering A/B 개설 + 응모 (12h 카운트다운 시작)
+forge script script/DemoStage1.s.sol --account deployer --rpc-url $GIWA_SEPOLIA_RPC_URL --broadcast
+
+# 1.5) Factory 내부 생성분(Offering/Token/RedeemManager) verify
+FACTORY=$(python3 -c "import json;print(json.load(open('deployments/giwa-sepolia.json'))['factoryMock'])")
+node script/verify-children.js --rpc $GIWA_SEPOLIA_RPC_URL --verifier-url $BLOCKSCOUT_API_URL --factory $FACTORY
+
+# ---- 12시간 후 (deployments/demo-state.json의 deadlineA/B 경과 확인) ----
+
+# 2) 스냅샷 → 배정 (Offering A, B 각각)
+OFF_A=$(python3 -c "import json;print(json.load(open('deployments/demo-state.json'))['offeringA'])")
+OFF_B=$(python3 -c "import json;print(json.load(open('deployments/demo-state.json'))['offeringB'])")
+cd script/allocation
+node snapshot.js --rpc $GIWA_SEPOLIA_RPC_URL --offering $OFF_A --out ../../deployments/snapshot-a.json
+node allocate.js --snapshot ../../deployments/snapshot-a.json \
+  --seed $(python3 -c "import json;print(json.load(open('../../deployments/snapshot-a.json'))['suggestedSeed'])") \
+  --out ../../deployments/allocations-a.json --foundry-out ../../deployments/alloc-a.json
+node snapshot.js --rpc $GIWA_SEPOLIA_RPC_URL --offering $OFF_B --out ../../deployments/snapshot-b.json
+node allocate.js --snapshot ../../deployments/snapshot-b.json \
+  --seed $(python3 -c "import json;print(json.load(open('../../deployments/snapshot-b.json'))['suggestedSeed'])") \
+  --out ../../deployments/allocations-b.json --foundry-out ../../deployments/alloc-b.json
+cd ../..
+
+# 3) Stage 2: settle → 전원 claim → 리딤(소각) → B 미판매분 소각
+forge script script/DemoStage2.s.sol --account deployer --rpc-url $GIWA_SEPOLIA_RPC_URL --broadcast
+```
+
 스펙 단일 기준(SSOT): [`docs/SPEC.md`](docs/SPEC.md) · 신뢰 모델: [`docs/TRUST.md`](docs/TRUST.md) · Dojang 연동: [`docs/DOJANG.md`](docs/DOJANG.md) · 배정 스크립트: [`script/allocation/`](script/allocation/README.md)
 
 ## 모듈 구성

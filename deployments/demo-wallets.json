@@ -1,0 +1,14 @@
+{
+  "note": "TEST-ONLY demo wallets, derived from the mnemonic hardcoded in script/DemoStage1.s.sol. Publicly known by design — never hold real value here.",
+  "derivationPath": "m/44'/60'/0'/0/{index}",
+  "wallets": [
+    {"index": 0, "role": "creatorA", "address": "0x4bCE7178d986a2c0caf1F487D61e7e78d94843E8"},
+    {"index": 1, "role": "creatorB", "address": "0xB484DcB40bBd0d47DB6DAc2416827e2482Fc1C9E"},
+    {"index": 2, "role": "fan", "address": "0x502a2e99cf24F29079dfCeE7088E27662Cffc797"},
+    {"index": 3, "role": "fan", "address": "0xbA329a80074653Dc228cB7C99433118976066651"},
+    {"index": 4, "role": "fan", "address": "0xfd10909Bc51d4829aCc0Da903F9e01121479e4ff"},
+    {"index": 5, "role": "fan", "address": "0x3Ff8Ce26FcBef5d45CE4E52391EB642c860661d9"},
+    {"index": 6, "role": "fan", "address": "0x764ACA8AC51956336DB666A61e65DFe0E44c4988"},
+    {"index": 7, "role": "fan-cancel", "address": "0xA637BA72486cf36a3fD1ea197632903c4f6c117a"}
+  ]
+}

@@ -169,6 +169,24 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     const out = toOutputJson(result);
     const path = args.out ?? "allocations.json";
     writeFileSync(path, JSON.stringify(out, null, 2) + "\n");
+    // Optional flat fixture for forge scripts/tests (vm.parseJson-friendly).
+    if (args["foundry-out"]) {
+        const fixture = {
+            price: price.toString(),
+            qSale: qSale.toString(),
+            seed: result.seed,
+            root: result.root,
+            totalSold: result.totalSold.toString(),
+            totalRaised: result.totalRaised.toString(),
+            participants: result.rows.map((r) => r.address),
+            commits: result.rows.map((r) => r.committed.toString()),
+            allocations: result.rows.map((r) => r.allocation.toString()),
+            refunds: result.rows.map((r) => r.refund.toString()),
+        };
+        result.rows.forEach((_, i) => (fixture[`proofs_${i}`] = result.proofs[i]));
+        writeFileSync(args["foundry-out"], JSON.stringify(fixture, null, 2) + "\n");
+        console.log(`foundry fmt: ${args["foundry-out"]}`);
+    }
     console.log(`root:        ${out.root}`);
     console.log(`totalSold:   ${out.totalSold}`);
     console.log(`totalRaised: ${out.totalRaised}`);

@@ -6,6 +6,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IDojang} from "./interfaces/IDojang.sol";
 import {IOffering} from "./interfaces/IOffering.sol";
 import {Offering} from "./Offering.sol";
+import {OfferingDeployer} from "./OfferingDeployer.sol";
 import {MembershipToken} from "./MembershipToken.sol";
 import {RedeemManager} from "./RedeemManager.sol";
 
@@ -87,6 +88,8 @@ contract MapaeFactory is Ownable {
     IERC20 public immutable paymentToken;
     /// @notice Settle authority wired into every offering (Ownable owner).
     address public immutable platformOwner;
+    /// @notice Holds the Offering creation bytecode (EIP-170 size split).
+    OfferingDeployer public immutable offeringDeployer;
 
     FeeRecipients public feeRecipients;
     Guide public guide;
@@ -110,6 +113,7 @@ contract MapaeFactory is Ownable {
         dojang = dojang_;
         paymentToken = paymentToken_;
         platformOwner = platformOwner_;
+        offeringDeployer = new OfferingDeployer();
         feeRecipients = feeRecipients_;
         _setGuide(guide_);
     }
@@ -179,7 +183,7 @@ contract MapaeFactory is Ownable {
             reserve: feeRecipients.reserve
         });
 
-        Offering o = new Offering(p);
+        Offering o = offeringDeployer.deploy(p);
         MembershipToken t = o.token();
         RedeemManager rm = new RedeemManager(t, msg.sender);
 

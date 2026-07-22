@@ -6,17 +6,22 @@ pragma solidity ^0.8.26;
 //   forge script script/Deploy.s.sol --account deployer --rpc-url $GIWA_SEPOLIA_RPC_URL \
 //     --broadcast --verify --verifier blockscout --verifier-url $BLOCKSCOUT_API_URL
 //
-// M2 scope: full submission stack — mocks + MapaeFactory + one demo offering
-// (deployed THROUGH the factory: Offering + MembershipToken + RedeemManager).
-// Demo preset (owner-confirmed 2026-07-21): f=6000, c=1500, creatorToken=2500
-// → proceeds 75/15/10, tokens 60/25/9/5/1. All platform-side recipients are the
-// deployer EOA until Vesting/LP land (M4).
+// M3 dual-stack deployment:
+//   1) Main demo stack — MockKRW + MockDojang + MapaeFactory(MockDojang).
+//      All demo transactions run here (we control verification flags).
+//   2) GIWA-native showcase — DojangEASAdapter (live EAS predeploy + live
+//      DojangScroll) + MapaeFactory(adapter). Real Verified Address wallets
+//      can create offerings here without any code change.
+// Addresses are recorded in deployments/giwa-sepolia.json for the demo
+// scripts and verify-children.js.
 
 import {Script, console} from "forge-std/Script.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IDojang} from "../src/interfaces/IDojang.sol";
-import {IOffering} from "../src/interfaces/IOffering.sol";
+import {IEAS, IDojangScroll} from "../src/interfaces/IEAS.sol";
+import {GiwaSepolia} from "../src/Constants.sol";
 import {MapaeFactory} from "../src/MapaeFactory.sol";
+import {DojangEASAdapter} from "../src/DojangEASAdapter.sol";
 import {MockKRW} from "../src/mocks/MockKRW.sol";
 import {MockDojang} from "../src/mocks/MockDojang.sol";
 
@@ -26,50 +31,48 @@ contract Deploy is Script {
         (, address deployer,) = vm.readCallers();
 
         MockKRW krw = new MockKRW();
-        MockDojang dojang = new MockDojang();
+        MockDojang mockDojang = new MockDojang();
 
-        // Platform guide (가안): P 1천~10만 원 상당, R 5백만~5억 원 상당, L 0.1~5% of R.
-        MapaeFactory factory = new MapaeFactory(
-            IDojang(address(dojang)),
-            IERC20(address(krw)),
-            deployer,
-            MapaeFactory.FeeRecipients({platform: deployer, reserve: deployer, lpEscrow: deployer}),
-            MapaeFactory.Guide({
-                minPrice: 1000e18,
-                maxPrice: 100_000e18,
-                minRaise: 5_000_000e18,
-                maxRaise: 500_000_000e18,
-                minWalletLimitBps: 10, // 0.1% of R
-                maxWalletLimitBps: 500 // 5% of R
-            })
+        // Platform guide. L max is 30% of R for the demo (only ~6 fan wallets
+        // must be able to oversubscribe R); production 가안 is 0.1~5%.
+        MapaeFactory.Guide memory guide = MapaeFactory.Guide({
+            minPrice: 1000e18,
+            maxPrice: 100_000e18,
+            minRaise: 5_000_000e18,
+            maxRaise: 500_000_000e18,
+            minWalletLimitBps: 10,
+            maxWalletLimitBps: 3000
+        });
+        MapaeFactory.FeeRecipients memory recipients =
+            MapaeFactory.FeeRecipients({platform: deployer, reserve: deployer, lpEscrow: deployer});
+
+        // Stack 1: main demo (mock verification, fully controllable)
+        MapaeFactory factoryMock =
+            new MapaeFactory(IDojang(address(mockDojang)), IERC20(address(krw)), deployer, recipients, guide);
+
+        // Stack 2: GIWA-native showcase (live Dojang attestation stack)
+        DojangEASAdapter adapter = new DojangEASAdapter(
+            IEAS(GiwaSepolia.EAS), IDojangScroll(GiwaSepolia.DOJANG_SCROLL), GiwaSepolia.VERIFIED_ADDRESS_SCHEMA_UID
         );
-
-        // Demo offering through the factory (deployer doubles as the creator,
-        // so it must be Dojang-verified first).
-        dojang.setVerified(deployer, true);
-        MapaeFactory.CreateParams memory cp;
-        cp.tokenName = "MAPAE Demo Membership";
-        cp.tokenSymbol = "MAPAE1";
-        cp.price = 10_000e18; // 10,000 KRWs per token
-        cp.raiseTarget = 10_000_000e18; // 10,000,000 KRWs
-        cp.deadline = block.timestamp + 24 hours;
-        cp.walletLimit = 500_000e18; // 5% of R
-        cp.minCommit = 10_000e18;
-        cp.fBps = 6000;
-        cp.cBps = 1500;
-        cp.creatorTokenBps = 2500;
-        cp.refundMode = IOffering.RefundMode.Partial;
-        cp.transferLockDuration = 0;
-        cp.holdingCapBps = 0;
-        (address offering, address token, address redeemManager) = factory.createOffering(cp);
+        MapaeFactory factoryDojang =
+            new MapaeFactory(IDojang(address(adapter)), IERC20(address(krw)), deployer, recipients, guide);
 
         vm.stopBroadcast();
 
-        console.log("MockKRW:         ", address(krw));
-        console.log("MockDojang:      ", address(dojang));
-        console.log("MapaeFactory:    ", address(factory));
-        console.log("Offering:        ", offering);
-        console.log("MembershipToken: ", token);
-        console.log("RedeemManager:   ", redeemManager);
+        string memory json = "deployment";
+        vm.serializeUint(json, "chainId", block.chainid);
+        vm.serializeAddress(json, "deployer", deployer);
+        vm.serializeAddress(json, "mockKRW", address(krw));
+        vm.serializeAddress(json, "mockDojang", address(mockDojang));
+        vm.serializeAddress(json, "factoryMock", address(factoryMock));
+        vm.serializeAddress(json, "dojangEASAdapter", address(adapter));
+        string memory out = vm.serializeAddress(json, "factoryDojang", address(factoryDojang));
+        vm.writeJson(out, "deployments/giwa-sepolia.json");
+
+        console.log("MockKRW:          ", address(krw));
+        console.log("MockDojang:       ", address(mockDojang));
+        console.log("MapaeFactory(mock):", address(factoryMock));
+        console.log("DojangEASAdapter: ", address(adapter));
+        console.log("MapaeFactory(EAS): ", address(factoryDojang));
     }
 }
