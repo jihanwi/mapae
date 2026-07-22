@@ -30,9 +30,11 @@ contract DemoStage1 is Script {
     uint256 internal constant P = 10_000e18; // price per token
     uint256 internal constant L = 1_500_000e18; // wallet limit (30% of R, demo guide max)
     uint256 internal constant MIN_COMMIT = 10_000e18;
-    // Per-wallet gas funding. GIWA Sepolia needs far less; local anvil rehearsal
-    // needs more (higher base fee). Override: DEMO_GAS_STIPEND (wei).
-    uint256 internal constant DEFAULT_GAS_STIPEND = 0.003 ether;
+    // Per-wallet gas funding. GIWA Sepolia measured gas price is ~0.001 gwei,
+    // so 0.0005 ETH is ~50x margin for a fan's ~5 txs (8 wallets = 0.004 ETH
+    // total, fits a 0.01 ETH deployer balance). Local anvil rehearsal needs
+    // more (1+ gwei base fee) — override with DEMO_GAS_STIPEND (wei).
+    uint256 internal constant DEFAULT_GAS_STIPEND = 0.0005 ether;
 
     function run() external {
         string memory dep = vm.readFile("deployments/giwa-sepolia.json");
