@@ -22,7 +22,7 @@ import {MockKRW} from "../src/mocks/MockKRW.sol";
 contract DemoStage3 is Script {
     // Same TEST-ONLY mnemonic as DemoStage1/2.
     string internal constant DEFAULT_DEMO_MNEMONIC =
-        "wreck mixed deposit recall beach frozen tragic describe pony impulse orbit agree";
+        "what attitude accuse zero typical indoor toddler riot topple reward media robot";
 
     function run() external {
         string memory dep = vm.readFile("deployments/giwa-sepolia.json");

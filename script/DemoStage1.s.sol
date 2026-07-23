@@ -24,7 +24,7 @@ contract DemoStage1 is Script {
     // TEST-ONLY mnemonic, committed to a public repo ON PURPOSE for demo
     // reproducibility. Never hold real value on these wallets.
     string internal constant DEFAULT_DEMO_MNEMONIC =
-        "wreck mixed deposit recall beach frozen tragic describe pony impulse orbit agree";
+        "what attitude accuse zero typical indoor toddler riot topple reward media robot";
 
     uint256 internal constant R = 5_000_000e18; // raise target (KRWs)
     uint256 internal constant P = 10_000e18; // price per token

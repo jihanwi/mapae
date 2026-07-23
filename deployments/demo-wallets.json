@@ -1,14 +1,46 @@
 {
-  "note": "TEST-ONLY demo wallets, derived from the mnemonic hardcoded in script/DemoStage1.s.sol. Publicly known by design — never hold real value here.",
+  "note": "TEST-ONLY demo wallets (M5 clean set), derived from the mnemonic hardcoded in script/DemoStage1.s.sol. Publicly known by design — never hold real value here. M3 wallets are retired (deployments/archive-m3/).",
   "derivationPath": "m/44'/60'/0'/0/{index}",
   "wallets": [
-    {"index": 0, "role": "creatorA", "address": "0x4bCE7178d986a2c0caf1F487D61e7e78d94843E8"},
-    {"index": 1, "role": "creatorB", "address": "0xB484DcB40bBd0d47DB6DAc2416827e2482Fc1C9E"},
-    {"index": 2, "role": "fan", "address": "0x502a2e99cf24F29079dfCeE7088E27662Cffc797"},
-    {"index": 3, "role": "fan", "address": "0xbA329a80074653Dc228cB7C99433118976066651"},
-    {"index": 4, "role": "fan", "address": "0xfd10909Bc51d4829aCc0Da903F9e01121479e4ff"},
-    {"index": 5, "role": "fan", "address": "0x3Ff8Ce26FcBef5d45CE4E52391EB642c860661d9"},
-    {"index": 6, "role": "fan", "address": "0x764ACA8AC51956336DB666A61e65DFe0E44c4988"},
-    {"index": 7, "role": "fan-cancel", "address": "0xA637BA72486cf36a3fD1ea197632903c4f6c117a"}
+    {
+      "index": 0,
+      "role": "creatorA",
+      "address": "0x63FE8983be7Ce4b4C93caaBB19c3A4D22a78c297"
+    },
+    {
+      "index": 1,
+      "role": "creatorB",
+      "address": "0x3EAe801088bF3eD75dF513367BF916eCcD8803Fd"
+    },
+    {
+      "index": 2,
+      "role": "fan",
+      "address": "0xFCB455DA31Ae46cEd826563d7280E7add7A1E67A"
+    },
+    {
+      "index": 3,
+      "role": "fan",
+      "address": "0x6F227f4754ad67A6C68451Aa3bF80bB4DE138C5a"
+    },
+    {
+      "index": 4,
+      "role": "fan",
+      "address": "0x6030791863C54e20de0623250c2518e5b29e4A39"
+    },
+    {
+      "index": 5,
+      "role": "fan",
+      "address": "0xe357dF015f4663Aab8D001824CAf07F903566c5a"
+    },
+    {
+      "index": 6,
+      "role": "fan",
+      "address": "0xF48127fFccEeA4C721FC98B22a271819f0FcF629"
+    },
+    {
+      "index": 7,
+      "role": "fan-cancel",
+      "address": "0xca10d75F4a1Cf729E04A3854483792435008aFFb"
+    }
   ]
 }

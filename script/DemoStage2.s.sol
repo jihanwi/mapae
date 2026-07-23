@@ -19,7 +19,7 @@ import {MembershipToken} from "../src/MembershipToken.sol";
 contract DemoStage2 is Script {
     // Same TEST-ONLY mnemonic as DemoStage1.
     string internal constant DEFAULT_DEMO_MNEMONIC =
-        "wreck mixed deposit recall beach frozen tragic describe pony impulse orbit agree";
+        "what attitude accuse zero typical indoor toddler riot topple reward media robot";
 
     uint256[8] internal keys;
     address[8] internal wallets;
