@@ -57,6 +57,20 @@ contract MockDojangTest is Test {
         assertTrue(dojang.isVerified(carol));
     }
 
+    /// M5b: one-click demo verification — anyone can self-verify on the mock.
+    function test_SelfVerify() public {
+        assertFalse(dojang.isVerified(alice));
+        vm.prank(alice);
+        vm.expectEmit(true, false, false, true);
+        emit MockDojang.SelfVerified(alice);
+        dojang.selfVerify();
+        assertTrue(dojang.isVerified(alice));
+        // owner path unaffected: owner can still revoke
+        vm.prank(owner);
+        dojang.setVerified(alice, false);
+        assertFalse(dojang.isVerified(alice));
+    }
+
     function test_SetVerifiedBatch_RevertNonOwner() public {
         address[] memory accounts = new address[](1);
         accounts[0] = alice;

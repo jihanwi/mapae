@@ -12,8 +12,17 @@ contract MockDojang is IDojang, Ownable {
     mapping(address account => bool) private _verified;
 
     event VerifiedSet(address indexed account, bool isVerified);
+    event SelfVerified(address indexed account);
 
     constructor() Ownable(msg.sender) {}
+
+    /// @notice 테스트넷 데모 전용 — 심사위원 원클릭 체험용. 누구나 자신을
+    ///         verified로 등록할 수 있다. 실 Dojang 검증은 EAS 어테스테이션
+    ///         기반이며(DojangEASAdapter), 이 함수는 Mock에만 존재한다.
+    function selfVerify() external {
+        _verified[msg.sender] = true;
+        emit SelfVerified(msg.sender);
+    }
 
     /// @inheritdoc IDojang
     function isVerified(address account) external view returns (bool) {
