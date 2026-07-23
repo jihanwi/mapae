@@ -18,7 +18,7 @@ import {MembershipToken} from "../src/MembershipToken.sol";
 
 contract DemoStage2 is Script {
     // Same TEST-ONLY mnemonic as DemoStage1.
-    string internal constant DEMO_MNEMONIC =
+    string internal constant DEFAULT_DEMO_MNEMONIC =
         "wreck mixed deposit recall beach frozen tragic describe pony impulse orbit agree";
 
     uint256[8] internal keys;
@@ -26,7 +26,7 @@ contract DemoStage2 is Script {
 
     function run() external {
         for (uint32 i = 0; i < 8; i++) {
-            keys[i] = vm.deriveKey(DEMO_MNEMONIC, i);
+            keys[i] = vm.deriveKey(_mnemonic(), i);
             wallets[i] = vm.addr(keys[i]);
         }
         string memory state = vm.readFile("deployments/demo-state.json");
@@ -94,5 +94,11 @@ contract DemoStage2 is Script {
             if (wallets[i] == wallet) return keys[i];
         }
         revert("unknown demo wallet");
+    }
+
+    /// @dev M5 clean-demo support: override with DEMO_MNEMONIC env to derive a
+    ///      fresh wallet set (never reuse the M3 demo wallets on a redeploy).
+    function _mnemonic() internal view returns (string memory) {
+        return vm.envOr("DEMO_MNEMONIC", string(DEFAULT_DEMO_MNEMONIC));
     }
 }

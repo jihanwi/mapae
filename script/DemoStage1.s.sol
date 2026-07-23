@@ -23,7 +23,7 @@ import {MockDojang} from "../src/mocks/MockDojang.sol";
 contract DemoStage1 is Script {
     // TEST-ONLY mnemonic, committed to a public repo ON PURPOSE for demo
     // reproducibility. Never hold real value on these wallets.
-    string internal constant DEMO_MNEMONIC =
+    string internal constant DEFAULT_DEMO_MNEMONIC =
         "wreck mixed deposit recall beach frozen tragic describe pony impulse orbit agree";
 
     uint256 internal constant R = 5_000_000e18; // raise target (KRWs)
@@ -45,7 +45,7 @@ contract DemoStage1 is Script {
         uint256[8] memory keys;
         address[] memory wallets = new address[](8);
         for (uint32 i = 0; i < 8; i++) {
-            keys[i] = vm.deriveKey(DEMO_MNEMONIC, i);
+            keys[i] = vm.deriveKey(_mnemonic(), i);
             wallets[i] = vm.addr(keys[i]);
         }
         // Roles: [0] creator A, [1] creator B, [2..7] fans.
@@ -140,5 +140,11 @@ contract DemoStage1 is Script {
         cp.sponsorBurnBps = 1000; // 10% of sponsorships burn
         cp.vestingDuration = 1080 days; // 36mo
         cp.vestingCliff = 180 days; // 6mo
+    }
+
+    /// @dev M5 clean-demo support: override with DEMO_MNEMONIC env to derive a
+    ///      fresh wallet set (never reuse the M3 demo wallets on a redeploy).
+    function _mnemonic() internal view returns (string memory) {
+        return vm.envOr("DEMO_MNEMONIC", string(DEFAULT_DEMO_MNEMONIC));
     }
 }

@@ -15,6 +15,11 @@ GIWA 체인(업비트/두나무의 이더리움 L2) 위의 크리에이터 온�
 
 ```sh
 source .env
+# -1) [재배포 시] 직전 배포 기록 아카이브 + 신규 데모 니모닉 (기존 지갑 재사용 금지)
+mkdir -p deployments/archive-m3 && git mv deployments/*.json deployments/archive-m3/
+cast wallet new-mnemonic --words 12   # 출력된 니모닉을 아래에 export (데모 전용, 실가치 보관 금지)
+export DEMO_MNEMONIC="<새 니모닉>"     # 모든 DemoStage 스크립트가 이 값을 사용 (미설정 시 기본값)
+
 # 0) 최초 1회: 배포 + 직접 배포분 verify (keystore 패스워드 입력 필요)
 forge script script/Deploy.s.sol --account deployer --rpc-url $GIWA_SEPOLIA_RPC_URL \
   --broadcast --verify --verifier blockscout --verifier-url $BLOCKSCOUT_API_URL

@@ -21,7 +21,7 @@ import {MockKRW} from "../src/mocks/MockKRW.sol";
 
 contract DemoStage3 is Script {
     // Same TEST-ONLY mnemonic as DemoStage1/2.
-    string internal constant DEMO_MNEMONIC =
+    string internal constant DEFAULT_DEMO_MNEMONIC =
         "wreck mixed deposit recall beach frozen tragic describe pony impulse orbit agree";
 
     function run() external {
@@ -36,8 +36,8 @@ contract DemoStage3 is Script {
         MembershipToken token = offA.token();
         Sponsorship sponsorship = Sponsorship(factory.sponsorshipOf(address(offA)));
 
-        uint256 buyerKey = vm.deriveKey(DEMO_MNEMONIC, 2); // fan wallet
-        uint256 sellerKey = vm.deriveKey(DEMO_MNEMONIC, 3);
+        uint256 buyerKey = vm.deriveKey(_mnemonic(), 2); // fan wallet
+        uint256 sellerKey = vm.deriveKey(_mnemonic(), 3);
         address buyer = vm.addr(buyerKey);
         address seller = vm.addr(sellerKey);
 
@@ -73,5 +73,11 @@ contract DemoStage3 is Script {
 
         console.log("spot after:", pool.spotPrice());
         console.log("token supply:", token.totalSupply());
+    }
+
+    /// @dev M5 clean-demo support: override with DEMO_MNEMONIC env to derive a
+    ///      fresh wallet set (never reuse the M3 demo wallets on a redeploy).
+    function _mnemonic() internal view returns (string memory) {
+        return vm.envOr("DEMO_MNEMONIC", string(DEFAULT_DEMO_MNEMONIC));
     }
 }
