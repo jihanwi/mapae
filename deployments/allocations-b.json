@@ -1,0 +1,42 @@
+{
+  "seed": "0x7a7a3f309af5f6a35b9de38ecd15d938805b96d2365d924e8cb6536e76685185",
+  "price": "10000000000000000000000",
+  "qSale": "500000000000000000000",
+  "totalSold": "300000000000000000000",
+  "totalRaised": "3000000000000000000000000",
+  "root": "0x4d98a2fa4364d788ddb18ad9b23bd585968cf08ec74ba815f96116216320d725",
+  "allocations": [
+    {
+      "address": "0x6030791863c54e20de0623250c2518e5b29e4a39",
+      "committed": "1000000000000000000000000",
+      "allocation": "100000000000000000000",
+      "cost": "1000000000000000000000000",
+      "refund": "0",
+      "proof": [
+        "0x2cf9011a3f2109fc65eb02c4aa26c3222b5461d4b972442b829e8f3c77c6a226"
+      ]
+    },
+    {
+      "address": "0x6f227f4754ad67a6c68451aa3bf80bb4de138c5a",
+      "committed": "1000000000000000000000000",
+      "allocation": "100000000000000000000",
+      "cost": "1000000000000000000000000",
+      "refund": "0",
+      "proof": [
+        "0xadc20a8904ad592f8d4b53da797b52ecf36e3a060a2a9bbde4f9c788e027ca71",
+        "0xbf4e2fb67dfd1d5a0f1219f5ea270ec42aecd8ebe75017c03c1901098f095d5c"
+      ]
+    },
+    {
+      "address": "0xfcb455da31ae46ced826563d7280e7add7a1e67a",
+      "committed": "1000000000000000000000000",
+      "allocation": "100000000000000000000",
+      "cost": "1000000000000000000000000",
+      "refund": "0",
+      "proof": [
+        "0x515dda607300c4f057c0e104177a23cb6579bd9b3b116e58271f8efb9a328b50",
+        "0xbf4e2fb67dfd1d5a0f1219f5ea270ec42aecd8ebe75017c03c1901098f095d5c"
+      ]
+    }
+  ]
+}

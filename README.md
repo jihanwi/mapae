@@ -6,6 +6,7 @@ GIWA 체인(업비트/두나무의 이더리움 L2) 위의 크리에이터 온�
 
 ## 🏛 GASOK 1기 제출물 (GIWA Sepolia)
 
+- **심사위원용 5분 워크스루**: [`docs/SUBMISSION.md`](docs/SUBMISSION.md) — explorer 링크 순서대로 클릭하면 전체 수명주기 확인
 - **배포 주소·verify 상태·데모 히스토리**: [`docs/DEPLOYMENTS.md`](docs/DEPLOYMENTS.md)
 - **GIWA-Native**: [`DojangEASAdapter`](src/DojangEASAdapter.sol)가 실 DojangScroll + EAS predeploy를 조회 — Verified Address(업비트 KYC 증명) 지갑이 곧 크리에이터 온보딩 ([`docs/DOJANG.md`](docs/DOJANG.md))
 - **데모**: Offering A(초과 응모·추첨 배정) / Offering B(미달·미판매분 소각) 2단계 시나리오 — 아래 "데모 실행 절차"
@@ -78,7 +79,7 @@ forge script script/DemoStage3.s.sol --account deployer --rpc-url $GIWA_SEPOLIA_
 | M2 | Factory + RedeemManager, 토크노믹스 파라미터화 | ✅ 완료 |
 | M3 | GIWA Sepolia 배포·verify + Dojang EAS 어댑터 + 데모 | ✅ 완료 |
 | M4 | AMM 정가 상장 + LP 영구 락업 + Vesting + Sponsorship | ✅ 완료 |
-| M5 | 최종 클린 재배포 + 데모 (7/28~29, 제출: ~2026-07-31 GASOK 1기) | 예정 |
+| M5 | 최종 클린 재배포 + 풀사이클 데모 + 제출 패키지 (`v1.0-gasok`) | ✅ 완료 |
 
 ## 개발
 

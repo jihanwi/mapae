@@ -40,13 +40,19 @@ function num(v) {
 // GIWA's RPC caps eth_getLogs at 100k blocks — default to the last 90k,
 // overridable with --from-block for older factories.
 const latestBlock = parseInt(cast("block-number", "--rpc-url", args.rpc), 10);
-const fromBlock = args["from-block"] ?? String(Math.max(0, latestBlock - 90_000));
+const fromBlock = parseInt(args["from-block"] ?? String(Math.max(0, latestBlock - 90_000)), 10);
+// The scan window itself must stay under the 100k cap — pass --to-block for
+// old factories, or rely on the 90k default window.
+const toBlock = Math.min(parseInt(args["to-block"] ?? String(latestBlock), 10), fromBlock + 90_000);
 const topic0 = cast("keccak", "OfferingCreated(address,address,address,address,address,address)");
 const raw = cast(
-    "logs", "--rpc-url", args.rpc, "--from-block", fromBlock, "--to-block", "latest",
+    "logs", "--rpc-url", args.rpc, "--from-block", String(fromBlock), "--to-block", String(toBlock),
     "--address", args.factory, topic0, "--json"
 );
 const logs = JSON.parse(raw);
+if (logs.length === 0) {
+    console.log(`no OfferingCreated events in blocks ${fromBlock}–${toBlock} — check --from-block`);
+}
 
 const OFFERING_CTOR =
     "constructor((address,address,address,address,string,string,uint256,uint256,uint256,uint256,uint256,uint16,uint16,uint16,uint8,uint256,uint16,address,uint16,uint16,(address,address,address)))";

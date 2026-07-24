@@ -2,41 +2,63 @@
 
 체인: GIWA Sepolia (chain ID `91342`) · Explorer: https://sepolia-explorer.giwa.io
 
-> **상태: 배포 완료 (2026-07-22), 전 컨트랙트 verified ✅.**
-> 배포자: `0x67a29AE83f3320C5E9b81D8a1531dE8FcCBED00C` · 데모 Stage 1 완료,
-> **Stage 2 실행 가능 시각: 2026-07-22 20:11:24 UTC (= 2026-07-23 05:11:24 KST) 이후**
+> **상태: 최종 배포 완료 (M5, 2026-07-23 배포 · 2026-07-25 데모 완결), 전 컨트랙트 verified ✅.**
+> 배포자: `0x67a29AE83f3320C5E9b81D8a1531dE8FcCBED00C` · 심사위원 워크스루: [`docs/SUBMISSION.md`](SUBMISSION.md)
 
 ## 컨트랙트 주소 (전부 verified ✅)
 
+### 코어
+
 | 컨트랙트 | 주소 |
 |---|---|
-| MockKRW (KRWs) | [`0xD76E01E39dc5414028Fc800B28De72A6ef6233C9`](https://sepolia-explorer.giwa.io/address/0xD76E01E39dc5414028Fc800B28De72A6ef6233C9) |
-| MockDojang | [`0x3b7f6eff2933dEd3a7e6334b0c6D06c0fE37fBAc`](https://sepolia-explorer.giwa.io/address/0x3b7f6eff2933dEd3a7e6334b0c6D06c0fE37fBAc) |
-| **MapaeFactory (메인 데모)** | [`0x41329c0D53Bcebf72C499AF0b0dDCDb11cE40F1F`](https://sepolia-explorer.giwa.io/address/0x41329c0D53Bcebf72C499AF0b0dDCDb11cE40F1F) |
-| **DojangEASAdapter (실 Dojang 연동)** | [`0xbdbd941432Ec4cf3e8762007C4F1948308756410`](https://sepolia-explorer.giwa.io/address/0xbdbd941432Ec4cf3e8762007C4F1948308756410) |
-| MapaeFactory (GIWA-Native 쇼케이스) | [`0xd651615E4d7146E9A2d606A0bBCe65EE41f264BB`](https://sepolia-explorer.giwa.io/address/0xd651615E4d7146E9A2d606A0bBCe65EE41f264BB) |
-| Offering A (모드 A, 초과 응모) | [`0x5cfa0C147ea1A2B7DF7811Df0653164b81257bAA`](https://sepolia-explorer.giwa.io/address/0x5cfa0C147ea1A2B7DF7811Df0653164b81257bAA) |
-| MembershipToken A (MAPA) | [`0x7F00952e1e397C6b5eF00123BceCf7020cd2f69B`](https://sepolia-explorer.giwa.io/address/0x7F00952e1e397C6b5eF00123BceCf7020cd2f69B) |
-| RedeemManager A | [`0x6d14006864793f4F16EC6E177c0C89eB7500A9D5`](https://sepolia-explorer.giwa.io/address/0x6d14006864793f4F16EC6E177c0C89eB7500A9D5) |
-| Offering B (모드 B, 미달→소각) | [`0xc13f54b25d030053F4f146516B7283AC427217d0`](https://sepolia-explorer.giwa.io/address/0xc13f54b25d030053F4f146516B7283AC427217d0) |
-| MembershipToken B (MAPB) | [`0xDd7315Fbcdfd682E505A326CfE14D123e6860A9b`](https://sepolia-explorer.giwa.io/address/0xDd7315Fbcdfd682E505A326CfE14D123e6860A9b) |
-| RedeemManager B | [`0xBb7d10E8C8576cBd639B245aF2A72B0d5cbE812A`](https://sepolia-explorer.giwa.io/address/0xBb7d10E8C8576cBd639B245aF2A72B0d5cbE812A) |
+| MockKRW (KRWs) | [`0x44FAb686723C7672CF7cA9018baf502AFfE55d04`](https://sepolia-explorer.giwa.io/address/0x44FAb686723C7672CF7cA9018baf502AFfE55d04) |
+| MockDojang (selfVerify 원클릭 체험) | [`0x850Eb31fd5418e902B8DB1e7f126b12032F787aB`](https://sepolia-explorer.giwa.io/address/0x850Eb31fd5418e902B8DB1e7f126b12032F787aB) |
+| PoolFactory | [`0x392C0Dbb43d3f118D10f80F7FE33E5aeba41F7f6`](https://sepolia-explorer.giwa.io/address/0x392C0Dbb43d3f118D10f80F7FE33E5aeba41F7f6) |
+| **MapaeFactory (메인 데모)** | [`0xb5b8f10fE64A785279329e1Ab1fE4AE67F3975A7`](https://sepolia-explorer.giwa.io/address/0xb5b8f10fE64A785279329e1Ab1fE4AE67F3975A7) |
+| **DojangEASAdapter (실 Dojang 연동)** | [`0x69903dD3b32B5EC3BB8DE8D167053ec80e4b3566`](https://sepolia-explorer.giwa.io/address/0x69903dD3b32B5EC3BB8DE8D167053ec80e4b3566) |
+| MapaeFactory (GIWA-Native 쇼케이스) | [`0xC4d23C7349FA1496f39380A32Cce98D850dB60dA`](https://sepolia-explorer.giwa.io/address/0xC4d23C7349FA1496f39380A32Cce98D850dB60dA) |
 
-## 데모 히스토리 (Stage 1 + 2 완료 ✅, 2026-07-23)
+### Offering A 스택 (모드 A — 초과 응모·추첨·상장·리딤·후원)
 
-- **Offering A** (모드 A): 5.1M / 5M KRWs 초과 응모 (부분 취소 1건) → 마감 →
-  [settle](https://sepolia-explorer.giwa.io/tx/0xbac0152dd643eb3070056da0d3c815de397ade69cd0d2203777de7e54adde0d9)
-  (배정 500 토큰, 균등+가중추첨, 시드 = 마감 후 첫 블록 `31405968`의 해시) → 6개 지갑 전원 claim →
-  [createRedeemable](https://sepolia-explorer.giwa.io/tx/0xb0a44358ca23250748a545d696236d0ee698bdb4106dc7ab5423e564298667c4) →
-  리딤(소각) 2건 ([1](https://sepolia-explorer.giwa.io/tx/0x060c56c75e4f9d8b58e7827089a6578d7d6e74e013170c50156f17a2db3c57cb),
-  [2](https://sepolia-explorer.giwa.io/tx/0xef4a3d5ba63c43e76add40ff7cd0a3814361adef8a689108aed1581332e4abd3)).
-  최종 공급 813.33 토큰 (S′ 833.33 − 리딤 소각 20)
-- **Offering B** (모드 B): 3M / 5M (60%) 미달 →
-  [settle](https://sepolia-explorer.giwa.io/tx/0x7700f9707a199afbf1c64f7cbcb9e7f3fc915e8743de2d088af2ad7dc49ba439)
-  — **UnsoldBurned 200 토큰** (`Transfer → 0x0`, "더 희소하게 태어난다" 온체인 증빙) → 전원 claim.
-  최종 공급 500 토큰 = S′
-- 제3자 검증: settle 트랜잭션의 `Settled` 이벤트에서 시드를 읽어 `script/allocation/`으로
-  재계산하면 위 머클루트가 재현된다 (절차: 아래 "재현" 섹션)
+| 컨트랙트 | 주소 |
+|---|---|
+| Offering A | [`0xdE5c071C58553A9fd8662eDdD51A30bAFCfabaec`](https://sepolia-explorer.giwa.io/address/0xdE5c071C58553A9fd8662eDdD51A30bAFCfabaec) |
+| MembershipToken A (MAPA) | [`0xF18409dE4939996c996E9Ae454bE55cCfcc617F5`](https://sepolia-explorer.giwa.io/address/0xF18409dE4939996c996E9Ae454bE55cCfcc617F5) |
+| **MapaePool A (정가 상장, LP→0xdEaD)** | [`0x23CAB150FA6Ca1503aA1FA10B1C7FE3b88db7CB6`](https://sepolia-explorer.giwa.io/address/0x23CAB150FA6Ca1503aA1FA10B1C7FE3b88db7CB6) |
+| RedeemManager A | [`0x49B5006115eA7864281c9Cc8fEa829292A204Bb4`](https://sepolia-explorer.giwa.io/address/0x49B5006115eA7864281c9Cc8fEa829292A204Bb4) |
+| MapaeVesting A (36mo/6mo) | [`0x4E0528b1C72073d55583332915f75A7cf2F7422f`](https://sepolia-explorer.giwa.io/address/0x4E0528b1C72073d55583332915f75A7cf2F7422f) |
+| Sponsorship A | [`0x23b23Af6170E37D205F4D7C1d5f1E09cBE92226F`](https://sepolia-explorer.giwa.io/address/0x23b23Af6170E37D205F4D7C1d5f1E09cBE92226F) |
+
+### Offering B 스택 (모드 B — 미달·미판매분 소각)
+
+| 컨트랙트 | 주소 |
+|---|---|
+| Offering B | [`0x1e5050B8f6e6A5203dab37902b051B421D76b32c`](https://sepolia-explorer.giwa.io/address/0x1e5050B8f6e6A5203dab37902b051B421D76b32c) |
+| MembershipToken B (MAPB) | [`0x4BC92cfea5Fb24d529eC4Ba154aCA9d34E56805D`](https://sepolia-explorer.giwa.io/address/0x4BC92cfea5Fb24d529eC4Ba154aCA9d34E56805D) |
+| MapaePool B | [`0x765d258bBBBD184749712133617A1320F180a360`](https://sepolia-explorer.giwa.io/address/0x765d258bBBBD184749712133617A1320F180a360) |
+| RedeemManager B | [`0x67A784c871BbB6f8291D2F44fA3E77d4e7b67513`](https://sepolia-explorer.giwa.io/address/0x67A784c871BbB6f8291D2F44fA3E77d4e7b67513) |
+| MapaeVesting B | [`0xCEa52ab0553581b2343D10CCCb3E28F6Dba1E143`](https://sepolia-explorer.giwa.io/address/0xCEa52ab0553581b2343D10CCCb3E28F6Dba1E143) |
+| Sponsorship B | [`0xaCa3FD0072f16CDe3EFD0191c3c2f1eBc5a20901`](https://sepolia-explorer.giwa.io/address/0xaCa3FD0072f16CDe3EFD0191c3c2f1eBc5a20901) |
+
+## 데모 히스토리 (Stage 1~3 완결 ✅)
+
+**발행**: [createOffering A](https://sepolia-explorer.giwa.io/tx/0xb610613d61a975b77c0b65e24d16003f5c1d5cd2d89970418293373eb1c5ffad) ·
+[createOffering B](https://sepolia-explorer.giwa.io/tx/0xbad491e6611e3b87ab5eb992f7c595fecfc946e7fbbf165fe23330f5dd1dd7ab) —
+A: 5.1M/5M 초과 응모 ([부분 취소](https://sepolia-explorer.giwa.io/tx/0x5f93de281330b29054438e9ef5b849b8c47db161c4c263183f9d297d59ffb07f) 포함) · B: 3M/5M (60%)
+
+**정산+상장** (원자 실행, 시드 = 마감 후 첫 블록 `31488807` 해시):
+- [settle A](https://sepolia-explorer.giwa.io/tx/0xb3f3921a854547741b1053e5f0603e339dd09446a3ecdfac230ae3fa1fbc7abb) — 500 토큰 배정(균등+가중추첨), 풀 정가 시딩(스팟 == P = 10,000 KRWs), LP 지분 0xdEaD 민트, 루트 `0x746c...c36a`
+- [settle B](https://sepolia-explorer.giwa.io/tx/0x0f14b9234708021ad0d4427ea705dc8dfaa1a64cac14cedd27252be28be9091f) — **UnsoldBurned 200 토큰** (`Transfer → 0x0`) 후 300 판매분만 발행·상장, 루트 `0x4d98...d725`
+
+**소비**: [createRedeemable](https://sepolia-explorer.giwa.io/tx/0x6bc8f296f9ba9f2c12a47330c8d14a94595f2adce666717c48007ea99e1f8162) →
+리딤 소각 2건 ([1](https://sepolia-explorer.giwa.io/tx/0x85f176ee0d093bb86558d6fa541067c93e6ab3d8f45afffdee045dbdb216166f),
+[2](https://sepolia-explorer.giwa.io/tx/0x1d940bc5682b1252ba06c5ed7e349089b15838cec03309dbd636a7306cd24d76))
+
+**유통+플라이휠 (Stage 3)**:
+[매수 20k KRWs → 1.910 토큰](https://sepolia-explorer.giwa.io/tx/0xc0b19bfa4bfe534f6fe988c9aabe340598d3dc265239d379c3240ef96547156c) ·
+[매도 1 토큰 (0.5% 즉시 소각)](https://sepolia-explorer.giwa.io/tx/0xd497d2a294f9c559a2a62ee6a3d3b46fdf768c5d8d7c7d79b265c1d034a23015) ·
+[후원 10k KRWs (10% 매수·소각 + 메시지)](https://sepolia-explorer.giwa.io/tx/0xd9e31a26f798542bc21d6b6684101b97eb09b2f6e494ab07d98ac4f92dc5a745) ·
+[convertAndBurn (미니 바이백)](https://sepolia-explorer.giwa.io/tx/0xd0d0b339290ad6a64d3b8019ec7462ca511400fbd84d3c07bcc8c007534f4a00)
 
 ## 이원 구성 (심사위원용)
 
@@ -83,10 +105,6 @@ flowchart TB
     O -->|Committed/Cancelled 이벤트| S
     ST -->|settle root, seed| O
 ```
-
-> **M4/M5 주의**: 위 주소 테이블은 M3(1차) 배포 기준. M4(AMM 상장·베스팅·후원)로
-> 컨트랙트가 확장되어 **7/28~29 최종 클린 재배포 예정** — 재배포 시 이 표가 갱신되고,
-> 1차 배포 기록(JSON)은 `deployments/archive-m3/`에 보존된다 (아래 아카이브 섹션).
 
 ## 아카이브 — 1차 배포 (M3, 2026-07-22)
 
