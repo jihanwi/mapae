@@ -1,6 +1,6 @@
 # MAPAE — 심사위원용 5분 워크스루 (GASOK 1기)
 
-> 최종 배포 기준 (M5, GIWA Sepolia · 전 컨트랙트 verified). 전체 주소 표: [`docs/DEPLOYMENTS.md`](DEPLOYMENTS.md)
+> 최종 배포 기준 (M5, GIWA Sepolia · 배포 22개 전부 verified). 전체 주소 표: [`docs/DEPLOYMENTS.md`](DEPLOYMENTS.md)
 
 MAPAE는 GIWA 위의 크리에이터 온체인 회원권 플랫폼입니다 — **발행(정가 공모) · 유통(AMM
 정가 상장) · 소비(리딤·후원 소각)** 세 개의 시장이 전부 온체인이며, 아래 explorer 링크를
@@ -21,7 +21,7 @@ MAPAE는 GIWA 위의 크리에이터 온체인 회원권 플랫폼입니다 — 
 | `settle` 트랜잭션 1개 안에서: 민트 → 미판매분 소각 → **AMM 풀 정가 시딩** → **LP 지분 0xdEaD 민트** → 대금 배분 | [settle A](https://sepolia-explorer.giwa.io/tx/0xb3f3921a854547741b1053e5f0603e339dd09446a3ecdfac230ae3fa1fbc7abb) |
 | `Settled` 이벤트의 시드 — 배정(균등+가중추첨)은 결정론적: 누구나 `script/allocation/`으로 재계산해 머클루트 일치를 검증 | 같은 tx |
 | Offering B: **UnsoldBurned** — 미달 공모의 미판매분 40% 즉시 소각 (`Transfer → 0x0`) — "더 희소하게 태어난다" | [settle B](https://sepolia-explorer.giwa.io/tx/0x0f14b9234708021ad0d4427ea705dc8dfaa1a64cac14cedd27252be28be9091f) |
-| 풀 스팟가 == 공모가 P (상장가 조작 구조적 불가, 불변식 11) · LP 100% dEaD (러그 구조적 불가, 불변식 7) | [MapaePool A](https://sepolia-explorer.giwa.io/address/0x23CAB150FA6Ca1503aA1FA10B1C7FE3b88db7CB6) |
+| **상장 순간** 스팟가 = 공모가 P — settle A tx의 시딩 이벤트(LiquidityMinted: **75만 KRWs / 75장** = 10,000 KRWs/장)에서 확인. 현재 풀 스팟은 이후 데모 거래를 반영한 값. LP 지분 100% = 0xdEaD 보유 (러그 구조적 불가, 불변식 7·11) | [settle A](https://sepolia-explorer.giwa.io/tx/0xb3f3921a854547741b1053e5f0603e339dd09446a3ecdfac230ae3fa1fbc7abb) · [MapaePool A](https://sepolia-explorer.giwa.io/address/0x23CAB150FA6Ca1503aA1FA10B1C7FE3b88db7CB6) |
 
 ## 3. 유통 + 소비 — 플라이휠
 
@@ -39,7 +39,8 @@ MAPAE는 GIWA 위의 크리에이터 온체인 회원권 플랫폼입니다 — 
 - **논업그레이더블 전 모듈** + 민트 권한 정산 시 영구 소각 — 공급 조작 불가
 - 조작된 배정 루트가 있어도 온체인 회계 상한이 초과 인출 차단 (`docs/TRUST.md`)
 - 정산 지연·미달 시 **누구나** 환불 개시 가능 (escape hatch) — 자금 잠김 없음
-- 144개 Foundry 테스트 (invariant 14 포함) + 결정론적 배정 파이프라인 공개
+- 145개 Foundry 테스트 (invariant 14 포함) + 결정론적 배정 파이프라인 공개
+- **컨트랙트 13종 · 배포 22개 전부 Blockscout verified** — 소스와 바이트코드가 explorer에서 대조 가능
 
 ## 리포 가이드
 

@@ -244,6 +244,63 @@ contract OfferingUnitTest is OfferingTestBase {
     // A2: settle never underflows anywhere inside the parameter bands
     // ------------------------------------------------------------------
 
+    /// Post-v1.0 polish: reserve-boundary fuzz — settle must succeed without
+    /// underflow across the bands INCLUDING combos where the share sum is
+    /// EXACTLY 100% (reserve → 0). forceBoundary steers onto sum == BPS; when
+    /// the fuzzed (f, c) can't reach it inside the creator band, it pins the
+    /// known exact combo f=6000, c=2500 (lp=1500), ct=2000 → 10,000 bps.
+    function testFuzz_SettleReserveNeverUnderflows(
+        uint16 fBps,
+        uint16 cBps,
+        uint16 ctBps,
+        uint256 totalSold,
+        bool forceBoundary
+    ) public {
+        fBps = uint16(bound(fBps, 5000, 7000));
+        cBps = uint16(bound(cBps, 1500, 3000));
+        uint256 lpBps = uint256(cBps) * fBps / 10_000;
+        if (forceBoundary) {
+            int256 exact = int256(10_000) - int256(uint256(fBps)) - 500 - int256(lpBps);
+            if (exact < 1500 || exact > 3000) {
+                (fBps, cBps, lpBps, exact) = (6000, 2500, 1500, 2000);
+            }
+            ctBps = uint16(uint256(exact));
+        } else {
+            ctBps = uint16(bound(ctBps, 1500, 3000));
+        }
+
+        IOffering.OfferingParams memory p = defaultParams(IOffering.RefundMode.Partial);
+        p.fBps = fBps;
+        p.cBps = cBps;
+        p.creatorTokenBps = ctBps;
+        p.walletLimit = RAISE;
+
+        if (uint256(fBps) + ctBps + 500 + lpBps > 10_000) {
+            vm.expectRevert(IOffering.InvalidConfig.selector);
+            new Offering(p);
+            return;
+        }
+        Offering o = new Offering(p);
+        commitAs(o, fan1, RAISE);
+        totalSold = bound(totalSold, 1, o.qSale());
+        uint256 totalRaised = totalSold * PRICE / 1e18;
+        vm.warp(p.deadline);
+        // The assert: settle completes (no reserve underflow revert) with every
+        // share accounted for — Σ balances == S' even at the exact-100% edge.
+        o.settle(leafFor(fan1, totalSold, RAISE - totalRaised), totalSold, totalRaised, bytes32(0));
+
+        MembershipToken token = o.token();
+        uint256 supply = totalSold * 10_000 / fBps;
+        address poolAddr = address(o.pool());
+        uint256 poolTokens = poolAddr == address(0) ? 0 : token.balanceOf(poolAddr);
+        assertEq(
+            token.balanceOf(address(o)) + token.balanceOf(creatorVesting) + poolTokens + token.balanceOf(platform)
+                + token.balanceOf(reserve),
+            supply
+        );
+        assertEq(token.totalSupply(), supply);
+    }
+
     /// Fuzz every (fBps, cBps, creatorTokenBps, totalSold) combination in the
     /// bands: feasible combos must settle with exact share accounting; combos
     /// breaking Σ shares ≤ 100% must be rejected at construction.

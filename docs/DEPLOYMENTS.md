@@ -2,7 +2,8 @@
 
 체인: GIWA Sepolia (chain ID `91342`) · Explorer: https://sepolia-explorer.giwa.io
 
-> **상태: 최종 배포 완료 (M5, 2026-07-23 배포 · 2026-07-25 데모 완결), 전 컨트랙트 verified ✅.**
+> **상태: 최종 배포 완료 — 2026-07-23 배포 · 2026-07-24 데모 완결 (UTC).**
+> **컨트랙트 13종 · 배포 22개 전부 Blockscout verified ✅** (직접 배포 6 + 내부 CREATE 16 — 디플로이어·풀 포함 전수 확인).
 > 배포자: `0x67a29AE83f3320C5E9b81D8a1531dE8FcCBED00C` · 심사위원 워크스루: [`docs/SUBMISSION.md`](SUBMISSION.md)
 
 ## 컨트랙트 주소 (전부 verified ✅)
