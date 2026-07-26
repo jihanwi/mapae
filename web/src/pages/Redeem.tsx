@@ -5,7 +5,7 @@ import {copy} from "../copy";
 import {ADDR} from "../contracts/addresses";
 import {MapaeFactoryAbi, MembershipTokenAbi, MockKRWAbi, RedeemManagerAbi, SponsorshipAbi} from "../contracts/abis";
 import {useEventLogs, useOfferings, OfferingInfo} from "../hooks";
-import {Medallion, Skeleton} from "../components/ui";
+import {Medallion, Skeleton, TextSkeleton} from "../components/ui";
 import {RunFn, TxButton} from "../components/tx";
 import {fmt, shortAddr} from "../lib/format";
 import {creatorOf} from "../lib/creators";
@@ -53,7 +53,7 @@ function CreatorTabs({list, sel, onSel}: {list: OfferingInfo[]; sel: number; onS
                 return (
                     <button key={o.address} onClick={() => onSel(i)}
                         className={`px-4 py-2 rounded-full text-[13px] border ${i === sel ? "border-brass-400 text-brass-400 bg-ink-700" : "border-ink-700 text-hanji-400 hover:border-brass-600"}`}>
-                        {c.name} {c.en}
+                        {c ? `${c.name} ${c.en}` : <TextSkeleton w={64} h={13} />}
                     </button>
                 );
             })}

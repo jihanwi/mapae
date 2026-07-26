@@ -3,7 +3,7 @@ import {useAccount, useReadContracts} from "wagmi";
 import {Abi} from "viem";
 import {copy} from "../copy";
 import {useOfferings, OfferingInfo} from "../hooks";
-import {Medallion, PrimaryBtn, Skeleton} from "../components/ui";
+import {Medallion, PrimaryBtn, Skeleton, TextSkeleton} from "../components/ui";
 import {fmt} from "../lib/format";
 import {creatorOf} from "../lib/creators";
 import {TIERS, tierIndex, toNextTier} from "../lib/tier";
@@ -57,7 +57,7 @@ function Holding({o, balance}: {o: OfferingInfo; balance: bigint}) {
             <div className="flex-1" style={{minWidth: 280}}>
                 <div className="flex justify-between items-baseline flex-wrap gap-2 mb-3">
                     <div className="text-[17px] font-bold">
-                        {c.name} <span className="text-hanji-400 font-normal">{c.en}</span> 회원권
+                        {c ? <>{c.name} <span className="text-hanji-400 font-normal">{c.en}</span> 회원권</> : <TextSkeleton w={160} h={17} />}
                     </div>
                     <a href={explorerAddr(o.token)} target="_blank" rel="noreferrer" className="text-[13px]">{copy.tx.viewOnChain}</a>
                 </div>

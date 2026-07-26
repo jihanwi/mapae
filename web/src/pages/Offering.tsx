@@ -7,7 +7,7 @@ import {copy} from "../copy";
 import {ADDR} from "../contracts/addresses";
 import {MockKRWAbi, OfferingAbi} from "../contracts/abis";
 import {useOfferings, useParticipantCount} from "../hooks";
-import {Badge, Gauge, Medallion, SecondaryBtn, Skeleton} from "../components/ui";
+import {Badge, Gauge, Medallion, SecondaryBtn, Skeleton, TextSkeleton} from "../components/ui";
 import {RunFn, TxButton} from "../components/tx";
 import {countdown, fmt} from "../lib/format";
 import {creatorOf} from "../lib/creators";
@@ -96,10 +96,10 @@ export default function Offering() {
                 {/* 좌: 크리에이터 */}
                 <div className="flex-1" style={{minWidth: 340}}>
                     <div className="flex items-center gap-5 mb-7">
-                        <Medallion char={c.name[0]} size={104} glow />
+                        <Medallion char={c ? c.name[0] : "…"} size={104} glow />
                         <div>
                             <h1 className="m-0 text-[28px] font-bold">
-                                {c.name} <span className="text-hanji-400 font-normal">{c.en}</span>
+                                {c ? <>{c.name} <span className="text-hanji-400 font-normal">{c.en}</span></> : <TextSkeleton w={180} h={28} />}
                             </h1>
                             <div className="flex items-center gap-2 mt-2 text-[13px] text-success">
                                 <span>✓</span> {copy.home.verifiedCreator} — Dojang Verified
@@ -108,7 +108,7 @@ export default function Offering() {
                     </div>
                     <div className="text-[15px] leading-relaxed text-hanji-100 space-y-4">
                         <p className="m-0">
-                            {c.name}의 온체인 회원권입니다. 공모 수량 {fmt(o.qSale, 2)}장을 단 한 번만 발행하며,
+                            {c ? `${c.name}의` : "이"} 온체인 회원권입니다. 공모 수량 {fmt(o.qSale, 2)}장을 단 한 번만 발행하며,
                             총공급은 정산 시점에 확정돼요. 이후 추가 발행은 불가능해요.
                         </p>
                         <p className="m-0">

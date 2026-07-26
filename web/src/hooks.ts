@@ -1,6 +1,6 @@
-import {useQuery} from "@tanstack/react-query";
+import {useQuery, useQueryClient} from "@tanstack/react-query";
 import {useAccount, usePublicClient, useReadContract, useReadContracts} from "wagmi";
-import {Abi, AbiEvent, parseAbiItem} from "viem";
+import {Abi, AbiEvent, Log, parseAbiItem} from "viem";
 import {ADDR, DEPLOY_BLOCK} from "./contracts/addresses";
 import {MapaeFactoryAbi, MembershipTokenAbi, MockDojangAbi, MockKRWAbi, OfferingAbi, MapaePoolAbi} from "./contracts/abis";
 
@@ -75,25 +75,58 @@ export function useOfferings() {
             } as OfferingInfo;
         })
         .filter((x): x is OfferingInfo => x !== null);
-    return {offerings, isLoading: list.isLoading || reads.isLoading};
+    return {offerings, isLoading: list.isLoading || reads.isLoading || tokenReads.isLoading};
 }
 
-/** GIWA getLogs 100k 상한 대응 청크 스캔 */
+export type EventLog = Log & {args: Record<string, unknown>};
+type LogScan = {lastScanned: bigint; logs: EventLog[]};
+
+/** GIWA getLogs 100k 상한 대응 청크 스캔 — 초회 전체, 이후 lastScanned+1부터 증분 누적 */
 export function useEventLogs(address: `0x${string}` | undefined, eventSig: string, enabled = true) {
     const client = usePublicClient();
+    const qc = useQueryClient();
+    const queryKey = ["logs", address, eventSig];
     return useQuery({
-        queryKey: ["logs", address, eventSig],
+        queryKey,
         enabled: !!client && !!address && enabled,
         refetchInterval: 30_000,
+        structuralSharing: false,
+        select: (d: LogScan) => d.logs,
         queryFn: async () => {
+            const prev = qc.getQueryData<LogScan>(queryKey);
             const latest = await client!.getBlockNumber();
+            const start = prev ? prev.lastScanned + 1n : DEPLOY_BLOCK;
+            if (prev && start > latest) return prev;
             const event = parseAbiItem(eventSig) as AbiEvent;
-            const logs = [];
-            for (let from = DEPLOY_BLOCK; from <= latest; from += 90_000n) {
+            const logs = prev ? [...prev.logs] : [];
+            for (let from = start; from <= latest; from += 90_000n) {
                 const to = from + 89_999n < latest ? from + 89_999n : latest;
-                logs.push(...(await client!.getLogs({address, event, fromBlock: from, toBlock: to})));
+                logs.push(...((await client!.getLogs({address, event, fromBlock: from, toBlock: to})) as EventLog[]));
             }
-            return logs;
+            return {lastScanned: latest, logs} as LogScan;
+        },
+    });
+}
+
+const blockTsCache = new Map<string, number>();
+
+/** 로그 블록들의 타임스탬프(초) — 모듈 캐시로 블록당 1회만 조회 */
+export function useBlockTimestamps(blockNumbers: bigint[]) {
+    const client = usePublicClient();
+    const uniq = [...new Set(blockNumbers.map(String))];
+    return useQuery({
+        queryKey: ["blockTs", uniq.length, uniq[uniq.length - 1] ?? ""],
+        enabled: !!client && uniq.length > 0,
+        staleTime: Infinity,
+        queryFn: async () => {
+            const missing = uniq.filter((b) => !blockTsCache.has(b));
+            for (let i = 0; i < missing.length; i += 5) {
+                await Promise.all(missing.slice(i, i + 5).map(async (b) => {
+                    const blk = await client!.getBlock({blockNumber: BigInt(b)});
+                    blockTsCache.set(b, Number(blk.timestamp));
+                }));
+            }
+            return Object.fromEntries(uniq.map((b) => [b, blockTsCache.get(b)!]));
         },
     });
 }

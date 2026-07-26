@@ -102,6 +102,14 @@ export const copy = {
         lpTrust: "유동성은 영구 잠금 — LP 지분 전량이 0xdEaD 주소에 있어 누구도 회수할 수 없습니다", // C5
         swapCta: "스왑",
         amountIn: "수량",
+        myStrip: (n: string, m: string) => `보유 ${n}장 · KRWs 잔고 ${m}`,
+        maxBtn: "최대",
+        afterSwap: (n: string) => `스왑 후 약 ${n}장`,
+        noHoldings: "보유한 회원권이 없어요",
+        chartTitle: "체결가",
+        chartEmpty: "체결이 쌓이면 차트가 그려져요",
+        chartOfferLabel: (p: string) => `공모가 ${p}`,
+        meBadge: "나",
     },
     tx: {
         pendingWallet: "지갑에서 확인해 주세요…", // H2: 서명 팝업 대기

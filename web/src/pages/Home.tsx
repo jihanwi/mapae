@@ -2,7 +2,7 @@ import {useEffect, useState} from "react";
 import {Link} from "react-router-dom";
 import {copy} from "../copy";
 import {useOfferings, useParticipantCount, OfferingInfo} from "../hooks";
-import {Badge, Card, Gauge, Medallion, Skeleton, Stat} from "../components/ui";
+import {Badge, Card, Gauge, Medallion, Skeleton, Stat, TextSkeleton} from "../components/ui";
 import {countdown, fmt} from "../lib/format";
 import {creatorOf} from "../lib/creators";
 
@@ -25,10 +25,10 @@ function OfferingCard({o}: {o: OfferingInfo}) {
 
     const header = (
         <div className="flex items-center gap-3.5 mb-[18px]">
-            <Medallion char={c.name[0]} active={live} />
+            <Medallion char={c ? c.name[0] : "…"} active={live} />
             <div className="flex-1 min-w-0">
                 <div className="text-[17px] font-bold">
-                    {c.name} <span className="text-hanji-400 font-normal">{c.en}</span>
+                    {c ? <>{c.name} <span className="text-hanji-400 font-normal">{c.en}</span></> : <TextSkeleton w={120} h={17} />}
                 </div>
                 <div className="text-[12px] text-hanji-400 mt-0.5">{copy.home.verifiedCreator}</div>
             </div>

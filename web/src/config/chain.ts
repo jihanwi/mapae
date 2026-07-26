@@ -6,6 +6,7 @@ export const giwaSepolia = defineChain({
     nativeCurrency: {name: "Ether", symbol: "ETH", decimals: 18},
     rpcUrls: {default: {http: ["https://sepolia-rpc.giwa.io"]}},
     blockExplorers: {default: {name: "Blockscout", url: "https://sepolia-explorer.giwa.io"}},
+    contracts: {multicall3: {address: "0xcA11bde05977b3631167028862bE2a173976CA11"}},
     testnet: true,
 });
 

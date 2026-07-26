@@ -7,6 +7,8 @@ const BY_SYMBOL: Record<string, {name: string; en: string}> = {
     MAPC: {name: "세연", en: "SEOYEON"},
 };
 
-export function creatorOf(o: Pick<OfferingInfo, "tokenSymbol" | "tokenName">): {name: string; en: string} {
-    return BY_SYMBOL[o.tokenSymbol] ?? {name: o.tokenName || "크리에이터", en: o.tokenSymbol || ""};
+/** 심볼 로드 전(null)에는 호출부에서 스켈레톤을 렌더한다 — 폴백 텍스트 금지 */
+export function creatorOf(o: Pick<OfferingInfo, "tokenSymbol" | "tokenName">): {name: string; en: string} | null {
+    if (!o.tokenSymbol) return null;
+    return BY_SYMBOL[o.tokenSymbol] ?? {name: o.tokenName || o.tokenSymbol, en: o.tokenSymbol};
 }
