@@ -5,12 +5,13 @@ import {copy} from "./copy";
 import {ADDR} from "./contracts/addresses";
 import {MockKRWAbi, MockDojangAbi} from "./contracts/abis";
 import {useOnboarding} from "./hooks";
-import {useTx, useGlobalTxBusy} from "./components/tx";
+import {useTx, useGlobalTxBusy, useToast} from "./components/tx";
 import {fmt, shortAddr} from "./lib/format";
 
 function Nav() {
     const {address, isConnected, chainId} = useAccount();
-    const {connect, connectors} = useConnect();
+    const push = useToast();
+    const {connect, connectors} = useConnect({mutation: {onError: () => push({kind: "error", text: copy.errors.noWallet})}});
     const {disconnect} = useDisconnect();
     const {switchChain} = useSwitchChain();
     const {krwBalance} = useOnboarding();
@@ -44,7 +45,11 @@ function Nav() {
             </span>
         </button>
     ) : (
-        <button onClick={() => connect({connector: connectors[0]})}
+        <button onClick={() => {
+            const c = connectors[0];
+            if (!c) { push({kind: "error", text: copy.errors.noWallet}); return; } // 4-a: 확장 없으면 무음 대신 안내
+            connect({connector: c});
+        }}
             className="min-h-[44px] px-5 py-2.5 bg-brass-400 text-ink-950 rounded-input text-[14px] font-bold hover:bg-brass-500 active:bg-brass-600">
             {copy.connect}
         </button>
@@ -76,14 +81,14 @@ function Nav() {
     );
 }
 
-function OnboardingStep({done, n, label, txLabel, tx}: {
-    done: boolean; n: string; label: string; txLabel: string; tx: () => Promise<`0x${string}`>;
+function OnboardingStep({done, n, label, txLabel, tx, blocked}: {
+    done: boolean; n: string; label: string; txLabel: string; tx: () => Promise<`0x${string}`>; blocked?: boolean;
 }) {
     const {run, busy, phase} = useTx();
     const globalBusy = useGlobalTxBusy();
     const text = phase === "wallet" ? copy.tx.pendingWallet : phase === "confirming" ? copy.tx.pendingTx : label;
     return (
-        <button onClick={() => void run(txLabel, tx)} disabled={done || busy || globalBusy}
+        <button onClick={() => void run(txLabel, tx)} disabled={done || busy || globalBusy || blocked}
             className={`flex items-center gap-2 min-h-[44px] py-1.5 ${done ? "text-success cursor-default" : "text-brass-400 hover:text-brass-500 active:text-brass-600 disabled:opacity-60"}`}>
             <span className="w-[18px] h-[18px] rounded-full border grid place-items-center text-[11px] flex-none"
                 style={{borderColor: "currentColor"}}>{done ? "✓" : n}</span>
@@ -94,18 +99,29 @@ function OnboardingStep({done, n, label, txLabel, tx}: {
 
 function OnboardingStrip() {
     const {isConnected, chainId} = useAccount();
-    const {krwBalance, verified} = useOnboarding();
+    const {krwBalance, verified, ethBalance, isError} = useOnboarding();
     const {writeContractAsync} = useWriteContract();
-    if (!isConnected || chainId !== giwaSepolia.id || (krwBalance > 0n && verified)) return null;
+    // #8: 읽기 실패 시엔 스트립 자체를 숨긴다 (완료한 사용자에게 재등장 방지)
+    if (!isConnected || chainId !== giwaSepolia.id || isError || (krwBalance > 0n && verified)) return null;
+    const noGas = ethBalance === 0n; // #3-a: 가스 없으면 온보딩부터 막힘
     return (
         <div className="bg-ink-900 border-b border-ink-700">
-            <div className="max-w-page mx-auto px-4 sm:px-8 py-1.5 sm:py-3 flex items-center gap-x-5 gap-y-1 flex-wrap text-[13px]">
-                <span className="text-hanji-400 font-semibold">{copy.onboarding.title}</span>
-                <OnboardingStep done={krwBalance > 0n} n="1" label={copy.onboarding.faucet} txLabel="테스트 KRWs 받기"
-                    tx={() => writeContractAsync({address: ADDR.mockKRW, abi: MockKRWAbi, functionName: "faucet", args: [copy.onboarding.faucetAmount]})} />
-                <span className="text-ink-700 hidden sm:inline">→</span>
-                <OnboardingStep done={verified} n="2" label={copy.onboarding.verify} txLabel="실명 인증 (데모)"
-                    tx={() => writeContractAsync({address: ADDR.mockDojang, abi: MockDojangAbi, functionName: "selfVerify"})} />
+            <div className="max-w-page mx-auto px-4 sm:px-8 py-1.5 sm:py-3">
+                {noGas && (
+                    <div className="rounded-input px-4 py-2.5 mb-2 text-[13px] text-brass-400"
+                        style={{background: "rgba(195,154,59,.08)", border: "1px solid rgba(195,154,59,.3)"}}>
+                        {copy.onboarding.needGas}{" "}
+                        <a href={copy.onboarding.gasFaucetUrl} target="_blank" rel="noreferrer">{copy.onboarding.gasFaucet}</a>
+                    </div>
+                )}
+                <div className="flex items-center gap-x-5 gap-y-1 flex-wrap text-[13px]">
+                    <span className="text-hanji-400 font-semibold">{copy.onboarding.title}</span>
+                    <OnboardingStep done={krwBalance > 0n} blocked={noGas} n="1" label={copy.onboarding.faucet} txLabel="테스트 KRWs 받기"
+                        tx={() => writeContractAsync({address: ADDR.mockKRW, abi: MockKRWAbi, functionName: "faucet", args: [copy.onboarding.faucetAmount], chainId: giwaSepolia.id})} />
+                    <span className="text-ink-700 hidden sm:inline">→</span>
+                    <OnboardingStep done={verified} blocked={noGas} n="2" label={copy.onboarding.verify} txLabel="실명 인증 (데모)"
+                        tx={() => writeContractAsync({address: ADDR.mockDojang, abi: MockDojangAbi, functionName: "selfVerify", chainId: giwaSepolia.id})} />
+                </div>
             </div>
         </div>
     );

@@ -6,19 +6,19 @@ import {parseUnits} from "viem";
 import {copy} from "../copy";
 import {ADDR} from "../contracts/addresses";
 import {MockKRWAbi, OfferingAbi} from "../contracts/abis";
-import {useOfferings, useParticipantCount} from "../hooks";
-import {Badge, Gauge, Medallion, SecondaryBtn, Skeleton, TextSkeleton} from "../components/ui";
+import {useOfferings, useOnboarding, useParticipantCount} from "../hooks";
+import {Badge, Gauge, Medallion, PrimaryBtn, SecondaryBtn, Skeleton, TextSkeleton} from "../components/ui";
 import {RunFn, TxButton} from "../components/tx";
-import {countdown, fmt} from "../lib/format";
+import {countdown, fmt, sanitizeAmountInput} from "../lib/format";
 import {creatorOf} from "../lib/creators";
-import {explorerAddr} from "../config/chain";
+import {explorerAddr, giwaSepolia} from "../config/chain";
 
 type Alloc = {participants: string[]; allocations: string[]; refunds: string[]} & Record<string, unknown>;
 
-function useAllocation(offering: string | undefined, account: string | undefined) {
+function useAllocation(offering: string | undefined, account: string | undefined, settled: boolean | undefined) {
     return useQuery({
         queryKey: ["alloc", offering, account],
-        enabled: !!offering && !!account,
+        enabled: !!offering && !!account && !!settled, // 9-e: 정산 전 404 방지
         queryFn: async () => {
             const res = await fetch(`${import.meta.env.BASE_URL}allocations/${offering}.json`);
             if (!res.ok) return null;
@@ -39,6 +39,7 @@ export default function Offering() {
     const {offerings, isLoading} = useOfferings();
     const o = offerings.find((x) => x.address.toLowerCase() === addr?.toLowerCase());
     const {address: account} = useAccount();
+    const {krwBalance, verified} = useOnboarding();
     const participants = useParticipantCount(o?.address);
     const {writeContractAsync} = useWriteContract();
     const [amount, setAmount] = useState("");
@@ -62,30 +63,57 @@ export default function Offering() {
         address: ADDR.mockKRW, abi: MockKRWAbi, functionName: "allowance",
         args: [account ?? zero, o?.address ?? zero], query: {enabled: !!o && !!account, refetchInterval: 15_000},
     });
-    const alloc = useAllocation(o?.address, account);
+    const walletLimit = useReadContract({address: o?.address, abi: OfferingAbi, functionName: "walletLimit", query: {enabled: !!o}});
+    const minCommit = useReadContract({address: o?.address, abi: OfferingAbi, functionName: "minCommit", query: {enabled: !!o}});
+    const alloc = useAllocation(o?.address, account, o?.settled);
 
     const amountWei = useMemo(() => {
-        try { return parseUnits(amount.replace(/[^0-9.]/g, "") || "0", 18); } catch { return 0n; }
+        try { return parseUnits(amount || "0", 18); } catch { return 0n; }
     }, [amount]);
 
-    if (isLoading || !o) {
+    if (isLoading) {
         return <div className="max-w-page mx-auto px-4 sm:px-8 pt-12"><Skeleton h={400} /></div>;
+    }
+    if (!o) {
+        // 6-a: 존재하지 않는 공모 주소 → 영구 스켈레톤 대신 not-found
+        return (
+            <div className="max-w-page mx-auto px-4 sm:px-8 pt-16 pb-20 text-center">
+                <div className="flex justify-center mb-5"><Medallion char="馬" size={88} dashed /></div>
+                <h1 className="m-0 mb-2 text-[22px] font-bold">{copy.offering.notFoundTitle}</h1>
+                <p className="m-0 mb-6 text-[14px] text-hanji-400">{copy.offering.notFoundNote}</p>
+                <Link to="/"><PrimaryBtn>{copy.offering.backToList}</PrimaryBtn></Link>
+            </div>
+        );
     }
     const c = creatorOf(o);
     const live = !o.settled && !o.refunding && Number(o.deadline) * 1000 > now;
     const frozen = live && Number(o.deadline) * 1000 - now < 2 * 3600 * 1000;
+    const ended = !o.settled && !o.refunding && !live; // P0 2: 마감 후 정산 전
     const pctNum = o.raiseTarget > 0n ? Number((o.totalCommitted * 1000n) / o.raiseTarget) / 10 : 0;
     const myCommitted = (myCommit.data as bigint) ?? 0n;
+    const wl = (walletLimit.data as bigint) ?? 0n;
+    const minC = (minCommit.data as bigint) ?? 0n;
+
+    // 9-a: 클릭 전 사전 검증 — 사유를 표시하고 CTA를 disabled
+    const commitReason =
+        !account ? copy.hints.connectWallet
+        : !verified ? copy.hints.needVerify
+        : amountWei === 0n ? ""
+        : amountWei < minC ? copy.hints.belowMinCommit(fmt(minC, 0))
+        : (wl > 0n && myCommitted + amountWei > wl) ? copy.hints.overWalletLimit
+        : amountWei > krwBalance ? copy.hints.overKrwBalance
+        : "";
+    const commitDisabled = amountWei === 0n || commitReason !== "";
 
     const commit = async (run: RunFn) => {
         if (!o || amountWei === 0n) return;
         if (((allowance.data as bigint) ?? 0n) < amountWei) {
             const ok = await run("KRWs 사용 승인", () =>
-                writeContractAsync({address: ADDR.mockKRW, abi: MockKRWAbi, functionName: "approve", args: [o.address, amountWei]}));
+                writeContractAsync({address: ADDR.mockKRW, abi: MockKRWAbi, functionName: "approve", args: [o.address, amountWei], chainId: giwaSepolia.id}));
             if (!ok) return;
         }
         const ok = await run("응모", () =>
-            writeContractAsync({address: o.address, abi: OfferingAbi, functionName: "commit", args: [amountWei]}));
+            writeContractAsync({address: o.address, abi: OfferingAbi, functionName: "commit", args: [amountWei], chainId: giwaSepolia.id}));
         if (ok) setAmount("");
     };
 
@@ -129,6 +157,7 @@ export default function Offering() {
                         <div className="flex justify-between items-center mb-5">
                             {o.settled ? <Badge kind="neutral">{copy.badge.settled}</Badge>
                                 : o.refunding ? <Badge kind="neutral">{copy.badge.refunding}</Badge>
+                                : ended ? <Badge kind="neutral">{copy.badge.ended}</Badge>
                                 : frozen ? <Badge kind="frozen">{copy.badge.frozen}</Badge>
                                 : <Badge kind="open">{copy.badge.open}</Badge>}
                             {live ? (
@@ -149,7 +178,7 @@ export default function Offering() {
                             </>
                         )}
 
-                        <InfoGrid o={o} />
+                        <InfoGrid o={o} walletLimit={wl} minCommit={minC} />
 
                         {live && (
                             <>
@@ -161,17 +190,18 @@ export default function Offering() {
                                 )}
                                 <label className="block text-[13px] text-hanji-400 mb-2">응모 금액</label>
                                 <div className="flex items-center bg-ink-900 border border-ink-700 rounded-input px-4 focus-within:border-brass-400 mb-1.5">
-                                    <input value={amount} onChange={(e) => setAmount(e.target.value)}
+                                    <input value={amount} onChange={(e) => setAmount(sanitizeAmountInput(e.target.value))}
                                         placeholder={copy.offering.amountPlaceholder} inputMode="decimal"
-                                        className="flex-1 bg-transparent border-none outline-none py-3.5 text-[16px] text-hanji-100 tabular-nums" />
-                                    <span className="text-hanji-400 text-[14px]">KRWs</span>
+                                        className="flex-1 min-w-0 bg-transparent border-none outline-none py-3.5 text-[16px] text-hanji-100 tabular-nums" />
+                                    <span className="text-hanji-400 text-[14px] flex-none">KRWs</span>
                                 </div>
                                 <div className="text-[12px] text-hanji-400 mb-4 tabular-nums">
                                     ≈ {o.price > 0n ? fmt((amountWei * 10n ** 18n) / o.price) : "0"}장
                                 </div>
-                                <TxButton className="w-full" disabled={amountWei === 0n} action={commit}>
+                                <TxButton className="w-full" disabled={commitDisabled} action={commit}>
                                     {myCommitted > 0n ? copy.offering.commitMore : copy.offering.commitCta}
                                 </TxButton>
+                                {commitReason && <p className="text-[12px] text-brass-400 mt-2 mb-0">{commitReason}</p>}
 
                                 {myCommitted > 0n && (
                                     <div className="mt-5 pt-5 border-t border-ink-700">
@@ -184,7 +214,7 @@ export default function Offering() {
                                         ) : (
                                             <TxButton variant="secondary" className="w-full" action={(run) =>
                                                 run("응모 취소", () =>
-                                                    writeContractAsync({address: o.address, abi: OfferingAbi, functionName: "cancel", args: [myCommitted]}))
+                                                    writeContractAsync({address: o.address, abi: OfferingAbi, functionName: "cancel", args: [myCommitted], chainId: giwaSepolia.id}))
                                             }>전액 취소하기</TxButton>
                                         )}
                                     </div>
@@ -192,10 +222,24 @@ export default function Offering() {
                             </>
                         )}
 
-                        {o.settled && <SettledPanel o={o} alloc={alloc.data ?? null} claimed={(claimed.data as boolean) ?? false}
+                        {/* P0 2-b: 마감~정산 구간 — CTA도 설명도 없는 죽은 화면 방지 */}
+                        {ended && (
+                            <div>
+                                <div className="text-[15px] font-semibold mb-2">{copy.offering.endedTitle}</div>
+                                <p className="m-0 text-[13px] text-hanji-400 leading-relaxed">{copy.offering.endedNote}</p>
+                                {myCommitted > 0n && (
+                                    <div className="flex justify-between text-[13px] mt-4 pt-4 border-t border-ink-700">
+                                        <span className="text-hanji-400">{copy.offering.myCommit}</span>
+                                        <span className="text-hanji-100 font-semibold tabular-nums">{fmt(myCommitted, 0)} KRWs</span>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {o.settled && <SettledPanel o={o} account={account} alloc={alloc.data ?? null} claimed={(claimed.data as boolean) ?? false}
                             myCommitted={myCommitted} claim={(a) => (run: RunFn) =>
                                 run("배정 수령", () =>
-                                    writeContractAsync({address: o.address, abi: OfferingAbi, functionName: "claim", args: [a.allocation, a.refund, a.proof]}))
+                                    writeContractAsync({address: o.address, abi: OfferingAbi, functionName: "claim", args: [a.allocation, a.refund, a.proof], chainId: giwaSepolia.id}))
                             } />}
                     </div>
                     {live && (
@@ -209,12 +253,12 @@ export default function Offering() {
     );
 }
 
-function InfoGrid({o}: {o: ReturnType<typeof useOfferings>["offerings"][number]}) {
-    const wl = useReadContract({address: o.address, abi: OfferingAbi, functionName: "walletLimit"});
+function InfoGrid({o, walletLimit, minCommit}: {o: ReturnType<typeof useOfferings>["offerings"][number]; walletLimit: bigint; minCommit: bigint}) {
     const rows: [string, string][] = [
         ["정가", `${fmt(o.price, 0)} KRWs / 장`],
         [copy.offering.saleQty, `${fmt(o.qSale, 2)}장`], // C1: (고정 공급) 라벨 제거
-        ["1인 한도", wl.data ? `${fmt(wl.data as bigint, 0)} KRWs` : "—"],
+        [copy.offering.minCommit, minCommit > 0n ? `${fmt(minCommit, 0)} KRWs` : "—"], // 9-b: 최소 응모 표기
+        [copy.offering.walletLimit, walletLimit > 0n ? `${fmt(walletLimit, 0)} KRWs` : "—"],
         ["미달 시", o.refundMode === 0 ? "전액 환불" : "판매분만 발행 · 미판매분 소각"],
     ];
     return (
@@ -236,15 +280,17 @@ function FragmentRow({k, v}: {k: string; v: string}) {
     );
 }
 
-function SettledPanel({o, alloc, claimed, myCommitted, claim}: {
+function SettledPanel({o, account, alloc, claimed, myCommitted, claim}: {
     o: ReturnType<typeof useOfferings>["offerings"][number];
+    account: `0x${string}` | undefined;
     alloc: {allocation: bigint; refund: bigint; proof: `0x${string}`[]} | null;
     claimed: boolean;
     myCommitted: bigint;
     claim: (a: {allocation: bigint; refund: bigint; proof: `0x${string}`[]}) => (run: RunFn) => Promise<unknown>;
 }) {
     if (!alloc) {
-        return <p className="text-[13px] text-hanji-400 m-0">{copy.offering.notInAllocation}</p>;
+        // 9-d: 미연결 상태에선 "이 지갑" 단정 대신 연결 유도
+        return <p className="text-[13px] text-hanji-400 m-0">{account ? copy.offering.notInAllocation : copy.offering.connectForAllocation}</p>;
     }
     return (
         <div>

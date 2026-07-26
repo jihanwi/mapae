@@ -2,7 +2,7 @@ import {useEffect, useState} from "react";
 import {Link} from "react-router-dom";
 import {copy} from "../copy";
 import {useOfferings, useParticipantCount, OfferingInfo} from "../hooks";
-import {Badge, Card, CardSkeleton, Gauge, Medallion, Stat, TextSkeleton} from "../components/ui";
+import {Badge, Card, CardSkeleton, Gauge, Medallion, SecondaryBtn, Stat, TextSkeleton} from "../components/ui";
 import {countdown, fmt} from "../lib/format";
 import {creatorOf} from "../lib/creators";
 
@@ -21,6 +21,7 @@ function OfferingCard({o}: {o: OfferingInfo}) {
     const participants = useParticipantCount(o.address);
     const live = !o.settled && !o.refunding && Number(o.deadline) * 1000 > now;
     const frozen = live && Number(o.deadline) * 1000 - now < 2 * 3600 * 1000;
+    const ended = !o.settled && !o.refunding && !live; // P0 2-a: 마감 후 정산 전
     const pctNum = o.raiseTarget > 0n ? Number((o.totalCommitted * 1000n) / o.raiseTarget) / 10 : 0;
 
     const header = (
@@ -37,6 +38,8 @@ function OfferingCard({o}: {o: OfferingInfo}) {
                     <Badge kind="neutral">{copy.badge.settled}</Badge>
                 ) : o.refunding ? (
                     <Badge kind="neutral">{copy.badge.refunding}</Badge>
+                ) : ended ? (
+                    <Badge kind="neutral">{copy.badge.ended}</Badge>
                 ) : frozen ? (
                     <Badge kind="frozen">{copy.badge.frozen}</Badge>
                 ) : (
@@ -90,15 +93,16 @@ function OfferingCard({o}: {o: OfferingInfo}) {
     );
 }
 
-/** 누적 소각 = 정산 시 총공급(S' = totalSold / f) − 현재 totalSupply */
+/** 누적 소각 = 정산 시 초기 발행량 − 현재 totalSupply.
+ *  초기 발행량 = 판매분 총공급(totalSold / f) + 정산 시 소각된 미판매분(qSale − totalSold, 모드 B). */
 export function computeBurned(o: OfferingInfo): bigint {
     if (!o.settled || o.fBps === 0) return 0n;
-    const initial = (o.totalSold * 10_000n) / BigInt(o.fBps);
+    const initial = (o.totalSold * 10_000n) / BigInt(o.fBps) + (o.qSale - o.totalSold);
     return initial > o.totalSupply ? initial - o.totalSupply : 0n;
 }
 
 export default function Home() {
-    const {offerings, isLoading} = useOfferings();
+    const {offerings, isLoading, isError, refetch} = useOfferings();
     return (
         <div className="max-w-page mx-auto px-4 sm:px-8 pt-10 sm:pt-16 pb-16 sm:pb-20">
             <div className="mb-10 sm:mb-14">
@@ -118,10 +122,17 @@ export default function Home() {
                     <span className="text-[13px] text-hanji-400">{copy.network}</span>
                 )}
             </div>
-            <div className="grid gap-4 sm:gap-5" style={{gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))"}}>
-                {isLoading && [1, 2, 3].map((i) => <CardSkeleton key={i} />)}
-                {offerings.map((o) => <OfferingCard key={o.address} o={o} />)}
-            </div>
+            {isError && offerings.length === 0 ? (
+                <div className="bg-ink-800 border border-ink-700 rounded-card p-6 text-center">
+                    <p className="m-0 mb-4 text-[14px] text-hanji-400">{copy.home.netError}</p>
+                    <SecondaryBtn onClick={() => refetch()}>{copy.home.retry}</SecondaryBtn>
+                </div>
+            ) : (
+                <div className="grid gap-4 sm:gap-5" style={{gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))"}}>
+                    {isLoading && [1, 2, 3].map((i) => <CardSkeleton key={i} />)}
+                    {offerings.map((o) => <OfferingCard key={o.address} o={o} />)}
+                </div>
+            )}
             <p className="mt-12 mb-0 text-[12px] text-hanji-400 text-center">{copy.home.footnote}</p>
         </div>
     );

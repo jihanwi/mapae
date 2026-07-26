@@ -6,19 +6,19 @@ import {copy} from "../copy";
 import {ADDR} from "../contracts/addresses";
 import {MapaePoolAbi, MembershipTokenAbi, MockKRWAbi} from "../contracts/abis";
 import {useBlockTimestamps, useEventLogs, useOfferings, OfferingInfo} from "../hooks";
-import {Skeleton, Stat, TextSkeleton} from "../components/ui";
+import {SecondaryBtn, Skeleton, Stat, TextSkeleton} from "../components/ui";
 import {PriceChart, PricePoint} from "../components/PriceChart";
 import {RunFn, TxButton} from "../components/tx";
-import {fmt, shortAddr} from "../lib/format";
+import {fmt, sanitizeAmountInput, shortAddr} from "../lib/format";
 import {creatorOf} from "../lib/creators";
 import {computeBurned} from "./Home";
-import {explorerAddr} from "../config/chain";
+import {explorerAddr, giwaSepolia} from "../config/chain";
 
 const DEAD = "0x000000000000000000000000000000000000dEaD" as const;
 const ZERO = "0x0000000000000000000000000000000000000000" as const;
 
 export default function Trade() {
-    const {offerings, isLoading} = useOfferings();
+    const {offerings, isLoading, isError, refetch} = useOfferings();
     const [params] = useSearchParams();
     const listed = offerings.filter((o) => o.settled && o.pool !== ZERO);
     const wanted = params.get("o")?.toLowerCase();
@@ -27,7 +27,18 @@ export default function Trade() {
     const o = listed[sel];
 
     if (isLoading) return <div className="max-w-page mx-auto px-4 sm:px-8 pt-12"><Skeleton h={300} /></div>;
-    if (!o) return <div className="max-w-page mx-auto px-4 sm:px-8 pt-12 text-hanji-400 text-[14px]">아직 상장된 회원권이 없어요</div>;
+    // #8: RPC 장애 시 "상장된 회원권이 없어요"(거짓) 대신 네트워크 에러로 분기
+    if (!o) {
+        if (isError) return (
+            <div className="max-w-page mx-auto px-4 sm:px-8 pt-12">
+                <div className="bg-ink-800 border border-ink-700 rounded-card p-6 text-center">
+                    <p className="m-0 mb-4 text-[14px] text-hanji-400">{copy.trade.netError}</p>
+                    <SecondaryBtn onClick={() => refetch()}>{copy.home.retry}</SecondaryBtn>
+                </div>
+            </div>
+        );
+        return <div className="max-w-page mx-auto px-4 sm:px-8 pt-12 text-hanji-400 text-[14px]">아직 상장된 회원권이 없어요</div>;
+    }
 
     return (
         <div className="max-w-page mx-auto px-4 sm:px-8 pt-8 sm:pt-10 pb-16 sm:pb-20">
@@ -56,7 +67,7 @@ function TradePanel({o}: {o: OfferingInfo}) {
     const pool = o.pool;
 
     const amountWei = useMemo(() => {
-        try { return parseUnits(amount.replace(/[^0-9.]/g, "") || "0", 18); } catch { return 0n; }
+        try { return parseUnits(amount || "0", 18); } catch { return 0n; }
     }, [amount]);
 
     const quote = useReadContract({
@@ -106,19 +117,29 @@ function TradePanel({o}: {o: OfferingInfo}) {
             .filter((p) => p.t > 0 && Number.isFinite(p.price));
     }, [swaps.data, blockTs.data]);
 
+    // 4-b / 9-a: 클릭 전 사전 검증 — 미연결·견적 실패·잔고 초과 사유를 표시하고 disabled
+    const swapReason =
+        !address ? copy.hints.connectWallet
+        : amountWei === 0n ? ""
+        : dir === "sell" && tokenBal !== undefined && amountWei > tokenBal ? copy.hints.overTokenBalance
+        : dir === "buy" && krwBal !== undefined && amountWei > krwBal ? copy.hints.overKrwBalance
+        : quote.data === undefined ? copy.hints.quoteUnavailable
+        : "";
+    const swapDisabled = amountWei === 0n || sellEmpty || swapReason !== "";
+
     const doSwap = async (run: RunFn) => {
         if (!address || amountWei === 0n || quote.data === undefined) return;
         const minOut = ((quote.data as bigint) * 99n) / 100n; // 1% slippage
         const inToken = dir === "buy" ? ADDR.mockKRW : o.token;
         const inAbi = dir === "buy" ? MockKRWAbi : MembershipTokenAbi;
         const ok = await run("사용 승인", () =>
-            writeContractAsync({address: inToken, abi: inAbi, functionName: "approve", args: [pool, amountWei]}));
+            writeContractAsync({address: inToken, abi: inAbi, functionName: "approve", args: [pool, amountWei], chainId: giwaSepolia.id}));
         if (!ok) return;
         const done = await run(dir === "buy" ? copy.trade.buy : copy.trade.sell, () =>
             writeContractAsync({
                 address: pool, abi: MapaePoolAbi,
                 functionName: dir === "buy" ? "swapKrwForToken" : "swapTokenForKrw",
-                args: [amountWei, minOut, address],
+                args: [amountWei, minOut, address], chainId: giwaSepolia.id,
             }));
         if (done) setAmount("");
     };
@@ -161,16 +182,16 @@ function TradePanel({o}: {o: OfferingInfo}) {
                             {dir === "buy" ? copy.trade.buyLabel : copy.trade.sellLabel}
                         </label>
                         <div className={`flex items-center bg-ink-900 border border-ink-700 rounded-input px-4 focus-within:border-brass-400 ${sellEmpty ? "mb-1.5 opacity-60" : "mb-3"}`}>
-                            <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={copy.trade.amountIn} inputMode="decimal"
+                            <input value={amount} onChange={(e) => setAmount(sanitizeAmountInput(e.target.value))} placeholder={copy.trade.amountIn} inputMode="decimal"
                                 disabled={sellEmpty}
-                                className="flex-1 bg-transparent border-none outline-none py-3.5 text-[16px] text-hanji-100 tabular-nums disabled:cursor-not-allowed" />
+                                className="flex-1 min-w-0 bg-transparent border-none outline-none py-3.5 text-[16px] text-hanji-100 tabular-nums disabled:cursor-not-allowed" />
                             {address && !sellEmpty && (
                                 <button onClick={fillMax}
-                                    className="text-[12px] text-brass-400 border border-ink-700 rounded px-2 py-1 mr-2 hover:border-brass-600">
+                                    className="text-[12px] text-brass-400 border border-ink-700 rounded px-2 py-1 mr-2 hover:border-brass-600 whitespace-nowrap flex-none">
                                     {copy.trade.maxBtn}
                                 </button>
                             )}
-                            <span className="text-hanji-400 text-[14px]">{dir === "buy" ? "KRWs" : "장"}</span>
+                            <span className="text-hanji-400 text-[14px] flex-none">{dir === "buy" ? "KRWs" : "장"}</span>
                         </div>
                         {sellEmpty && <div className="text-[13px] text-hanji-400 mb-3">{copy.trade.noHoldings}</div>}
                         <div className="flex justify-between text-[13px] mb-1">
@@ -183,7 +204,8 @@ function TradePanel({o}: {o: OfferingInfo}) {
                             <div className="text-[12px] text-hanji-400 mb-1 text-right tabular-nums">{copy.trade.afterSwap(fmt(afterSwap, 2))}</div>
                         )}
                         <div className="text-[12px] text-hanji-400 mb-5">{copy.trade.feeNote} · 슬리피지 1%</div>
-                        <TxButton className="w-full" disabled={amountWei === 0n || sellEmpty} action={doSwap}>{copy.trade.swapCta}</TxButton>
+                        <TxButton className="w-full" disabled={swapDisabled} action={doSwap}>{copy.trade.swapCta}</TxButton>
+                        {swapReason && !sellEmpty && <p className="text-[12px] text-brass-400 mt-2 mb-0">{swapReason}</p>}
                     </div>
                     {/* LP 신뢰 스트립 (C5) */}
                     <div className="mt-4 rounded-input px-4 py-3.5 text-[13px] text-hanji-400 border border-ink-700 bg-ink-900">

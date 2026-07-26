@@ -1,7 +1,7 @@
 import {createContext, useCallback, useContext, useState, ReactNode} from "react";
 import {useQueryClient} from "@tanstack/react-query";
-import {usePublicClient} from "wagmi";
-import {explorerTx} from "../config/chain";
+import {useAccount, usePublicClient} from "wagmi";
+import {explorerTx, giwaSepolia} from "../config/chain";
 import {humanError} from "../lib/errors";
 import {copy} from "../copy";
 import {PrimaryBtn, SecondaryBtn} from "./ui";
@@ -18,6 +18,11 @@ const ToastCtx = createContext<Ctx>(null!);
 /** 전역 트랜잭션 진행 여부 — 페이지 전체 이중 클릭 가드 */
 export function useGlobalTxBusy() {
     return useContext(ToastCtx).busyCount > 0;
+}
+
+/** 토스트 직접 발행 — run()을 타지 않는 경로(지갑 연결 실패 등)의 무음 실패 방지 (4-a) */
+export function useToast() {
+    return useContext(ToastCtx).push;
 }
 
 export function ToastProvider({children}: {children: ReactNode}) {
@@ -89,6 +94,8 @@ export function useTx() {
                 if (receipt.status !== "success") throw new Error("reverted");
                 update(id, {kind: "success", text: `${label} — ${copy.tx.success}`, hash}); // ③ 완료 (H3)
                 await qc.invalidateQueries();
+                // 9-f: 로그(이벤트) 인덱싱이 늦는 경우 대비해 잠시 뒤 한 번 더 무효화 → 피드/카운터 즉시 갱신
+                setTimeout(() => { void qc.invalidateQueries(); }, 4000);
                 return true;
             } catch (e) {
                 update(id, {kind: "error", text: humanError(e)}); // ③′ 실패 — 버튼은 finally에서 복원
@@ -121,10 +128,14 @@ export function TxButton({
 }) {
     const {run, busy, phase} = useTx();
     const globalBusy = useGlobalTxBusy();
-    const label = phase === "wallet" ? copy.tx.pendingWallet : phase === "confirming" ? copy.tx.pendingTx : children;
+    const {isConnected, chainId} = useAccount();
+    const wrongChain = isConnected && chainId !== giwaSepolia.id; // #7: 잘못된 네트워크에선 tx 차단
+    const label = wrongChain
+        ? copy.hints.switchChain
+        : phase === "wallet" ? copy.tx.pendingWallet : phase === "confirming" ? copy.tx.pendingTx : children;
     const Btn = variant === "primary" ? PrimaryBtn : SecondaryBtn;
     return (
-        <Btn className={className} disabled={disabled || busy || globalBusy} onClick={() => void action(run)}>
+        <Btn className={className} disabled={disabled || busy || globalBusy || wrongChain} onClick={() => void action(run)}>
             {label}
         </Btn>
     );

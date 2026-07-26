@@ -12,6 +12,16 @@ export function fmt(wei: bigint, dp = 2): string {
 
 export const shortAddr = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
+/** 금액 입력 살균 — 쉼표·기타문자 제거, 소수점 1개만 허용. 표시값 = 전송값 (9-c) */
+export function sanitizeAmountInput(raw: string): string {
+    let s = raw.replace(/[^0-9.]/g, ""); // 숫자와 점만 (쉼표·부호·e·문자 제거)
+    const firstDot = s.indexOf(".");
+    if (firstDot !== -1) {
+        s = s.slice(0, firstDot + 1) + s.slice(firstDot + 1).replace(/\./g, "");
+    }
+    return s;
+}
+
 export function countdown(deadline: bigint, now: number): string {
     const left = Number(deadline) - Math.floor(now / 1000);
     if (left <= 0) return "마감";

@@ -12,11 +12,17 @@ export function humanError(e: unknown): string {
         const name = revert?.data?.errorName;
         if (name && name in copy.errors) return (copy.errors as Record<string, string>)[name];
     }
-    const msg = String((e as Error)?.message ?? "");
+    // 이름 + 메시지 + shortMessage를 합쳐 소문자로 부분 매칭 (대소문자/문구 변형 흡수)
+    const parts = [
+        (e as Error)?.name,
+        (e as Error)?.message,
+        (err as {shortMessage?: string})?.shortMessage,
+    ];
+    const hay = parts.filter(Boolean).join(" ").toLowerCase();
     for (const key of Object.keys(copy.errors)) {
-        if (msg.includes(key)) return (copy.errors as Record<string, string>)[key];
+        if (hay.includes(key.toLowerCase())) return (copy.errors as Record<string, string>)[key];
     }
-    if (msg.toLowerCase().includes("user rejected") || msg.toLowerCase().includes("denied")) {
+    if (hay.includes("user rejected") || hay.includes("denied")) {
         return copy.errors.userRejected;
     }
     return copy.errors.default;

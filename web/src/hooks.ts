@@ -1,5 +1,5 @@
 import {useQuery, useQueryClient} from "@tanstack/react-query";
-import {useAccount, usePublicClient, useReadContract, useReadContracts} from "wagmi";
+import {useAccount, useBalance, usePublicClient, useReadContract, useReadContracts} from "wagmi";
 import {Abi, AbiEvent, Log, parseAbiItem} from "viem";
 import {ADDR, DEPLOY_BLOCK} from "./contracts/addresses";
 import {MapaeFactoryAbi, MembershipTokenAbi, MockDojangAbi, MockKRWAbi, OfferingAbi, MapaePoolAbi} from "./contracts/abis";
@@ -75,7 +75,12 @@ export function useOfferings() {
             } as OfferingInfo;
         })
         .filter((x): x is OfferingInfo => x !== null);
-    return {offerings, isLoading: list.isLoading || reads.isLoading || tokenReads.isLoading};
+    return {
+        offerings,
+        isLoading: list.isLoading || reads.isLoading || tokenReads.isLoading,
+        isError: list.isError || reads.isError,
+        refetch: () => { list.refetch(); reads.refetch(); tokenReads.refetch(); poolReads.refetch(); },
+    };
 }
 
 export type EventLog = Log & {args: Record<string, unknown>};
@@ -89,7 +94,7 @@ export function useEventLogs(address: `0x${string}` | undefined, eventSig: strin
     return useQuery({
         queryKey,
         enabled: !!client && !!address && enabled,
-        refetchInterval: 30_000,
+        refetchInterval: 12_000, // 9-f: 본인 tx 직후 체감 지연 완화 (증분 스캔이라 부하 낮음)
         structuralSharing: false,
         select: (d: LogScan) => d.logs,
         queryFn: async () => {
@@ -147,5 +152,12 @@ export function useOnboarding() {
         address: ADDR.mockDojang, abi: MockDojangAbi, functionName: "isVerified",
         args: [address ?? "0x0000000000000000000000000000000000000000"], query: {enabled: !!address, refetchInterval: 15_000},
     });
-    return {krwBalance: (krw.data as bigint) ?? 0n, verified: (verified.data as boolean) ?? false};
+    // P0 #3: 네이티브 가스(ETH) 잔고 — 0이면 온보딩부터 막히므로 안내
+    const eth = useBalance({address, query: {enabled: !!address, refetchInterval: 15_000}});
+    return {
+        krwBalance: (krw.data as bigint) ?? 0n,
+        verified: (verified.data as boolean) ?? false,
+        ethBalance: eth.data?.value,
+        isError: krw.isError || verified.isError,
+    };
 }

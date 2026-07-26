@@ -14,10 +14,15 @@ export const copy = {
         faucet: "① 테스트 KRWs 받기",
         verify: "② 실명 인증 (데모)",
         faucetAmount: 1_000_000n * 10n ** 18n,
+        needGas: "가스비로 쓸 GIWA Sepolia ETH가 없어요 — 먼저 테스트 ETH를 받아 주세요",
+        gasFaucet: "테스트 ETH 받기 ↗",
+        gasFaucetUrl: "https://docs.giwa.io/get-started/faucets",
     },
     home: {
         section: "진행 중인 공모",
         loading: "온체인에서 불러오는 중…",
+        netError: "네트워크 응답이 없어요 — 잠시 후 다시 시도해 주세요",
+        retry: "다시 시도",
         verifiedCreator: "실명 인증 크리에이터",
         over: "초과 응모",
         price: "정가",
@@ -32,6 +37,7 @@ export const copy = {
     badge: {
         open: "응모중",
         frozen: "취소 잠김", // C3
+        ended: "마감 · 정산 대기", // P0: 마감 후 정산 전
         settled: "정산 완료 · 거래중",
         refunding: "환불 진행중",
         partialMode: "부분 발행 모드",
@@ -58,6 +64,12 @@ export const copy = {
         minCommit: "최소 응모",
         walletLimit: "1인당 한도",
         amountPlaceholder: "응모할 KRWs 수량",
+        endedTitle: "응모 마감 · 정산 대기", // P0 2-b
+        endedNote: "이 공모는 응모가 마감됐어요. 정산이 완료되면 배정 결과가 여기에 표시돼요.",
+        notFoundTitle: "공모를 찾을 수 없어요", // P1 6-a
+        notFoundNote: "주소가 올바르지 않거나 존재하지 않는 공모예요",
+        backToList: "공모 목록으로",
+        connectForAllocation: "지갑을 연결하면 배정 결과를 확인할 수 있어요", // 9-d
     },
     membership: {
         title: "내 멤버십",
@@ -111,6 +123,24 @@ export const copy = {
         chartEmpty: "체결이 쌓이면 차트가 그려져요",
         chartOfferLabel: (p: string) => `공모가 ${p}`,
         meBadge: "나",
+        netError: "네트워크 응답이 없어요 — 잠시 후 다시 시도해 주세요",
+    },
+    // 클릭 전 disabled 사유 힌트 (과거형 에러와 구분되는 현재형 안내)
+    hints: {
+        connectWallet: "지갑을 연결해 주세요",
+        switchChain: "GIWA Sepolia로 전환해 주세요",
+        needVerify: "먼저 상단에서 실명 인증을 해주세요",
+        belowMinCommit: (n: string) => `최소 응모 금액은 ${n} KRWs예요`,
+        overWalletLimit: "1인당 한도를 초과해요",
+        overKrwBalance: "KRWs 잔고보다 많아요",
+        overTokenBalance: "보유 장수보다 많아요",
+        quoteUnavailable: "견적을 불러오지 못했어요",
+        needTokenToRedeem: "보유 장수가 부족해요",
+    },
+    route404: {
+        title: "페이지를 찾을 수 없어요",
+        note: "주소가 올바르지 않아요",
+        cta: "홈으로 돌아가기",
     },
     tx: {
         pendingWallet: "지갑에서 확인해 주세요…", // H2: 서명 팝업 대기
@@ -136,6 +166,9 @@ export const copy = {
         ERC20InsufficientBalance: "잔액이 부족해요",
         ERC20InsufficientAllowance: "먼저 사용 승인이 필요해요",
         PoolNotListed: "아직 상장 전이에요 — 공모 정산 후 거래할 수 있어요",
+        ChainMismatchError: "GIWA Sepolia 네트워크로 전환한 뒤 다시 시도해 주세요", // P0 #7
+        "insufficient funds": "가스비가 부족해요 — GIWA Sepolia 테스트 ETH를 먼저 받아 주세요", // P0 #3
+        noWallet: "연결할 지갑을 찾지 못했어요 — 메타마스크 같은 지갑 확장을 설치한 뒤 다시 시도해 주세요", // P0 4-a
         userRejected: "지갑에서 요청을 취소했어요",
         default: "트랜잭션이 실패했어요 — 잠시 후 다시 시도해 주세요",
     },
