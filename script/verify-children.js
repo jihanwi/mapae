@@ -50,8 +50,13 @@ const raw = cast(
     "--address", args.factory, topic0, "--json"
 );
 const logs = JSON.parse(raw);
+// Fix 1 (freeze exception #2): an empty scan window means the OfferingCreated
+// events fell outside --from-block/--to-block. Previously this printed a note
+// and continued, verifying only the 2 factory deployers → "done: 2, 0 failed"
+// exit 0 (false success). Hard-fail so a missed window can never look like a pass.
 if (logs.length === 0) {
-    console.log(`no OfferingCreated events in blocks ${fromBlock}–${toBlock} — check --from-block`);
+    console.error(`no OfferingCreated events in blocks ${fromBlock}–${toBlock} — check --from-block (GIWA ~1 block/s, default window is only 90k blocks ≈ 25h)`);
+    process.exit(1);
 }
 
 const OFFERING_CTOR =
@@ -76,9 +81,20 @@ function verify(addr, contractPath, ctorSig, ctorValues) {
             ],
             {encoding: "utf8"}
         );
+        // Fix 3: on this forge version an already-verified contract prints
+        // "is already verified. Skipping verification." and exits 0, so the
+        // second per-cycle run (pool re-verify) is already idempotent. Log it.
+        if (/already verified/i.test(out)) console.log("  (already verified — counted ok)");
         console.log(out.trim().split("\n").slice(-3).join("\n"));
         return true;
     } catch (e) {
+        // Defensive: if a future forge instead *errors* on already-verified,
+        // still count it as success so re-runs stay idempotent.
+        const hay = `${e.stdout ?? ""} ${e.stderr ?? ""} ${e.message ?? ""}`;
+        if (/already verified/i.test(hay)) {
+            console.log("  (already verified — counted ok, from error path)");
+            return true;
+        }
         console.error(`FAILED: ${e.message?.split("\n")[0]}`);
         return false;
     }
@@ -172,5 +188,12 @@ if (pendingPools.length > 0) {
     for (const o of pendingPools) console.log(`  ${o}`);
     console.log("Re-run this script after Stage 2 (settle) to verify the MapaePool(s).");
 }
-console.log(`\ndone: ${ok} verified, ${fail} failed`);
-process.exit(fail === 0 ? 0 : 1);
+// Fix 2: compute the expected verification count deterministically from the
+// events found — 2 factory deployers + 5 children per offering + 1 pool per
+// settled offering — and require ok to reach it. --expect overrides only if
+// given. Guards against silently verifying fewer than the cycle should.
+const poolsCount = logs.length - pendingPools.length;
+const expected =
+    args.expect !== undefined ? parseInt(args.expect, 10) : 2 + logs.length * 5 + poolsCount;
+console.log(`\ndone: ${ok}/${expected} verified, ${fail} failed`);
+process.exit(fail === 0 && ok === expected ? 0 : 1);
