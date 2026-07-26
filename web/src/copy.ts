@@ -8,7 +8,7 @@ export const copy = {
         home: "공모", membership: "내 멤버십", redeem: "리딤 & 후원", trade: "거래",
         faucet: "KRWs 받기", // 상시 재충전 버튼 (데스크톱)
         faucetShort: "+ KRWs", // 모바일 축약
-        faucetTitle: "테스트 KRWs 받기 (100만 KRWs)",
+        faucetTitle: "테스트 KRWs 받기 (10만 KRWs)",
         faucetTxLabel: "테스트 KRWs 받기", // 토스트 라벨
     },
     network: "GIWA Sepolia 테스트넷",
@@ -19,7 +19,7 @@ export const copy = {
         title: "데모 시작하기",
         faucet: "① 테스트 KRWs 받기",
         verify: "② 실명 인증 (데모)",
-        faucetAmount: 1_000_000n * 10n ** 18n,
+        faucetAmount: 100_000n * 10n ** 18n,
         needGas: "가스비로 쓸 GIWA Sepolia ETH가 없어요 — 먼저 테스트 ETH를 받아 주세요",
         gasFaucet: "테스트 ETH 받기 ↗",
         gasFaucetUrl: "https://docs.giwa.io/get-started/faucets",

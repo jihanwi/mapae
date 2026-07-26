@@ -3,7 +3,11 @@
 > 최종 배포 기준 (M5, GIWA Sepolia · 배포 전부 verified). 전체 주소 표: [`docs/DEPLOYMENTS.md`](DEPLOYMENTS.md)
 >
 > **🌐 MVP 데모: https://jihanwi.github.io/mapae/** — 지갑 연결 → 온보딩 2클릭(테스트 KRWs + 실명 인증 데모) →
-> 라이브 공모(세연 SEOYEON, 48h 수명) 응모 → 정산된 회원권으로 거래·리딤·후원 체험. 아래 explorer 워크스루와 같은 컨트랙트를 사용한다.
+> 라이브 공모(홈 최상단의 「응모중」 카드) 응모 → 정산된 회원권으로 거래·리딤·후원 체험. 아래 explorer 워크스루와 같은 컨트랙트를 사용한다.
+>
+> 체험 공모는 48시간 주기로 새로 열립니다 — 응모 기간 12~48시간 밴드가 온체인에 강제돼
+> 있기 때문입니다(`Offering.sol` MAX_DURATION). 데모라고 예외를 두지 않았습니다.
+> 마감된 시점에 보고 계시다면, 아래 워크스루 영상에서 전체 플로우를 확인하실 수 있습니다: TODO(영상 URL)
 
 MAPAE는 GIWA 위의 크리에이터 온체인 회원권 플랫폼입니다 — **발행(정가 공모) · 유통(AMM
 정가 상장) · 소비(리딤·후원 소각)** 세 개의 시장이 전부 온체인이며, 아래 explorer 링크를
@@ -34,7 +38,7 @@ MAPAE는 GIWA 위의 크리에이터 온체인 회원권 플랫폼입니다 — 
 | 매도 시 토큰 0.5% 즉시 소각 (`Transfer → 0x0`이 모든 매도 tx에 포함) | 매도 tx 내 이벤트 |
 | 후원 `sponsorKRWs` — 10%는 풀에서 매수 후 소각, 90% 크리에이터, 메시지가 이벤트에 (방송 오버레이) | [tx](https://sepolia-explorer.giwa.io/tx/0xd9e31a26f798542bc21d6b6684101b97eb09b2f6e494ab07d98ac4f92dc5a745) |
 | `convertAndBurn` — 적립된 소각 수수료로 누구나 바이백·소각 실행 (미니 BuybackVault) | [tx](https://sepolia-explorer.giwa.io/tx/0xd0d0b339290ad6a64d3b8019ec7462ca511400fbd84d3c07bcc8c007534f4a00) |
-| 리딤 — 회원권을 소각하고 혜택 클레임 (시세 무관 장수 고정) | [tx](https://sepolia-explorer.giwa.io/tx/0x85f176ee0d093bb86558d6fa541067c93e6ab3d8f45afffdee045dbdb216166f) |
+| 리딤 — 회원권을 소각하고 혜택 클레임 (시세 무관 장수 고정). **1장 소각 항목(「디지털 팬 배지」)** 이 A·B 양쪽에 있어 소액으로 체험 가능 | [tx](https://sepolia-explorer.giwa.io/tx/0x85f176ee0d093bb86558d6fa541067c93e6ab3d8f45afffdee045dbdb216166f) |
 | 크리에이터 베스팅 — 클리프 6mo 이전 릴리즈 0 (불변식 6) | [MapaeVesting A](https://sepolia-explorer.giwa.io/address/0x4E0528b1C72073d55583332915f75A7cf2F7422f) |
 
 ## 신뢰할 수 있는 이유 (요약)
@@ -43,7 +47,7 @@ MAPAE는 GIWA 위의 크리에이터 온체인 회원권 플랫폼입니다 — 
 - 조작된 배정 루트가 있어도 온체인 회계 상한이 초과 인출 차단 (`docs/TRUST.md`)
 - 정산 지연·미달 시 **누구나** 환불 개시 가능 (escape hatch) — 자금 잠김 없음
 - 145개 Foundry 테스트 (invariant 14 포함) + 결정론적 배정 파이프라인 공개
-- **컨트랙트 13종 · 배포 22개 전부 Blockscout verified** — 소스와 바이트코드가 explorer에서 대조 가능
+- **제출 컨트랙트 13종(타입) · 배포 주소 전량 Blockscout verified** — 소스와 바이트코드가 explorer에서 대조 가능
 
 ## 리포 가이드
 
