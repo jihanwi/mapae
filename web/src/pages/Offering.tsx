@@ -108,8 +108,8 @@ export default function Offering() {
                     </div>
                     <div className="text-[15px] leading-relaxed text-hanji-100 space-y-4">
                         <p className="m-0">
-                            {c.name}의 온체인 회원권입니다. 공모 수량 {fmt(o.qSale, 2)}장이 단 한 번만 발행되며,
-                            정산 시점에 확정된 총공급 이후 추가 발행은 불가능합니다.
+                            {c.name}의 온체인 회원권입니다. 공모 수량 {fmt(o.qSale, 2)}장을 단 한 번만 발행하며,
+                            총공급은 정산 시점에 확정돼요. 이후 추가 발행은 불가능해요.
                         </p>
                         <p className="m-0">
                             회원권으로는 리딤 카탈로그의 혜택을 소각 방식으로 사용할 수 있고, 보유 비율에 따라
@@ -180,12 +180,12 @@ export default function Offering() {
                                             <span className="text-hanji-100 font-semibold tabular-nums">{fmt(myCommitted, 0)} KRWs</span>
                                         </div>
                                         {frozen ? (
-                                            <SecondaryBtn className="w-full" disabled>응모 취소 — {copy.badge.frozen}</SecondaryBtn>
+                                            <SecondaryBtn className="w-full" disabled>취소 잠김 — 마감 2시간 전</SecondaryBtn>
                                         ) : (
                                             <TxButton variant="secondary" className="w-full" action={(run) =>
                                                 run("응모 취소", () =>
                                                     writeContractAsync({address: o.address, abi: OfferingAbi, functionName: "cancel", args: [myCommitted]}))
-                                            }>{copy.offering.cancelCta} — 전액</TxButton>
+                                            }>전액 취소하기</TxButton>
                                         )}
                                     </div>
                                 )}
@@ -200,7 +200,7 @@ export default function Offering() {
                     </div>
                     {live && (
                         <p className="text-[12px] text-hanji-400 mt-3">
-                            {copy.offering.cancelFrozenNote}. {o.refundMode === 0 ? "미달 시 전액이 자동 환불됩니다." : "미달 시 판매분만 발행되고 나머지는 소각됩니다."}
+                            {copy.offering.cancelFrozenNote}. {o.refundMode === 0 ? "미달 시 전액이 자동 환불돼요." : "미달 시 판매분만 발행되고 나머지는 소각돼요."}
                         </p>
                     )}
                 </div>

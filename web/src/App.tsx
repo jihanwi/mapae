@@ -61,13 +61,13 @@ function OnboardingStep({done, n, label, txLabel, tx}: {
 }) {
     const {run, busy, phase} = useTx();
     const globalBusy = useGlobalTxBusy();
-    const text = phase === "wallet" ? copy.tx.walletConfirm : phase === "confirming" ? copy.tx.confirming : label;
+    const text = phase === "wallet" ? copy.tx.pendingWallet : phase === "confirming" ? copy.tx.pendingTx : label;
     return (
         <button onClick={() => void run(txLabel, tx)} disabled={done || busy || globalBusy}
             className={`flex items-center gap-2 ${done ? "text-success cursor-default" : "text-brass-400 hover:text-brass-500 disabled:opacity-60"}`}>
             <span className="w-[18px] h-[18px] rounded-full border grid place-items-center text-[11px]"
                 style={{borderColor: "currentColor"}}>{done ? "✓" : n}</span>
-            {done ? label : text}
+            {done ? `${label} 완료` : text}
         </button>
     );
 }

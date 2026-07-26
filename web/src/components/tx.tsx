@@ -1,6 +1,6 @@
 import {createContext, useCallback, useContext, useState, ReactNode} from "react";
 import {useQueryClient} from "@tanstack/react-query";
-import {usePublicClient, useWalletClient} from "wagmi";
+import {usePublicClient} from "wagmi";
 import {explorerTx} from "../config/chain";
 import {humanError} from "../lib/errors";
 import {copy} from "../copy";
@@ -63,7 +63,6 @@ export type RunFn = (label: string, fn: () => Promise<`0x${string}`>) => Promise
 /** 트랜잭션 실행 훅 — 3단계 상태(서명 대기 → 컨펌 대기 → 완료) + 토스트 + 쿼리 무효화 */
 export function useTx() {
     const {push, update, setBusyCount} = useContext(ToastCtx);
-    const {data: wallet} = useWalletClient();
     const client = usePublicClient();
     const qc = useQueryClient();
     const [busy, setBusy] = useState(false);
@@ -71,18 +70,24 @@ export function useTx() {
 
     const run: RunFn = useCallback(
         async (label, fn) => {
-            if (!wallet || !client) return false;
+            // H1: 어떤 경로로도 무음 실패 금지. fn은 커넥터 기반
+            // writeContractAsync라 wallet client 체크 자체가 불필요 —
+            // 영수증 대기용 publicClient만 확인하고, 없으면 안내 토스트.
+            if (!client) {
+                push({kind: "error", text: copy.tx.notReady});
+                return false;
+            }
             setBusy(true);
             setBusyCount((n) => n + 1);
             setPhase("wallet"); // ① 지갑 서명 대기
-            const id = push({kind: "pending", text: `${label} — ${copy.tx.walletConfirm}`});
+            const id = push({kind: "pending", text: `${label} — ${copy.tx.pendingWallet}`});
             try {
                 const hash = await fn();
                 setPhase("confirming"); // ② 컨펌 대기
-                update(id, {kind: "pending", text: `${label} — ${copy.tx.confirming}`, hash});
+                update(id, {kind: "pending", text: `${label} — ${copy.tx.pendingTx}`, hash});
                 const receipt = await client.waitForTransactionReceipt({hash});
                 if (receipt.status !== "success") throw new Error("reverted");
-                update(id, {kind: "success", text: `${label} ${copy.tx.success}`, hash}); // ③ 완료
+                update(id, {kind: "success", text: `${label} — ${copy.tx.success}`, hash}); // ③ 완료 (H3)
                 await qc.invalidateQueries();
                 return true;
             } catch (e) {
@@ -94,7 +99,7 @@ export function useTx() {
                 setBusyCount((n) => n - 1);
             }
         },
-        [wallet, client, push, update, qc, setBusyCount]
+        [client, push, update, qc, setBusyCount]
     );
     return {run, busy, phase};
 }
@@ -116,7 +121,7 @@ export function TxButton({
 }) {
     const {run, busy, phase} = useTx();
     const globalBusy = useGlobalTxBusy();
-    const label = phase === "wallet" ? copy.tx.walletConfirm : phase === "confirming" ? copy.tx.confirming : children;
+    const label = phase === "wallet" ? copy.tx.pendingWallet : phase === "confirming" ? copy.tx.pendingTx : children;
     const Btn = variant === "primary" ? PrimaryBtn : SecondaryBtn;
     return (
         <Btn className={className} disabled={disabled || busy || globalBusy} onClick={() => void action(run)}>

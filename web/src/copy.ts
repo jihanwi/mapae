@@ -51,7 +51,7 @@ export const copy = {
         claimed: "배정 수령 완료",
         myAllocation: "내 배정",
         myRefund: "환불",
-        notInAllocation: "이 지갑은 응모 내역이 없어요",
+        notInAllocation: "이 지갑으로 응모한 내역이 없어요",
         allocNote: "초과 응모 시 전원 최소 배정 + 추첨 보충 · 배정은 누구나 재검증 가능",
         deadline: "마감",
         minCommit: "최소 응모",
@@ -79,7 +79,8 @@ export const copy = {
         closed: "기한 마감",
         soldOut: "소진됨",
         sponsorTitle: "후원하기",
-        sponsorNote: (pct: string) => `후원액의 ${pct}%는 멤버십을 매수해 소각하고, 나머지는 크리에이터에게 전달돼요`,
+        sponsorNote: (pct: string) =>
+            `후원액의 ${pct}%로 시장에서 멤버십을 매수해 소각하고, 나머지는 크리에이터에게 전달돼요`,
         msgPlaceholder: "응원 메시지를 남겨 주세요 (온체인에 기록됩니다)",
         sponsorCta: "후원 보내기",
         feed: "후원 피드",
@@ -103,11 +104,11 @@ export const copy = {
         amountIn: "수량",
     },
     tx: {
-        pending: "트랜잭션 진행 중…",
-        walletConfirm: "지갑에서 확인해 주세요…",
-        confirming: "체결 대기 중…",
+        pendingWallet: "지갑에서 확인해 주세요…", // H2: 서명 팝업 대기
+        pendingTx: "체결을 기다리는 중…", // H2: 컨펌 대기
         success: "완료됐어요",
         failed: "실패했어요",
+        notReady: "지갑 연결을 확인하고 다시 시도해 주세요",
         viewOnChain: "온체인에서 확인 ↗", // C4
     },
     errors: {
