@@ -6,7 +6,7 @@ GIWA 체인(업비트/두나무의 이더리움 L2) 위의 크리에이터 온�
 
 ## 🏛 GASOK 1기 제출물 (GIWA Sepolia)
 
-- **🌐 MVP 데모**: **https://jihanwi.github.io/mapae/** — 접속 → 지갑 연결 → 상단 온보딩(① 테스트 KRWs 받기 → ② 실명 인증(데모)) → 세연 SEOYEON 공모에 응모까지 3분. 정산된 하늘 HANEUL 회원권으로 거래·리딤·후원 체험 가능
+- **🌐 MVP 데모**: **https://jihanwi.github.io/mapae/** — 접속 → 지갑 연결 → 상단 온보딩(① 테스트 KRWs 받기 → ② 실명 인증(데모)) → 홈 최상단의 「응모중」 카드에 응모까지 3분. 정산 완료된 회원권으로 거래·리딤·후원 체험 가능
 - **심사위원용 5분 워크스루**: [`docs/SUBMISSION.md`](docs/SUBMISSION.md) — explorer 링크 순서대로 클릭하면 전체 수명주기 확인
 - **배포 주소·verify 상태·데모 히스토리**: [`docs/DEPLOYMENTS.md`](docs/DEPLOYMENTS.md)
 - **GIWA-Native**: [`DojangEASAdapter`](src/DojangEASAdapter.sol)가 실 DojangScroll + EAS predeploy를 조회 — Verified Address(업비트 KYC 증명) 지갑이 곧 크리에이터 온보딩 ([`docs/DOJANG.md`](docs/DOJANG.md))
@@ -55,8 +55,17 @@ forge script script/DemoStage2.s.sol --account deployer --rpc-url $GIWA_SEPOLIA_
 # 4) Stage 3: AMM 매수/매도 → 후원(10% 소각) → convertAndBurn(미니 바이백)
 forge script script/DemoStage3.s.sol --account deployer --rpc-url $GIWA_SEPOLIA_RPC_URL --broadcast
 
-# 5) 체험용 공모 C (48시간 수명 — 만료 시 재실행하면 새 공모가 열린다)
+# 5) 체험용 공모 (48시간 수명 — 응모 밴드가 12~48h로 온체인 강제, Offering.sol:140)
+#    ★ 롤링: 같은 스크립트를 그대로 재실행하면 새 공모가 "열리지 않고" ActiveOfferingExists로
+#      revert한다 — 정산된 크리에이터는 one-live 규칙(MapaeFactory.sol:169-175)으로 슬롯을
+#      영구 점유한다. 다음 사이클은 반드시 새 파생 index + 새 심볼로 열어야 한다.
+#      (DemoOfferingC.s.sol이 아직 index 8·MAPC를 하드코딩 중이면 CREATOR_IDX·SYMBOL을
+#       바꿔 재빌드 후 실행 — 스크립트 env 분리는 페이즈 4에서 처리.)
 forge script script/DemoOfferingC.s.sol --account deployer --rpc-url $GIWA_SEPOLIA_RPC_URL --broadcast --slow
+# 5.5) ★ 개설 직후 필수 — 자식 컨트랙트 verify. 기본 스캔 창이 90k 블록(GIWA ~1블록/s → 약 25h)
+#      뿐이라 즉시 돌리고, --from-block은 개설 블록 기준으로 준다. done: N/N + exit 0 육안 확인.
+node script/verify-children.js --rpc $GIWA_SEPOLIA_RPC_URL --verifier-url $BLOCKSCOUT_API_URL \
+  --factory $FACTORY --from-block <개설블록-100>
 ```
 
 ### 웹 MVP (web/)
