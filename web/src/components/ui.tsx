@@ -1,4 +1,5 @@
 import {ReactNode} from "react";
+import {copy} from "../copy";
 
 /** 메달리온 — 유일 모티프. 이중 원 + 중앙 serif 글자 */
 export function Medallion({
@@ -139,6 +140,16 @@ export function Skeleton({h = 120}: {h?: number}) {
 /** 인라인 텍스트 스켈레톤 — 크리에이터명 등 로드 전 자리 표시 */
 export function TextSkeleton({w = 80, h = 14}: {w?: number; h?: number}) {
     return <span className="inline-block rounded bg-ink-700 shimmer align-middle" style={{width: w, height: h}} />;
+}
+
+/** RPC 완전 장애 시 빈 화면 대신 안내 + 재시도 (1-5, 전 페이지 공용) */
+export function NetError({onRetry}: {onRetry: () => void}) {
+    return (
+        <div className="bg-ink-800 border border-ink-700 rounded-card p-6 text-center">
+            <p className="m-0 mb-4 text-[14px] text-hanji-400">{copy.home.netError}</p>
+            <SecondaryBtn onClick={onRetry}>{copy.home.retry}</SecondaryBtn>
+        </div>
+    );
 }
 
 /** 공모 카드 스켈레톤 — 실제 구조 힌트(아바타 + 텍스트 2줄 + 스탯 2칸)로 레이아웃 점프 방지 */

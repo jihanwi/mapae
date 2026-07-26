@@ -104,6 +104,7 @@ export const copy = {
         sponsorCta: "후원 보내기",
         feed: "후원 피드",
         feedBurned: (n: string) => `${n}장 소각`,
+        names: {} as Record<string, string>, // 1-6: 리딤 id → 표시명, 미등록은 "리딤 #N" 폴백
     },
     trade: {
         title: "거래",
@@ -116,6 +117,9 @@ export const copy = {
         buyLabel: "KRWs → 멤버십",
         sellLabel: "멤버십 → KRWs",
         quote: "예상 수령",
+        priceImpact: "가격 영향", // 1-3a
+        shallowPool: "테스트넷 얕은 풀이라 소액 체결에도 가격이 크게 움직여요", // 1-3b
+        buyPlaceholder: "10,000", // 1-2: 매수 소액 예시
         feeNote: "수수료 2% = 크리에이터 1% + 소각 0.5% + 유동성 0.5%",
         history: "거래 히스토리",
         lpTrust: "유동성은 영구 잠금 — LP 지분 전량이 0xdEaD 주소에 있어 누구도 회수할 수 없습니다", // C5

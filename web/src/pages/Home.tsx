@@ -2,7 +2,7 @@ import {useEffect, useState} from "react";
 import {Link} from "react-router-dom";
 import {copy} from "../copy";
 import {useOfferings, useParticipantCount, OfferingInfo} from "../hooks";
-import {Badge, Card, CardSkeleton, Gauge, Medallion, SecondaryBtn, Stat, TextSkeleton} from "../components/ui";
+import {Badge, Card, CardSkeleton, Gauge, Medallion, NetError, Stat, TextSkeleton} from "../components/ui";
 import {countdown, fmt} from "../lib/format";
 import {creatorOf} from "../lib/creators";
 
@@ -123,10 +123,7 @@ export default function Home() {
                 )}
             </div>
             {isError && offerings.length === 0 ? (
-                <div className="bg-ink-800 border border-ink-700 rounded-card p-6 text-center">
-                    <p className="m-0 mb-4 text-[14px] text-hanji-400">{copy.home.netError}</p>
-                    <SecondaryBtn onClick={() => refetch()}>{copy.home.retry}</SecondaryBtn>
-                </div>
+                <NetError onRetry={refetch} />
             ) : (
                 <div className="grid gap-4 sm:gap-5" style={{gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))"}}>
                     {isLoading && [1, 2, 3].map((i) => <CardSkeleton key={i} />)}

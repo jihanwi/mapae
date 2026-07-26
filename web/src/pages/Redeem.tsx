@@ -5,7 +5,7 @@ import {copy} from "../copy";
 import {ADDR} from "../contracts/addresses";
 import {MapaeFactoryAbi, MembershipTokenAbi, MockKRWAbi, RedeemManagerAbi, SponsorshipAbi} from "../contracts/abis";
 import {useEventLogs, useOfferings, useOnboarding, OfferingInfo} from "../hooks";
-import {Medallion, Skeleton, TextSkeleton} from "../components/ui";
+import {Medallion, NetError, Skeleton, TextSkeleton} from "../components/ui";
 import {RunFn, TxButton} from "../components/tx";
 import {fmt, sanitizeAmountInput, shortAddr} from "../lib/format";
 import {creatorOf} from "../lib/creators";
@@ -24,13 +24,14 @@ function usePeripherals(o: OfferingInfo | undefined) {
 }
 
 export default function Redeem() {
-    const {offerings, isLoading} = useOfferings();
+    const {offerings, isLoading, isError, refetch} = useOfferings();
     const settled = offerings.filter((o) => o.settled);
     const [sel, setSel] = useState(0);
     const o = settled[sel];
     const {redeemManager, sponsorship} = usePeripherals(o);
 
     if (isLoading) return <div className="max-w-page mx-auto px-4 sm:px-8 pt-12"><Skeleton h={300} /></div>;
+    if (isError && offerings.length === 0) return <div className="max-w-page mx-auto px-4 sm:px-8 pt-12"><NetError onRetry={refetch} /></div>;
 
     return (
         <div className="max-w-page mx-auto px-4 sm:px-8 pt-8 sm:pt-10 pb-16 sm:pb-20">
@@ -120,7 +121,7 @@ function Catalog({o, redeemManager}: {o: OfferingInfo; redeemManager: `0x${strin
                             <div className="flex items-center gap-4 mb-4">
                                 <Medallion char={fmt(r.burnAmount, 0)} sub="장 소각" size={64} />
                                 <div className="flex-1">
-                                    <div className="text-[17px] font-bold">리딤 #{r.id.toString()}</div>
+                                    <div className="text-[17px] font-bold">{copy.redeem.names[r.id.toString()] ?? `리딤 #${r.id.toString()}`}</div>
                                     <div className="text-[12px] text-hanji-400 mt-1 tabular-nums">
                                         {r.maxClaims > 0n
                                             ? copy.redeem.claims(claimCount.toString(), r.maxClaims.toString())

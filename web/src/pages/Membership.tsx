@@ -3,7 +3,7 @@ import {useAccount, useReadContracts} from "wagmi";
 import {Abi} from "viem";
 import {copy} from "../copy";
 import {useOfferings, OfferingInfo} from "../hooks";
-import {Medallion, PrimaryBtn, Skeleton, TextSkeleton} from "../components/ui";
+import {Medallion, NetError, PrimaryBtn, Skeleton, TextSkeleton} from "../components/ui";
 import {fmt} from "../lib/format";
 import {creatorOf} from "../lib/creators";
 import {TIERS, tierIndex, toNextTier} from "../lib/tier";
@@ -12,7 +12,7 @@ import {explorerAddr} from "../config/chain";
 
 export default function Membership() {
     const {address} = useAccount();
-    const {offerings, isLoading} = useOfferings();
+    const {offerings, isLoading, isError, refetch} = useOfferings();
     const zero = "0x0000000000000000000000000000000000000000" as const;
     const balances = useReadContracts({
         contracts: offerings.map((o) => ({
@@ -27,6 +27,9 @@ export default function Membership() {
 
     if (isLoading || (address && balances.isLoading)) {
         return <div className="max-w-page mx-auto px-4 sm:px-8 pt-12"><Skeleton h={300} /></div>;
+    }
+    if (isError && offerings.length === 0) {
+        return <div className="max-w-page mx-auto px-4 sm:px-8 pt-12"><NetError onRetry={refetch} /></div>;
     }
 
     return (

@@ -7,7 +7,7 @@ import {copy} from "../copy";
 import {ADDR} from "../contracts/addresses";
 import {MockKRWAbi, OfferingAbi} from "../contracts/abis";
 import {useOfferings, useOnboarding, useParticipantCount} from "../hooks";
-import {Badge, Gauge, Medallion, PrimaryBtn, SecondaryBtn, Skeleton, TextSkeleton} from "../components/ui";
+import {Badge, Gauge, Medallion, NetError, PrimaryBtn, SecondaryBtn, Skeleton, TextSkeleton} from "../components/ui";
 import {RunFn, TxButton} from "../components/tx";
 import {countdown, fmt, sanitizeAmountInput} from "../lib/format";
 import {creatorOf} from "../lib/creators";
@@ -36,7 +36,7 @@ function useAllocation(offering: string | undefined, account: string | undefined
 
 export default function Offering() {
     const {addr} = useParams<{addr: `0x${string}`}>();
-    const {offerings, isLoading} = useOfferings();
+    const {offerings, isLoading, isError, refetch} = useOfferings();
     const o = offerings.find((x) => x.address.toLowerCase() === addr?.toLowerCase());
     const {address: account} = useAccount();
     const {krwBalance, verified} = useOnboarding();
@@ -73,6 +73,10 @@ export default function Offering() {
 
     if (isLoading) {
         return <div className="max-w-page mx-auto px-4 sm:px-8 pt-12"><Skeleton h={400} /></div>;
+    }
+    if (!o && isError) {
+        // 1-5: RPC 장애를 not-found로 오인하지 않도록 분기
+        return <div className="max-w-page mx-auto px-4 sm:px-8 pt-12"><NetError onRetry={refetch} /></div>;
     }
     if (!o) {
         // 6-a: 존재하지 않는 공모 주소 → 영구 스켈레톤 대신 not-found
@@ -161,7 +165,7 @@ export default function Offering() {
                                 : frozen ? <Badge kind="frozen">{copy.badge.frozen}</Badge>
                                 : <Badge kind="open">{copy.badge.open}</Badge>}
                             {live ? (
-                                <span className="text-[13px] text-brass-400 font-semibold tabular-nums">마감까지 {countdown(o.deadline, now).replace(/^D-\d+ /, "")}</span>
+                                <span className="text-[13px] text-brass-400 font-semibold tabular-nums">마감까지 {countdown(o.deadline, now).replace(/^D-0 /, "")}</span>
                             ) : (
                                 <a className="text-[13px]" href={explorerAddr(o.address)} target="_blank" rel="noreferrer">{copy.tx.viewOnChain}</a>
                             )}
