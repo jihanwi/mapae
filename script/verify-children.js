@@ -81,20 +81,12 @@ function verify(addr, contractPath, ctorSig, ctorValues) {
             ],
             {encoding: "utf8"}
         );
-        // Fix 3: on this forge version an already-verified contract prints
-        // "is already verified. Skipping verification." and exits 0, so the
-        // second per-cycle run (pool re-verify) is already idempotent. Log it.
-        if (/already verified/i.test(out)) console.log("  (already verified — counted ok)");
+        // Re-runs are idempotent with no extra handling: forge short-circuits an
+        // already-verified contract ("...is already verified. Skipping.") and
+        // exits 0, so execFileSync doesn't throw and this counts as ok.
         console.log(out.trim().split("\n").slice(-3).join("\n"));
         return true;
     } catch (e) {
-        // Defensive: if a future forge instead *errors* on already-verified,
-        // still count it as success so re-runs stay idempotent.
-        const hay = `${e.stdout ?? ""} ${e.stderr ?? ""} ${e.message ?? ""}`;
-        if (/already verified/i.test(hay)) {
-            console.log("  (already verified — counted ok, from error path)");
-            return true;
-        }
         console.error(`FAILED: ${e.message?.split("\n")[0]}`);
         return false;
     }

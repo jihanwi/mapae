@@ -3,11 +3,11 @@
 체인: GIWA Sepolia (chain ID `91342`) · Explorer: https://sepolia-explorer.giwa.io
 
 > **상태: 최종 배포 완료 — 2026-07-23 배포 · 2026-07-24 데모 완결 (UTC).**
-> **제출 스택 13종 · 배포 주소 전량 Blockscout verified ✅** (직접 배포 + 내부 CREATE — 디플로이어·풀 포함).
-> **최종 검증: 2026-07-27 01:55 KST** (제출 스택 전량 `verify-children.js` 재확인 `done: 14/14`). 롤링 데모 공모는 개설·정산 직후 `verify-children.js`로 검증한 뒤 아래 "롤링 데모 공모"에 추가하고 **이 줄을 갱신**한다.
+> **제출 컨트랙트 13종(타입) · 배포 주소 전량 Blockscout verified ✅** (직접 배포 + 내부 CREATE — 디플로이어·풀 포함).
+> **최종 검증: 2026-07-27 01:55 KST** (제출 컨트랙트 전량 `verify-children.js` 재확인 `done: 14/14`). 롤링 데모 공모는 개설·정산 직후 `verify-children.js`로 검증한 뒤 아래 "롤링 데모 공모"에 추가하고 **이 줄을 갱신**한다.
 > 배포자: `0x67a29AE83f3320C5E9b81D8a1531dE8FcCBED00C` · 심사위원 워크스루: [`docs/SUBMISSION.md`](SUBMISSION.md)
 
-## 제출 스택 (v1.0-gasok · 불변 · 전량 verified ✅)
+## 제출 컨트랙트 (v1.0-gasok · 불변 · 전량 verified ✅)
 
 ### 코어
 
@@ -42,7 +42,7 @@
 | MapaeVesting B | [`0xCEa52ab0553581b2343D10CCCb3E28F6Dba1E143`](https://sepolia-explorer.giwa.io/address/0xCEa52ab0553581b2343D10CCCb3E28F6Dba1E143) |
 | Sponsorship B | [`0xaCa3FD0072f16CDe3EFD0191c3c2f1eBc5a20901`](https://sepolia-explorer.giwa.io/address/0xaCa3FD0072f16CDe3EFD0191c3c2f1eBc5a20901) |
 
-## 롤링 데모 공모 (운영 · 사이클마다 추가)
+## 롤링 데모 공모 (운영)
 
 제출(v1.0-gasok) 이후 심사 기간 동안 응모 경로를 유지하려고 추가로 개설하는 공모다. 코어와 분리해 관리한다.
 팩토리가 내부 CREATE로 만드는 자식(Offering·Token·RedeemManager·Vesting·Sponsorship)과 정산 시 생기는 MapaePool은 자동 verify되지 않으므로, **각 공모는 개설·정산 직후 `script/verify-children.js`(개설 블록 기준 `--from-block`)로 검증한 뒤** 검증 완료분만 아래에 주소를 추가한다.
