@@ -14,3 +14,26 @@ a:hover { color: #F2EAD9; }
 input, button, textarea { font-family: inherit; }
 ::placeholder { color: #6B5F4E; }
 .tabular-nums { font-variant-numeric: tabular-nums; }
+
+/* M4: iOS 탭 하이라이트 제거 — active 상태는 자체 스타일로 */
+button, a, [role="button"] { -webkit-tap-highlight-color: transparent; }
+
+/* M2: 스켈레톤 shimmer — 은은한 brass 톤이 좌→우로 흐름 */
+@keyframes shimmer {
+    100% { transform: translateX(100%); }
+}
+.shimmer {
+    position: relative;
+    overflow: hidden;
+}
+.shimmer::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, rgba(195, 154, 59, 0.09), transparent);
+    animation: shimmer 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+    .shimmer::after { animation: none; }
+}

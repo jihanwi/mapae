@@ -113,7 +113,7 @@ export function Card({children, className = "", onClick}: {children: ReactNode; 
     return (
         <div
             onClick={onClick}
-            className={`bg-ink-800 border border-ink-700 rounded-card p-6 ${onClick ? "cursor-pointer hover:border-brass-600" : ""} ${className}`}
+            className={`bg-ink-800 border border-ink-700 rounded-card p-4 sm:p-6 ${onClick ? "cursor-pointer hover:border-brass-600" : ""} ${className}`}
         >
             {children}
         </div>
@@ -133,10 +133,30 @@ export function Stat({label, value, unit}: {label: string; value: ReactNode; uni
 }
 
 export function Skeleton({h = 120}: {h?: number}) {
-    return <div className="rounded-card bg-ink-800 border border-ink-700 animate-pulse" style={{height: h}} />;
+    return <div className="rounded-card bg-ink-800 border border-ink-700 shimmer" style={{height: h}} />;
 }
 
 /** 인라인 텍스트 스켈레톤 — 크리에이터명 등 로드 전 자리 표시 */
 export function TextSkeleton({w = 80, h = 14}: {w?: number; h?: number}) {
-    return <span className="inline-block rounded bg-ink-700 animate-pulse align-middle" style={{width: w, height: h}} />;
+    return <span className="inline-block rounded bg-ink-700 shimmer align-middle" style={{width: w, height: h}} />;
+}
+
+/** 공모 카드 스켈레톤 — 실제 구조 힌트(아바타 + 텍스트 2줄 + 스탯 2칸)로 레이아웃 점프 방지 */
+export function CardSkeleton() {
+    return (
+        <div className="bg-ink-800 border border-ink-700 rounded-card p-4 sm:p-6">
+            <div className="flex items-center gap-3.5 mb-[18px]">
+                <span className="w-[52px] h-[52px] rounded-full bg-ink-700 shimmer flex-none" />
+                <div className="flex-1">
+                    <span className="block rounded bg-ink-700 shimmer mb-2" style={{height: 15, width: "55%"}} />
+                    <span className="block rounded bg-ink-700 shimmer" style={{height: 11, width: "38%"}} />
+                </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3 mb-[18px]">
+                <span className="rounded-stat bg-ink-900 shimmer" style={{height: 54}} />
+                <span className="rounded-stat bg-ink-900 shimmer" style={{height: 54}} />
+            </div>
+            <span className="block rounded bg-ink-700 shimmer" style={{height: 13, width: "60%"}} />
+        </div>
+    );
 }

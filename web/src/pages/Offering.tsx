@@ -90,15 +90,15 @@ export default function Offering() {
     };
 
     return (
-        <div className="max-w-page mx-auto px-4 sm:px-8 pt-10 pb-20">
+        <div className="max-w-page mx-auto px-4 sm:px-8 pt-8 sm:pt-10 pb-16 sm:pb-20">
             <Link to="/" className="text-[14px]">← 공모 목록</Link>
-            <div className="flex flex-wrap gap-7 mt-6 items-start">
-                {/* 좌: 크리에이터 */}
-                <div className="flex-1" style={{minWidth: 340}}>
-                    <div className="flex items-center gap-5 mb-7">
+            <div className="flex flex-col sm:flex-row flex-wrap gap-6 sm:gap-7 mt-5 sm:mt-6 items-start">
+                {/* 좌: 크리에이터 (모바일에선 응모 패널 아래로) */}
+                <div className="w-full sm:flex-1 order-2 sm:order-1" style={{minWidth: 0}}>
+                    <div className="flex items-center gap-4 sm:gap-5 mb-6 sm:mb-7">
                         <Medallion char={c ? c.name[0] : "…"} size={104} glow />
                         <div>
-                            <h1 className="m-0 text-[28px] font-bold">
+                            <h1 className="m-0 text-[24px] sm:text-[28px] font-bold">
                                 {c ? <>{c.name} <span className="text-hanji-400 font-normal">{c.en}</span></> : <TextSkeleton w={180} h={28} />}
                             </h1>
                             <div className="flex items-center gap-2 mt-2 text-[13px] text-success">
@@ -123,9 +123,9 @@ export default function Offering() {
                     </div>
                 </div>
 
-                {/* 우: 응모 패널 */}
-                <div className="flex-1" style={{minWidth: 340}}>
-                    <div className="bg-ink-800 border border-ink-700 rounded-card p-7">
+                {/* 우: 응모 패널 (모바일 최상단 — CTA 우선) */}
+                <div className="w-full sm:flex-1 order-1 sm:order-2" style={{minWidth: 0}}>
+                    <div className="bg-ink-800 border border-ink-700 rounded-card p-4 sm:p-7">
                         <div className="flex justify-between items-center mb-5">
                             {o.settled ? <Badge kind="neutral">{copy.badge.settled}</Badge>
                                 : o.refunding ? <Badge kind="neutral">{copy.badge.refunding}</Badge>

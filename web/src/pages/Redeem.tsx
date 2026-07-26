@@ -32,11 +32,11 @@ export default function Redeem() {
     if (isLoading) return <div className="max-w-page mx-auto px-4 sm:px-8 pt-12"><Skeleton h={300} /></div>;
 
     return (
-        <div className="max-w-page mx-auto px-4 sm:px-8 pt-10 pb-20">
-            <h1 className="m-0 mb-2 text-[28px] font-bold">{copy.redeem.title}</h1>
+        <div className="max-w-page mx-auto px-4 sm:px-8 pt-8 sm:pt-10 pb-16 sm:pb-20">
+            <h1 className="m-0 mb-2 text-[24px] sm:text-[28px] font-bold">{copy.redeem.title}</h1>
             <CreatorTabs list={settled} sel={sel} onSel={setSel} />
             {o && redeemManager && (
-                <div className="flex flex-wrap gap-7 items-start mt-8">
+                <div className="flex flex-col sm:flex-row flex-wrap gap-6 sm:gap-7 items-start mt-6 sm:mt-8">
                     <Catalog o={o} redeemManager={redeemManager} />
                     {sponsorship && <SponsorPanel o={o} sponsorship={sponsorship} />}
                 </div>
@@ -52,7 +52,7 @@ function CreatorTabs({list, sel, onSel}: {list: OfferingInfo[]; sel: number; onS
                 const c = creatorOf(o);
                 return (
                     <button key={o.address} onClick={() => onSel(i)}
-                        className={`px-4 py-2 rounded-full text-[13px] border ${i === sel ? "border-brass-400 text-brass-400 bg-ink-700" : "border-ink-700 text-hanji-400 hover:border-brass-600"}`}>
+                        className={`px-4 min-h-[44px] rounded-full text-[13px] border ${i === sel ? "border-brass-400 text-brass-400 bg-ink-700" : "border-ink-700 text-hanji-400 hover:border-brass-600 active:border-brass-400"}`}>
                         {c ? `${c.name} ${c.en}` : <TextSkeleton w={64} h={13} />}
                     </button>
                 );
@@ -96,17 +96,17 @@ function Catalog({o, redeemManager}: {o: OfferingInfo; redeemManager: `0x${strin
 
     const now = Math.floor(Date.now() / 1000);
     return (
-        <div className="flex-1" style={{minWidth: 340}}>
+        <div className="w-full sm:flex-1" style={{minWidth: 0}}>
             <h2 className="m-0 mb-5 text-[21px] font-bold">{copy.redeem.catalog}</h2>
             {ids.length === 0 && <p className="text-[13px] text-hanji-400">아직 등록된 리딤이 없어요</p>}
-            <div className="grid gap-5" style={{gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))"}}>
+            <div className="grid gap-4 sm:gap-5" style={{gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))"}}>
                 {ids.map((r, i) => {
                     const s = states.data?.[i]?.result as [bigint, bigint, bigint, bigint, boolean] | undefined;
                     const claimCount = s?.[3] ?? 0n;
                     const soldOut = r.maxClaims > 0n && claimCount >= r.maxClaims;
                     const expired = r.deadline > 0n && Number(r.deadline) < now;
                     return (
-                        <div key={r.id.toString()} className="bg-ink-800 border border-ink-700 rounded-card p-6">
+                        <div key={r.id.toString()} className="bg-ink-800 border border-ink-700 rounded-card p-4 sm:p-6">
                             <div className="flex items-center gap-4 mb-4">
                                 <Medallion char={fmt(r.burnAmount, 0)} sub="장 소각" size={64} />
                                 <div className="flex-1">
@@ -154,8 +154,8 @@ function SponsorPanel({o, sponsorship}: {o: OfferingInfo; sponsorship: `0x${stri
 
     const events = [...(feed.data ?? [])].reverse().slice(0, 8);
     return (
-        <div className="flex-1" style={{minWidth: 340}}>
-            <div className="bg-ink-800 border border-ink-700 rounded-card p-7">
+        <div className="w-full sm:flex-1" style={{minWidth: 0}}>
+            <div className="bg-ink-800 border border-ink-700 rounded-card p-4 sm:p-7">
                 <h2 className="m-0 mb-2 text-[21px] font-bold">{copy.redeem.sponsorTitle}</h2>
                 <p className="m-0 mb-5 text-[13px] text-hanji-400">
                     {copy.redeem.sponsorNote(burnBps.data !== undefined ? String(Number(burnBps.data) / 100) : "10")}

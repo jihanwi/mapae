@@ -2,7 +2,7 @@ import {useEffect, useState} from "react";
 import {Link} from "react-router-dom";
 import {copy} from "../copy";
 import {useOfferings, useParticipantCount, OfferingInfo} from "../hooks";
-import {Badge, Card, Gauge, Medallion, Skeleton, Stat, TextSkeleton} from "../components/ui";
+import {Badge, Card, CardSkeleton, Gauge, Medallion, Stat, TextSkeleton} from "../components/ui";
 import {countdown, fmt} from "../lib/format";
 import {creatorOf} from "../lib/creators";
 
@@ -100,19 +100,26 @@ export function computeBurned(o: OfferingInfo): bigint {
 export default function Home() {
     const {offerings, isLoading} = useOfferings();
     return (
-        <div className="max-w-page mx-auto px-4 sm:px-8 pt-12 sm:pt-16 pb-20">
-            <div className="mb-14">
-                <h1 className="m-0 mb-3 text-[28px] sm:text-[34px] font-bold leading-tight" style={{letterSpacing: "-0.01em"}}>
+        <div className="max-w-page mx-auto px-4 sm:px-8 pt-10 sm:pt-16 pb-16 sm:pb-20">
+            <div className="mb-10 sm:mb-14">
+                <h1 className="m-0 mb-3 text-[24px] sm:text-[34px] font-bold leading-tight" style={{letterSpacing: "-0.01em"}}>
                     {copy.heroTitle}
                 </h1>
-                <p className="m-0 text-[16px] text-hanji-400">{copy.heroSub}</p>
+                <p className="m-0 text-[15px] sm:text-[16px] text-hanji-400">{copy.heroSub}</p>
             </div>
-            <div className="flex items-baseline gap-3 mb-5">
+            <div className="flex items-baseline gap-3 mb-5 flex-wrap">
                 <h2 className="m-0 text-[21px] font-bold">{copy.home.section}</h2>
-                <span className="text-[13px] text-hanji-400">{copy.network}</span>
+                {isLoading ? (
+                    <span className="flex items-center gap-2 text-[13px] text-hanji-400">
+                        <span className="w-3 h-3 rounded-full border-2 border-brass-400 border-t-transparent animate-spin flex-none" />
+                        {copy.home.loading}
+                    </span>
+                ) : (
+                    <span className="text-[13px] text-hanji-400">{copy.network}</span>
+                )}
             </div>
-            <div className="grid gap-5" style={{gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))"}}>
-                {isLoading && [1, 2, 3].map((i) => <Skeleton key={i} h={220} />)}
+            <div className="grid gap-4 sm:gap-5" style={{gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))"}}>
+                {isLoading && [1, 2, 3].map((i) => <CardSkeleton key={i} />)}
                 {offerings.map((o) => <OfferingCard key={o.address} o={o} />)}
             </div>
             <p className="mt-12 mb-0 text-[12px] text-hanji-400 text-center">{copy.home.footnote}</p>

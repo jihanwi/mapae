@@ -30,14 +30,14 @@ export default function Trade() {
     if (!o) return <div className="max-w-page mx-auto px-4 sm:px-8 pt-12 text-hanji-400 text-[14px]">아직 상장된 회원권이 없어요</div>;
 
     return (
-        <div className="max-w-page mx-auto px-4 sm:px-8 pt-10 pb-20">
-            <h1 className="m-0 mb-2 text-[28px] font-bold">{copy.trade.title}</h1>
+        <div className="max-w-page mx-auto px-4 sm:px-8 pt-8 sm:pt-10 pb-16 sm:pb-20">
+            <h1 className="m-0 mb-2 text-[24px] sm:text-[28px] font-bold">{copy.trade.title}</h1>
             <div className="flex gap-2 mt-4 flex-wrap">
                 {listed.map((x, i) => {
                     const c = creatorOf(x);
                     return (
                         <button key={x.address} onClick={() => setSel(i)}
-                            className={`px-4 py-2 rounded-full text-[13px] border ${i === sel ? "border-brass-400 text-brass-400 bg-ink-700" : "border-ink-700 text-hanji-400 hover:border-brass-600"}`}>
+                            className={`px-4 min-h-[44px] rounded-full text-[13px] border ${i === sel ? "border-brass-400 text-brass-400 bg-ink-700" : "border-ink-700 text-hanji-400 hover:border-brass-600 active:border-brass-400"}`}>
                             {c ? `${c.name} ${c.en}` : <TextSkeleton w={64} h={13} />}
                         </button>
                     );
@@ -127,7 +127,7 @@ function TradePanel({o}: {o: OfferingInfo}) {
     const burned = computeBurned(o);
     return (
         <>
-            <div className="grid gap-3 mt-6 mb-7" style={{gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))"}}>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6 mb-6 sm:mb-7">
                 {/* 스팟 vs 공모가 병렬 — 등락색 금지 */}
                 <Stat label={copy.trade.spot} value={o.spotPrice > 0n ? fmt(o.spotPrice, 0) : "—"} unit="KRWs" />
                 <Stat label={copy.trade.offer} value={fmt(o.price, 0)} unit="KRWs" />
@@ -136,14 +136,14 @@ function TradePanel({o}: {o: OfferingInfo}) {
             </div>
 
             {/* T4: 후행 체결가 라인 차트 — 정가 기준선 위 유통 프리미엄의 시각화 */}
-            <div className="bg-ink-800 border border-ink-700 rounded-card p-6 mb-7">
+            <div className="bg-ink-800 border border-ink-700 rounded-card p-4 sm:p-6 mb-6 sm:mb-7">
                 <h3 className="m-0 mb-4 text-[17px] font-bold">{copy.trade.chartTitle}</h3>
                 <PriceChart points={points} offerPrice={Number(o.price) / 1e18} />
             </div>
 
-            <div className="flex flex-wrap gap-7 items-start">
-                <div className="flex-1" style={{minWidth: 340}}>
-                    <div className="bg-ink-800 border border-ink-700 rounded-card p-7">
+            <div className="flex flex-col sm:flex-row flex-wrap gap-6 sm:gap-7 items-start">
+                <div className="w-full sm:flex-1" style={{minWidth: 0}}>
+                    <div className="bg-ink-800 border border-ink-700 rounded-card p-4 sm:p-7">
                         {address && tokenBal !== undefined && krwBal !== undefined && (
                             <div className="text-[13px] text-hanji-400 mb-4 tabular-nums">
                                 {copy.trade.myStrip(fmt(tokenBal, 2), fmt(krwBal, 0))}
@@ -196,28 +196,29 @@ function TradePanel({o}: {o: OfferingInfo}) {
                 </div>
 
                 {/* 히스토리 — 캔들 금지, 리스트만. 방향 라벨은 뮤트 통일 (C6) */}
-                <div className="flex-1" style={{minWidth: 340}}>
+                <div className="w-full sm:flex-1" style={{minWidth: 0}}>
                     <h3 className="m-0 mb-4 text-[17px] font-bold">{copy.trade.history}</h3>
                     {events.length === 0 && <p className="text-[13px] text-hanji-400">아직 거래가 없어요</p>}
                     {events.map((l, i) => {
                         const a = l.args as {sender: string; krwIn: boolean; amountIn: bigint; amountOut: bigint};
                         const mine = !!address && a.sender.toLowerCase() === address.toLowerCase();
                         return (
-                            <div key={i} className="flex justify-between items-center bg-ink-900 rounded-stat px-4 py-3 mb-2 text-[13px]">
-                                <span className="text-hanji-400 flex items-center gap-1.5">
+                            <div key={i} className="flex justify-between items-center gap-2 flex-wrap bg-ink-900 rounded-stat px-4 py-3 mb-2 text-[13px]">
+                                <span className="text-hanji-400 flex items-center gap-1.5 flex-none">
                                     {a.krwIn ? copy.trade.buy : copy.trade.sell}
                                     {mine && (
                                         <span className="text-[11px] text-brass-400 border border-brass-600 rounded-full px-1.5 leading-[16px]">
                                             {copy.trade.meBadge}
                                         </span>
                                     )}
+                                    <span className="text-hanji-400 tabular-nums sm:hidden">{shortAddr(a.sender)}</span>
                                 </span>
-                                <span className="text-hanji-100 tabular-nums">
+                                <span className="text-hanji-100 tabular-nums text-right">
                                     {a.krwIn
                                         ? `${fmt(a.amountIn, 0)} KRWs → ${fmt(a.amountOut, 3)}장`
                                         : `${fmt(a.amountIn, 3)}장 → ${fmt(a.amountOut, 0)} KRWs`}
                                 </span>
-                                <span className="text-hanji-400 tabular-nums">{shortAddr(a.sender)}</span>
+                                <span className="text-hanji-400 tabular-nums hidden sm:inline">{shortAddr(a.sender)}</span>
                             </div>
                         );
                     })}

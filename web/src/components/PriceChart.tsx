@@ -45,10 +45,10 @@ export function PriceChart({points, offerPrice}: {points: PricePoint[]; offerPri
     const last = points[points.length - 1];
     const hovered = hover !== null ? points[hover] : null;
 
-    const onMove = (e: React.MouseEvent) => {
+    const pick = (clientX: number) => {
         const rect = svgRef.current?.getBoundingClientRect();
         if (!rect) return;
-        const px = ((e.clientX - rect.left) / rect.width) * W;
+        const px = ((clientX - rect.left) / rect.width) * W;
         let best = 0, bestD = Infinity;
         points.forEach((p, i) => {
             const d = Math.abs(x(p.t) - px);
@@ -59,8 +59,12 @@ export function PriceChart({points, offerPrice}: {points: PricePoint[]; offerPri
 
     return (
         <div className="relative">
-            <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full h-auto block"
-                onMouseMove={onMove} onMouseLeave={() => setHover(null)}>
+            <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full h-auto block select-none"
+                style={{touchAction: "pan-y"}}
+                onMouseMove={(e) => pick(e.clientX)} onMouseLeave={() => setHover(null)}
+                onTouchStart={(e) => pick(e.touches[0].clientX)}
+                onTouchMove={(e) => pick(e.touches[0].clientX)}
+                onTouchEnd={() => setHover(null)}>
                 {/* 그리드(수평만) + 좌측 가격 눈금 */}
                 {ticks.map((v) => (
                     <g key={v}>

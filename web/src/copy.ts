@@ -17,6 +17,7 @@ export const copy = {
     },
     home: {
         section: "진행 중인 공모",
+        loading: "온체인에서 불러오는 중…",
         verifiedCreator: "실명 인증 크리에이터",
         over: "초과 응모",
         price: "정가",

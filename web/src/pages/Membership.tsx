@@ -30,8 +30,8 @@ export default function Membership() {
     }
 
     return (
-        <div className="max-w-page mx-auto px-4 sm:px-8 pt-10 pb-20">
-            <h1 className="m-0 mb-8 text-[28px] font-bold">{copy.membership.title}</h1>
+        <div className="max-w-page mx-auto px-4 sm:px-8 pt-8 sm:pt-10 pb-16 sm:pb-20">
+            <h1 className="m-0 mb-6 sm:mb-8 text-[24px] sm:text-[28px] font-bold">{copy.membership.title}</h1>
             {holdings.length === 0 ? <Empty /> : holdings.map((h) => <Holding key={h.o.address} o={h.o} balance={h.balance} />)}
             <Ladder holdings={holdings} />
         </div>
@@ -46,15 +46,15 @@ function Holding({o, balance}: {o: OfferingInfo; balance: bigint}) {
     const shareBps = o.totalSupply > 0n ? Number((balance * 100_000n) / o.totalSupply) / 1000 : 0; // C2 실계산
 
     return (
-        <div className="flex flex-wrap gap-7 items-start bg-ink-800 border border-ink-700 rounded-card p-8 mb-6">
-            <div className="flex flex-col items-center gap-4 flex-none">
+        <div className="flex flex-wrap gap-6 sm:gap-7 items-start bg-ink-800 border border-ink-700 rounded-card p-4 sm:p-8 mb-6">
+            <div className="flex flex-col items-center gap-4 flex-none mx-auto sm:mx-0">
                 <Medallion char={tier?.hanja ?? "馬"} size={132} glow />
                 <div className="text-center">
                     <div className="font-serif text-[21px] font-bold text-brass-400">{tier?.hanja} 등급</div>
                     <div className="text-[13px] text-hanji-400 mt-1">{copy.membership.share(shareBps.toFixed(1))} 보유</div>
                 </div>
             </div>
-            <div className="flex-1" style={{minWidth: 280}}>
+            <div className="w-full sm:flex-1" style={{minWidth: 0}}>
                 <div className="flex justify-between items-baseline flex-wrap gap-2 mb-3">
                     <div className="text-[17px] font-bold">
                         {c ? <>{c.name} <span className="text-hanji-400 font-normal">{c.en}</span> 회원권</> : <TextSkeleton w={160} h={17} />}
@@ -96,7 +96,7 @@ function Holding({o, balance}: {o: OfferingInfo; balance: bigint}) {
 function Ladder({holdings}: {holdings: {o: OfferingInfo; balance: bigint}[]}) {
     const current = holdings.length > 0 ? tierIndex(holdings[0].balance, holdings[0].o.totalSupply) : -1;
     return (
-        <div className="mt-14 pt-10 border-t border-ink-700">
+        <div className="mt-10 sm:mt-14 pt-8 sm:pt-10 border-t border-ink-700">
             <h2 className="m-0 mb-2 text-[21px] font-bold">{copy.membership.ladder}</h2>
             <p className="m-0 mb-6 text-[13px] text-hanji-400">보유 비율에 따른 등급</p>
             <div className="grid gap-4" style={{gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))"}}>
@@ -123,9 +123,9 @@ function Ladder({holdings}: {holdings: {o: OfferingInfo; balance: bigint}[]}) {
 
 function Empty() {
     return (
-        <div className="flex flex-wrap items-center gap-7 bg-ink-800 border border-ink-700 rounded-card p-8">
+        <div className="flex flex-wrap items-center gap-6 sm:gap-7 bg-ink-800 border border-ink-700 rounded-card p-5 sm:p-8">
             <Medallion char="馬" size={104} dashed />
-            <div className="flex-1" style={{minWidth: 220}}>
+            <div className="flex-1" style={{minWidth: 200}}>
                 <div className="text-[17px] font-bold mb-1">{copy.membership.empty}</div>
                 <div className="text-[13px] text-hanji-400">진행 중인 공모에 응모하면 여기에 표시돼요</div>
             </div>
