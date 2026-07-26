@@ -6,6 +6,7 @@ GIWA 체인(업비트/두나무의 이더리움 L2) 위의 크리에이터 온�
 
 ## 🏛 GASOK 1기 제출물 (GIWA Sepolia)
 
+- **🌐 MVP 데모**: **https://jihanwi.github.io/mapae/** — 접속 → 지갑 연결 → 상단 온보딩(① 테스트 KRWs 받기 → ② 실명 인증(데모)) → 세연 SEOYEON 공모에 응모까지 3분. 정산된 하늘 HANEUL 회원권으로 거래·리딤·후원 체험 가능
 - **심사위원용 5분 워크스루**: [`docs/SUBMISSION.md`](docs/SUBMISSION.md) — explorer 링크 순서대로 클릭하면 전체 수명주기 확인
 - **배포 주소·verify 상태·데모 히스토리**: [`docs/DEPLOYMENTS.md`](docs/DEPLOYMENTS.md)
 - **GIWA-Native**: [`DojangEASAdapter`](src/DojangEASAdapter.sol)가 실 DojangScroll + EAS predeploy를 조회 — Verified Address(업비트 KYC 증명) 지갑이 곧 크리에이터 온보딩 ([`docs/DOJANG.md`](docs/DOJANG.md))
@@ -53,7 +54,20 @@ forge script script/DemoStage2.s.sol --account deployer --rpc-url $GIWA_SEPOLIA_
 
 # 4) Stage 3: AMM 매수/매도 → 후원(10% 소각) → convertAndBurn(미니 바이백)
 forge script script/DemoStage3.s.sol --account deployer --rpc-url $GIWA_SEPOLIA_RPC_URL --broadcast
+
+# 5) 체험용 공모 C (48시간 수명 — 만료 시 재실행하면 새 공모가 열린다)
+forge script script/DemoOfferingC.s.sol --account deployer --rpc-url $GIWA_SEPOLIA_RPC_URL --broadcast --slow
 ```
+
+### 웹 MVP (web/)
+
+```sh
+cd web && npm install
+npm run codegen   # out/ + deployments/ → src/contracts (재배포·재정산 후 재실행)
+npm run dev       # 로컬 (http://localhost:5173)
+npm run build     # 배포 빌드 — main push 시 GitHub Pages 자동 배포 (deploy-web.yml)
+```
+공모 정산 후에는 `deployments/alloc-*.json`을 `web/public/allocations/<offering주소>.json`으로 복사해야 claim이 동작한다.
 
 스펙 단일 기준(SSOT): [`docs/SPEC.md`](docs/SPEC.md) · 신뢰 모델: [`docs/TRUST.md`](docs/TRUST.md) · Dojang 연동: [`docs/DOJANG.md`](docs/DOJANG.md) · 배정 스크립트: [`script/allocation/`](script/allocation/README.md)
 

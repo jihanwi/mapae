@@ -1,6 +1,9 @@
 # MAPAE — 심사위원용 5분 워크스루 (GASOK 1기)
 
-> 최종 배포 기준 (M5, GIWA Sepolia · 배포 22개 전부 verified). 전체 주소 표: [`docs/DEPLOYMENTS.md`](DEPLOYMENTS.md)
+> 최종 배포 기준 (M5, GIWA Sepolia · 배포 전부 verified). 전체 주소 표: [`docs/DEPLOYMENTS.md`](DEPLOYMENTS.md)
+>
+> **🌐 MVP 데모: https://jihanwi.github.io/mapae/** — 지갑 연결 → 온보딩 2클릭(테스트 KRWs + 실명 인증 데모) →
+> 라이브 공모(세연 SEOYEON, 48h 수명) 응모 → 정산된 회원권으로 거래·리딤·후원 체험. 아래 explorer 워크스루와 같은 컨트랙트를 사용한다.
 
 MAPAE는 GIWA 위의 크리에이터 온체인 회원권 플랫폼입니다 — **발행(정가 공모) · 유통(AMM
 정가 상장) · 소비(리딤·후원 소각)** 세 개의 시장이 전부 온체인이며, 아래 explorer 링크를
