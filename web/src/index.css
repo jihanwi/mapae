@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+    margin: 0;
+    background: #1A1510;
+    color: #F2EAD9;
+    font-family: "Pretendard Variable", Pretendard, sans-serif;
+    -webkit-font-smoothing: antialiased;
+}
+a { color: #C39A3B; text-decoration: none; }
+a:hover { color: #F2EAD9; }
+input, button, textarea { font-family: inherit; }
+::placeholder { color: #6B5F4E; }
+.tabular-nums { font-variant-numeric: tabular-nums; }

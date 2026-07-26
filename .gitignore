@@ -23,3 +23,7 @@ qna_prep.md
 contract_plan.md
 *_prompt.md
 *.pptx
+
+# Web
+web/node_modules/
+web/dist/
