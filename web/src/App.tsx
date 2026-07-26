@@ -14,8 +14,25 @@ function Nav() {
     const {connect, connectors} = useConnect({mutation: {onError: () => push({kind: "error", text: copy.errors.noWallet})}});
     const {disconnect} = useDisconnect();
     const {switchChain} = useSwitchChain();
-    const {krwBalance} = useOnboarding();
+    const {krwBalance, ethBalance} = useOnboarding();
+    const {writeContractAsync} = useWriteContract();
+    const {run, busy} = useTx();
+    const globalBusy = useGlobalTxBusy();
     const wrongChain = isConnected && chainId !== giwaSepolia.id;
+
+    // 상시 KRWs 재충전 — 온보딩 완료 후에도 잔고가 마르면 다시 받을 수 있게 (동일 금액·동일 tx 경유)
+    const faucetBtn = isConnected && !wrongChain ? (
+        <button
+            onClick={() => void run(copy.nav.faucetTxLabel, () =>
+                writeContractAsync({address: ADDR.mockKRW, abi: MockKRWAbi, functionName: "faucet", args: [copy.onboarding.faucetAmount], chainId: giwaSepolia.id}))}
+            disabled={busy || globalBusy || ethBalance === 0n}
+            aria-label={copy.nav.faucetTitle}
+            title={ethBalance === 0n ? copy.onboarding.needGas : copy.nav.faucetTitle}
+            className="flex-none whitespace-nowrap min-h-[44px] px-3.5 border border-ink-700 rounded-full text-[13px] text-hanji-100 hover:border-brass-600 active:border-brass-400 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-ink-700">
+            <span className="hidden sm:inline">{copy.nav.faucet}</span>
+            <span className="sm:hidden">{copy.nav.faucetShort}</span>
+        </button>
+    ) : null;
 
     // 데스크톱 인라인 탭 / 모바일 4등분 그리드 탭 공용
     const tabs = [
@@ -57,8 +74,8 @@ function Nav() {
 
     return (
         <div className="border-b border-ink-700 sticky top-0 z-10" style={{background: "rgba(26,21,16,.94)", backdropFilter: "blur(8px)"}}>
-            {/* 1줄: 로고 + (데스크톱 인라인 탭) + 지갑 */}
-            <div className="max-w-page mx-auto px-4 sm:px-8 min-h-[60px] sm:min-h-[64px] py-2 flex items-center gap-x-8">
+            {/* 1줄: 로고 + (데스크톱 인라인 탭) + [faucet + 지갑] */}
+            <div className="max-w-page mx-auto px-4 sm:px-8 min-h-[60px] sm:min-h-[64px] py-2 flex items-center gap-x-3 sm:gap-x-8">
                 <NavLink to="/" className="flex items-center gap-2.5 flex-none">
                     <img src={`${import.meta.env.BASE_URL}logo.png`} alt="MAPAE 로고" className="h-9 w-auto block" />
                     <span className="font-serif text-[17px] font-bold text-hanji-100" style={{letterSpacing: "0.16em"}}>MAPAE</span>
@@ -69,7 +86,10 @@ function Nav() {
                     ))}
                 </nav>
                 <div className="flex-1 sm:flex-none" />
-                {wallet}
+                <div className="flex items-center gap-2 flex-none">
+                    {faucetBtn}
+                    {wallet}
+                </div>
             </div>
             {/* 2줄(모바일 전용): 탭 4등분 풀폭 */}
             <nav className="grid grid-cols-4 sm:hidden border-t border-ink-700">

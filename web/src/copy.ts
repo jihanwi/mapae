@@ -4,7 +4,13 @@ export const copy = {
     appTitle: "MAPAE",
     heroTitle: "사고팔 수 있는 팬 멤버십",
     heroSub: "발행은 공모주처럼 · 유통은 시장처럼 · 소비는 정가처럼",
-    nav: {home: "공모", membership: "내 멤버십", redeem: "리딤 & 후원", trade: "거래"},
+    nav: {
+        home: "공모", membership: "내 멤버십", redeem: "리딤 & 후원", trade: "거래",
+        faucet: "KRWs 받기", // 상시 재충전 버튼 (데스크톱)
+        faucetShort: "+ KRWs", // 모바일 축약
+        faucetTitle: "테스트 KRWs 받기 (100만 KRWs)",
+        faucetTxLabel: "테스트 KRWs 받기", // 토스트 라벨
+    },
     network: "GIWA Sepolia 테스트넷",
     connect: "지갑 연결",
     wrongChain: "GIWA Sepolia로 전환",
@@ -132,7 +138,7 @@ export const copy = {
         needVerify: "먼저 상단에서 실명 인증을 해주세요",
         belowMinCommit: (n: string) => `최소 응모 금액은 ${n} KRWs예요`,
         overWalletLimit: "1인당 한도를 초과해요",
-        overKrwBalance: "KRWs 잔고보다 많아요",
+        overKrwBalance: "KRWs 잔고보다 많아요 — 상단 ‘KRWs 받기’로 더 받을 수 있어요",
         overTokenBalance: "보유 장수보다 많아요",
         quoteUnavailable: "견적을 불러오지 못했어요",
         needTokenToRedeem: "보유 장수가 부족해요",
@@ -166,6 +172,7 @@ export const copy = {
         ERC20InsufficientBalance: "잔액이 부족해요",
         ERC20InsufficientAllowance: "먼저 사용 승인이 필요해요",
         PoolNotListed: "아직 상장 전이에요 — 공모 정산 후 거래할 수 있어요",
+        FaucetCapExceeded: "한 번에 받을 수 있는 한도를 넘었어요",
         ChainMismatchError: "GIWA Sepolia 네트워크로 전환한 뒤 다시 시도해 주세요", // P0 #7
         "insufficient funds": "가스비가 부족해요 — GIWA Sepolia 테스트 ETH를 먼저 받아 주세요", // P0 #3
         noWallet: "연결할 지갑을 찾지 못했어요 — 메타마스크 같은 지갑 확장을 설치한 뒤 다시 시도해 주세요", // P0 4-a
