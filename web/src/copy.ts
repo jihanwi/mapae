@@ -104,7 +104,11 @@ export const copy = {
         sponsorCta: "후원 보내기",
         feed: "후원 피드",
         feedBurned: (n: string) => `${n}장 소각`,
-        names: {} as Record<string, string>, // 1-6: 리딤 id → 표시명, 미등록은 "리딤 #N" 폴백
+        // 1-6/3-B: "<토큰심볼>:<id>" → 표시명, 미등록은 "리딤 #N" 폴백 (심볼로 매니저 구분해 id 충돌 방지)
+        names: {
+            "MAPA:2": "디지털 팬 배지",
+            "MAPB:1": "디지털 팬 배지",
+        } as Record<string, string>,
     },
     trade: {
         title: "거래",

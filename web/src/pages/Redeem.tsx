@@ -121,7 +121,7 @@ function Catalog({o, redeemManager}: {o: OfferingInfo; redeemManager: `0x${strin
                             <div className="flex items-center gap-4 mb-4">
                                 <Medallion char={fmt(r.burnAmount, 0)} sub="장 소각" size={64} />
                                 <div className="flex-1">
-                                    <div className="text-[17px] font-bold">{copy.redeem.names[r.id.toString()] ?? `리딤 #${r.id.toString()}`}</div>
+                                    <div className="text-[17px] font-bold">{copy.redeem.names[`${o.tokenSymbol}:${r.id.toString()}`] ?? `리딤 #${r.id.toString()}`}</div>
                                     <div className="text-[12px] text-hanji-400 mt-1 tabular-nums">
                                         {r.maxClaims > 0n
                                             ? copy.redeem.claims(claimCount.toString(), r.maxClaims.toString())

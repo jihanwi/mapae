@@ -3,10 +3,11 @@
 체인: GIWA Sepolia (chain ID `91342`) · Explorer: https://sepolia-explorer.giwa.io
 
 > **상태: 최종 배포 완료 — 2026-07-23 배포 · 2026-07-24 데모 완결 (UTC).**
-> **컨트랙트 13종 · 배포 22개 전부 Blockscout verified ✅** (직접 배포 6 + 내부 CREATE 16 — 디플로이어·풀 포함 전수 확인).
+> **컨트랙트 13종 · 전 배포 주소 Blockscout verified ✅** (직접 배포 + 내부 CREATE — 디플로이어·풀 포함 전수 확인).
+> **최종 검증: 2026-07-24 · v1.0-gasok 코어 전수.** 롤링 데모 공모는 개설·정산 직후 `verify-children.js`로 검증한 뒤 아래 "롤링 데모 공모"에 추가하고 이 줄을 갱신한다.
 > 배포자: `0x67a29AE83f3320C5E9b81D8a1531dE8FcCBED00C` · 심사위원 워크스루: [`docs/SUBMISSION.md`](SUBMISSION.md)
 
-## 컨트랙트 주소 (전부 verified ✅)
+## v1.0-gasok 코어 주소 (제출 기준 · 불변 · 전수 verified ✅)
 
 ### 코어
 
@@ -41,6 +42,15 @@
 | MapaeVesting B | [`0xCEa52ab0553581b2343D10CCCb3E28F6Dba1E143`](https://sepolia-explorer.giwa.io/address/0xCEa52ab0553581b2343D10CCCb3E28F6Dba1E143) |
 | Sponsorship B | [`0xaCa3FD0072f16CDe3EFD0191c3c2f1eBc5a20901`](https://sepolia-explorer.giwa.io/address/0xaCa3FD0072f16CDe3EFD0191c3c2f1eBc5a20901) |
 
+## 롤링 데모 공모 (운영 산물 · 사이클마다 추가)
+
+제출(v1.0-gasok) 이후 심사 기간 동안 응모 경로를 유지하려고 추가로 개설하는 공모다. 코어와 분리해 관리한다.
+팩토리가 내부 CREATE로 만드는 자식(Offering·Token·RedeemManager·Vesting·Sponsorship)과 정산 시 생기는 MapaePool은 자동 verify되지 않으므로, **각 공모는 개설·정산 직후 `script/verify-children.js`(개설 블록 기준 `--from-block`)로 검증한 뒤** 검증 완료분만 아래에 주소를 추가한다.
+
+| 공모 | 상태 | Offering 주소 |
+|---|---|---|
+| C (세연 MAPC) | 라이브 · 정산 대기 | [`0xc1E385aA03C77fc980aB23E38342b5b938de9A30`](https://sepolia-explorer.giwa.io/address/0xc1E385aA03C77fc980aB23E38342b5b938de9A30) |
+
 ## 데모 히스토리 (Stage 1~3 완결 ✅)
 
 **발행**: [createOffering A](https://sepolia-explorer.giwa.io/tx/0xb610613d61a975b77c0b65e24d16003f5c1d5cd2d89970418293373eb1c5ffad) ·
@@ -53,7 +63,9 @@ A: 5.1M/5M 초과 응모 ([부분 취소](https://sepolia-explorer.giwa.io/tx/0x
 
 **소비**: [createRedeemable](https://sepolia-explorer.giwa.io/tx/0x6bc8f296f9ba9f2c12a47330c8d14a94595f2adce666717c48007ea99e1f8162) →
 리딤 소각 2건 ([1](https://sepolia-explorer.giwa.io/tx/0x85f176ee0d093bb86558d6fa541067c93e6ab3d8f45afffdee045dbdb216166f),
-[2](https://sepolia-explorer.giwa.io/tx/0x1d940bc5682b1252ba06c5ed7e349089b15838cec03309dbd636a7306cd24d76))
+[2](https://sepolia-explorer.giwa.io/tx/0x1d940bc5682b1252ba06c5ed7e349089b15838cec03309dbd636a7306cd24d76)) ·
+저가 체험용 1장 리딤 추가 ([A #2](https://sepolia-explorer.giwa.io/tx/0x939753941198f431a6a02df38b54a91c4eb75d59ffd5ca7aeee036b6e18ca694),
+[B #1](https://sepolia-explorer.giwa.io/tx/0xfba1c400a5c5273fd9f06f0f5dabf3d2960bf8adf6f572bef6fcb09c3a121a16))
 
 **유통+플라이휠 (Stage 3)**:
 [매수 20k KRWs → 1.910 토큰](https://sepolia-explorer.giwa.io/tx/0xc0b19bfa4bfe534f6fe988c9aabe340598d3dc265239d379c3240ef96547156c) ·
