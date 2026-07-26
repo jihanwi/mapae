@@ -6,8 +6,8 @@ import {copy} from "../copy";
 import {ADDR} from "../contracts/addresses";
 import {MapaePoolAbi, MembershipTokenAbi, MockKRWAbi} from "../contracts/abis";
 import {useEventLogs, useOfferings, OfferingInfo} from "../hooks";
-import {PrimaryBtn, Skeleton, Stat} from "../components/ui";
-import {useTx} from "../components/tx";
+import {Skeleton, Stat} from "../components/ui";
+import {RunFn, TxButton} from "../components/tx";
 import {fmt, shortAddr} from "../lib/format";
 import {creatorOf} from "../lib/creators";
 import {computeBurned} from "./Home";
@@ -48,7 +48,6 @@ export default function Trade() {
 
 function TradePanel({o}: {o: OfferingInfo}) {
     const {address} = useAccount();
-    const {run, busy} = useTx();
     const {writeContractAsync} = useWriteContract();
     const [dir, setDir] = useState<"buy" | "sell">("buy");
     const [amount, setAmount] = useState("");
@@ -67,7 +66,7 @@ function TradePanel({o}: {o: OfferingInfo}) {
     const swaps = useEventLogs(pool,
         "event Swapped(address indexed sender, address indexed to, bool krwIn, uint256 amountIn, uint256 amountOut, uint256 royalty)");
 
-    const doSwap = async () => {
+    const doSwap = async (run: RunFn) => {
         if (!address || amountWei === 0n || quote.data === undefined) return;
         const minOut = ((quote.data as bigint) * 99n) / 100n; // 1% slippage
         const inToken = dir === "buy" ? ADDR.mockKRW : o.token;
@@ -122,7 +121,7 @@ function TradePanel({o}: {o: OfferingInfo}) {
                             </span>
                         </div>
                         <div className="text-[12px] text-hanji-400 mb-5">{copy.trade.feeNote} · 슬리피지 1%</div>
-                        <PrimaryBtn className="w-full" disabled={busy || amountWei === 0n} onClick={doSwap}>{copy.trade.swapCta}</PrimaryBtn>
+                        <TxButton className="w-full" disabled={amountWei === 0n} action={doSwap}>{copy.trade.swapCta}</TxButton>
                     </div>
                     {/* LP 신뢰 스트립 (C5) */}
                     <div className="mt-4 rounded-input px-4 py-3.5 text-[13px] text-hanji-400 border border-ink-700 bg-ink-900">

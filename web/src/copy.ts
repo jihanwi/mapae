@@ -104,6 +104,8 @@ export const copy = {
     },
     tx: {
         pending: "트랜잭션 진행 중…",
+        walletConfirm: "지갑에서 확인해 주세요…",
+        confirming: "체결 대기 중…",
         success: "완료됐어요",
         failed: "실패했어요",
         viewOnChain: "온체인에서 확인 ↗", // C4

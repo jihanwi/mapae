@@ -5,8 +5,8 @@ import {copy} from "../copy";
 import {ADDR} from "../contracts/addresses";
 import {MapaeFactoryAbi, MembershipTokenAbi, MockKRWAbi, RedeemManagerAbi, SponsorshipAbi} from "../contracts/abis";
 import {useEventLogs, useOfferings, OfferingInfo} from "../hooks";
-import {Medallion, PrimaryBtn, Skeleton} from "../components/ui";
-import {useTx} from "../components/tx";
+import {Medallion, Skeleton} from "../components/ui";
+import {RunFn, TxButton} from "../components/tx";
 import {fmt, shortAddr} from "../lib/format";
 import {creatorOf} from "../lib/creators";
 
@@ -63,7 +63,6 @@ function CreatorTabs({list, sel, onSel}: {list: OfferingInfo[]; sel: number; onS
 
 function Catalog({o, redeemManager}: {o: OfferingInfo; redeemManager: `0x${string}`}) {
     const {address} = useAccount();
-    const {run, busy} = useTx();
     const {writeContractAsync} = useWriteContract();
     const created = useEventLogs(redeemManager,
         "event RedeemableCreated(uint256 indexed id, address indexed creator, uint256 burnAmount, uint256 maxClaims, uint256 deadline)");
@@ -85,7 +84,7 @@ function Catalog({o, redeemManager}: {o: OfferingInfo; redeemManager: `0x${strin
         query: {enabled: !!address, refetchInterval: 15_000},
     });
 
-    const doRedeem = async (r: (typeof ids)[number]) => {
+    const doRedeem = (r: (typeof ids)[number]) => async (run: RunFn) => {
         if (((allowance.data as bigint) ?? 0n) < r.burnAmount) {
             const ok = await run("회원권 사용 승인", () =>
                 writeContractAsync({address: o.token, abi: MembershipTokenAbi, functionName: "approve", args: [redeemManager, r.burnAmount]}));
@@ -119,9 +118,9 @@ function Catalog({o, redeemManager}: {o: OfferingInfo; redeemManager: `0x${strin
                                     </div>
                                 </div>
                             </div>
-                            <PrimaryBtn className="w-full" disabled={busy || soldOut || expired} onClick={() => doRedeem(r)}>
+                            <TxButton className="w-full" disabled={soldOut || expired} action={doRedeem(r)}>
                                 {expired ? copy.redeem.closed : soldOut ? copy.redeem.soldOut : `${copy.redeem.redeemCta} — ${copy.redeem.cost(fmt(r.burnAmount, 0))}`}
-                            </PrimaryBtn>
+                            </TxButton>
                         </div>
                     );
                 })}
@@ -132,7 +131,6 @@ function Catalog({o, redeemManager}: {o: OfferingInfo; redeemManager: `0x${strin
 
 function SponsorPanel({o, sponsorship}: {o: OfferingInfo; sponsorship: `0x${string}`}) {
     const {address} = useAccount();
-    const {run, busy} = useTx();
     const {writeContractAsync} = useWriteContract();
     const [amount, setAmount] = useState("");
     const [message, setMessage] = useState("");
@@ -144,7 +142,7 @@ function SponsorPanel({o, sponsorship}: {o: OfferingInfo; sponsorship: `0x${stri
         try { return parseUnits(amount.replace(/[^0-9.]/g, "") || "0", 18); } catch { return 0n; }
     }, [amount]);
 
-    const sponsor = async () => {
+    const sponsor = async (run: RunFn) => {
         if (amountWei === 0n || !address) return;
         const ok = await run("KRWs 사용 승인", () =>
             writeContractAsync({address: ADDR.mockKRW, abi: MockKRWAbi, functionName: "approve", args: [sponsorship, amountWei]}));
@@ -170,7 +168,7 @@ function SponsorPanel({o, sponsorship}: {o: OfferingInfo; sponsorship: `0x${stri
                 <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={3}
                     placeholder={copy.redeem.msgPlaceholder}
                     className="w-full box-border bg-ink-900 border border-ink-700 rounded-input px-4 py-3.5 text-[14px] text-hanji-100 outline-none focus:border-brass-400 resize-none mb-4" />
-                <PrimaryBtn className="w-full" disabled={busy || amountWei === 0n} onClick={sponsor}>{copy.redeem.sponsorCta}</PrimaryBtn>
+                <TxButton className="w-full" disabled={amountWei === 0n} action={sponsor}>{copy.redeem.sponsorCta}</TxButton>
             </div>
             <div className="mt-6">
                 <h3 className="m-0 mb-4 text-[17px] font-bold">{copy.redeem.feed}</h3>

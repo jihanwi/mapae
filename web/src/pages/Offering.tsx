@@ -7,8 +7,8 @@ import {copy} from "../copy";
 import {ADDR} from "../contracts/addresses";
 import {MockKRWAbi, OfferingAbi} from "../contracts/abis";
 import {useOfferings, useParticipantCount} from "../hooks";
-import {Badge, Gauge, Medallion, PrimaryBtn, SecondaryBtn, Skeleton} from "../components/ui";
-import {useTx} from "../components/tx";
+import {Badge, Gauge, Medallion, SecondaryBtn, Skeleton} from "../components/ui";
+import {RunFn, TxButton} from "../components/tx";
 import {countdown, fmt} from "../lib/format";
 import {creatorOf} from "../lib/creators";
 import {explorerAddr} from "../config/chain";
@@ -40,7 +40,6 @@ export default function Offering() {
     const o = offerings.find((x) => x.address.toLowerCase() === addr?.toLowerCase());
     const {address: account} = useAccount();
     const participants = useParticipantCount(o?.address);
-    const {run, busy} = useTx();
     const {writeContractAsync} = useWriteContract();
     const [amount, setAmount] = useState("");
     const [now, setNow] = useState(Date.now());
@@ -78,7 +77,7 @@ export default function Offering() {
     const pctNum = o.raiseTarget > 0n ? Number((o.totalCommitted * 1000n) / o.raiseTarget) / 10 : 0;
     const myCommitted = (myCommit.data as bigint) ?? 0n;
 
-    const commit = async () => {
+    const commit = async (run: RunFn) => {
         if (!o || amountWei === 0n) return;
         if (((allowance.data as bigint) ?? 0n) < amountWei) {
             const ok = await run("KRWs 사용 승인", () =>
@@ -170,9 +169,9 @@ export default function Offering() {
                                 <div className="text-[12px] text-hanji-400 mb-4 tabular-nums">
                                     ≈ {o.price > 0n ? fmt((amountWei * 10n ** 18n) / o.price) : "0"}장
                                 </div>
-                                <PrimaryBtn className="w-full" disabled={busy || amountWei === 0n} onClick={commit}>
+                                <TxButton className="w-full" disabled={amountWei === 0n} action={commit}>
                                     {myCommitted > 0n ? copy.offering.commitMore : copy.offering.commitCta}
-                                </PrimaryBtn>
+                                </TxButton>
 
                                 {myCommitted > 0n && (
                                     <div className="mt-5 pt-5 border-t border-ink-700">
@@ -183,10 +182,10 @@ export default function Offering() {
                                         {frozen ? (
                                             <SecondaryBtn className="w-full" disabled>응모 취소 — {copy.badge.frozen}</SecondaryBtn>
                                         ) : (
-                                            <SecondaryBtn className="w-full" disabled={busy} onClick={() =>
+                                            <TxButton variant="secondary" className="w-full" action={(run) =>
                                                 run("응모 취소", () =>
                                                     writeContractAsync({address: o.address, abi: OfferingAbi, functionName: "cancel", args: [myCommitted]}))
-                                            }>{copy.offering.cancelCta} — 전액</SecondaryBtn>
+                                            }>{copy.offering.cancelCta} — 전액</TxButton>
                                         )}
                                     </div>
                                 )}
@@ -194,7 +193,7 @@ export default function Offering() {
                         )}
 
                         {o.settled && <SettledPanel o={o} alloc={alloc.data ?? null} claimed={(claimed.data as boolean) ?? false}
-                            myCommitted={myCommitted} busy={busy} onClaim={(a) =>
+                            myCommitted={myCommitted} claim={(a) => (run: RunFn) =>
                                 run("배정 수령", () =>
                                     writeContractAsync({address: o.address, abi: OfferingAbi, functionName: "claim", args: [a.allocation, a.refund, a.proof]}))
                             } />}
@@ -237,13 +236,12 @@ function FragmentRow({k, v}: {k: string; v: string}) {
     );
 }
 
-function SettledPanel({o, alloc, claimed, myCommitted, busy, onClaim}: {
+function SettledPanel({o, alloc, claimed, myCommitted, claim}: {
     o: ReturnType<typeof useOfferings>["offerings"][number];
     alloc: {allocation: bigint; refund: bigint; proof: `0x${string}`[]} | null;
     claimed: boolean;
     myCommitted: bigint;
-    busy: boolean;
-    onClaim: (a: {allocation: bigint; refund: bigint; proof: `0x${string}`[]}) => void;
+    claim: (a: {allocation: bigint; refund: bigint; proof: `0x${string}`[]}) => (run: RunFn) => Promise<unknown>;
 }) {
     if (!alloc) {
         return <p className="text-[13px] text-hanji-400 m-0">{copy.offering.notInAllocation}</p>;
@@ -266,9 +264,9 @@ function SettledPanel({o, alloc, claimed, myCommitted, busy, onClaim}: {
             {claimed ? (
                 <SecondaryBtn className="w-full" disabled>{copy.offering.claimed}</SecondaryBtn>
             ) : (
-                <PrimaryBtn className="w-full" disabled={busy} onClick={() => onClaim(alloc)}>
+                <TxButton className="w-full" action={claim(alloc)}>
                     {copy.offering.claimCta} — {fmt(alloc.allocation, 2)}장{alloc.refund > 0n ? " + 환불" : ""}
-                </PrimaryBtn>
+                </TxButton>
             )}
             <p className="text-[12px] text-hanji-400 mt-3 mb-0 text-center">배정 계산은 Settled 이벤트의 시드로 누구나 재검증할 수 있습니다</p>
         </div>

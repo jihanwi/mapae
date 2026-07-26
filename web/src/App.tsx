@@ -5,7 +5,7 @@ import {copy} from "./copy";
 import {ADDR} from "./contracts/addresses";
 import {MockKRWAbi, MockDojangAbi} from "./contracts/abis";
 import {useOnboarding} from "./hooks";
-import {useTx} from "./components/tx";
+import {useTx, useGlobalTxBusy} from "./components/tx";
 import {fmt, shortAddr} from "./lib/format";
 
 function Nav() {
@@ -56,36 +56,36 @@ function Nav() {
     );
 }
 
+function OnboardingStep({done, n, label, txLabel, tx}: {
+    done: boolean; n: string; label: string; txLabel: string; tx: () => Promise<`0x${string}`>;
+}) {
+    const {run, busy, phase} = useTx();
+    const globalBusy = useGlobalTxBusy();
+    const text = phase === "wallet" ? copy.tx.walletConfirm : phase === "confirming" ? copy.tx.confirming : label;
+    return (
+        <button onClick={() => void run(txLabel, tx)} disabled={done || busy || globalBusy}
+            className={`flex items-center gap-2 ${done ? "text-success cursor-default" : "text-brass-400 hover:text-brass-500 disabled:opacity-60"}`}>
+            <span className="w-[18px] h-[18px] rounded-full border grid place-items-center text-[11px]"
+                style={{borderColor: "currentColor"}}>{done ? "✓" : n}</span>
+            {done ? label : text}
+        </button>
+    );
+}
+
 function OnboardingStrip() {
     const {isConnected, chainId} = useAccount();
     const {krwBalance, verified} = useOnboarding();
     const {writeContractAsync} = useWriteContract();
-    const {run, busy} = useTx();
     if (!isConnected || chainId !== giwaSepolia.id || (krwBalance > 0n && verified)) return null;
-
-    const step = (done: boolean, n: string, label: string, onClick: () => void) => (
-        <button onClick={onClick} disabled={done || busy}
-            className={`flex items-center gap-2 ${done ? "text-success cursor-default" : "text-brass-400 hover:text-brass-500"}`}>
-            <span className="w-[18px] h-[18px] rounded-full border grid place-items-center text-[11px]"
-                style={{borderColor: "currentColor"}}>{done ? "✓" : n}</span>
-            {label}
-        </button>
-    );
     return (
         <div className="bg-ink-900 border-b border-ink-700">
             <div className="max-w-page mx-auto px-4 sm:px-8 py-3 flex items-center gap-5 flex-wrap text-[13px]">
                 <span className="text-hanji-400 font-semibold">{copy.onboarding.title}</span>
-                {step(krwBalance > 0n, "1", copy.onboarding.faucet, () =>
-                    run("테스트 KRWs 받기", () =>
-                        writeContractAsync({address: ADDR.mockKRW, abi: MockKRWAbi, functionName: "faucet", args: [copy.onboarding.faucetAmount]})
-                    )
-                )}
+                <OnboardingStep done={krwBalance > 0n} n="1" label={copy.onboarding.faucet} txLabel="테스트 KRWs 받기"
+                    tx={() => writeContractAsync({address: ADDR.mockKRW, abi: MockKRWAbi, functionName: "faucet", args: [copy.onboarding.faucetAmount]})} />
                 <span className="text-ink-700">→</span>
-                {step(verified, "2", copy.onboarding.verify, () =>
-                    run("실명 인증 (데모)", () =>
-                        writeContractAsync({address: ADDR.mockDojang, abi: MockDojangAbi, functionName: "selfVerify"})
-                    )
-                )}
+                <OnboardingStep done={verified} n="2" label={copy.onboarding.verify} txLabel="실명 인증 (데모)"
+                    tx={() => writeContractAsync({address: ADDR.mockDojang, abi: MockDojangAbi, functionName: "selfVerify"})} />
             </div>
         </div>
     );
