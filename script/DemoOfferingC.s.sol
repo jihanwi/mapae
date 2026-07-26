@@ -38,7 +38,7 @@ contract DemoOfferingC is Script {
         // ---- deployer: demo guide (small target) + gas for the creator ----
         vm.startBroadcast();
         MapaeFactory.Guide memory g = MapaeFactory.Guide({
-            minPrice: 1_000e18,
+            minPrice: 1000e18,
             maxPrice: 100_000e18,
             minRaise: 1_000_000e18, // demo: 1M KRWs targets allowed
             maxRaise: 500_000_000e18,
