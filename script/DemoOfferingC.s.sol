@@ -1,16 +1,25 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-// Demo Offering C — a LIVE offering judges can actually commit to (A and B are
-// settled). Re-run this script whenever the 48h window expires:
+// Demo Offering — a LIVE offering judges can actually commit to (older ones are
+// settled). Rolling: re-run each cycle after the previous 48h window expires.
 //
 //   forge script script/DemoOfferingC.s.sol --account deployer --password-file ~/.foundry/deployer.pw \
 //     --sender <deployer-addr> --rpc-url $GIWA_SEPOLIA_RPC_URL --broadcast --slow
 //
+// ★ ONE-LIVE RULE (MapaeFactory.sol:169-175): a settled creator holds its slot
+//   forever, so every cycle MUST use a fresh derivation index + fresh symbol, or
+//   createOffering reverts ActiveOfferingExists. Override per cycle via env
+//   (defaults below are cycle 1 = "D"):
+//     CREATOR_IDX  derivation index of the creator wallet   (default 9)
+//     SYMBOL       token symbol; web maps it to a persona    (default MAPD → 다온 DAON)
+//     TOKEN_NAME   ERC-20 name                               (default "MAPAE Demo D")
+//   Next cycle: CREATOR_IDX=10 SYMBOL=MAPE ... (index 10 = 0xBAb4…0836, slot free)
+//
 // What it does:
 //   1. (owner) lowers the factory guide minRaise so a small-target demo works
-//   2. creator wallet (demo mnemonic index 8) selfVerifies and creates
-//      Offering C — 48h window, mode B, R = 1M KRWs, token 세연 SEOYEON (MAPC)
+//   2. creator wallet (CREATOR_IDX) selfVerifies and creates the offering —
+//      48h window, mode B (Partial), R = 1M KRWs
 //   3. two fan wallets commit 200k + 100k (gauge at 30%)
 
 import {Script, console} from "forge-std/Script.sol";
@@ -30,7 +39,8 @@ contract DemoOfferingC is Script {
         MockKRW krw = MockKRW(vm.parseJsonAddress(dep, "$.mockKRW"));
         MockDojang dojang = MockDojang(vm.parseJsonAddress(dep, "$.mockDojang"));
 
-        uint256 creatorKey = vm.deriveKey(_mnemonic(), 8); // fresh creator (one-live rule)
+        // fresh creator each cycle (one-live rule) — default index 9 for "D"
+        uint256 creatorKey = vm.deriveKey(_mnemonic(), uint32(vm.envOr("CREATOR_IDX", uint256(9))));
         address creator = vm.addr(creatorKey);
         uint256 fan1Key = vm.deriveKey(_mnemonic(), 2);
         uint256 fan2Key = vm.deriveKey(_mnemonic(), 3);
@@ -54,8 +64,8 @@ contract DemoOfferingC is Script {
         vm.startBroadcast(creatorKey);
         dojang.selfVerify();
         MapaeFactory.CreateParams memory cp;
-        cp.tokenName = "MAPAE Demo C";
-        cp.tokenSymbol = "MAPC"; // web UI maps MAPC → 세연 SEOYEON
+        cp.tokenName = vm.envOr("TOKEN_NAME", string("MAPAE Demo D"));
+        cp.tokenSymbol = vm.envOr("SYMBOL", string("MAPD")); // web maps symbol → persona (creators.ts)
         cp.price = 10_000e18;
         cp.raiseTarget = 1_000_000e18;
         cp.deadline = block.timestamp + 48 hours; // max window (broadcast lag keeps it in band)
