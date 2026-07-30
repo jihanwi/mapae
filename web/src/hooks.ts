@@ -137,9 +137,23 @@ export function useBlockTimestamps(blockNumbers: bigint[]) {
 }
 
 export function useParticipantCount(offering: `0x${string}` | undefined) {
-    const logs = useEventLogs(offering, "event Committed(address indexed participant, uint256 amount, uint256 cumulative)");
-    if (!logs.data) return undefined;
-    return new Set(logs.data.map((l) => (l.args as {participant: string}).participant)).size;
+    // 취소해 잔액 0이 된 지갑을 세지 않도록 Committed·Cancelled를 병합해 지갑별 마지막
+    // cumulative만 본다 (snapshot.js와 동일 규칙 — 웹과 배정 산출이 같은 정의 공유).
+    const committed = useEventLogs(offering, "event Committed(address indexed participant, uint256 amount, uint256 cumulative)");
+    const cancelled = useEventLogs(offering, "event Cancelled(address indexed participant, uint256 amount, uint256 cumulative)");
+    if (!committed.data || !cancelled.data) return undefined;
+    const all = [...committed.data, ...cancelled.data].sort((a, b) => {
+        if (a.blockNumber !== b.blockNumber) return a.blockNumber! < b.blockNumber! ? -1 : 1;
+        return (a.logIndex ?? 0) - (b.logIndex ?? 0);
+    });
+    const final = new Map<string, bigint>();
+    for (const l of all) {
+        const a = l.args as {participant: string; cumulative: bigint};
+        final.set(a.participant, a.cumulative);
+    }
+    let n = 0;
+    for (const c of final.values()) if (c > 0n) n++;
+    return n;
 }
 
 export function useOnboarding() {
