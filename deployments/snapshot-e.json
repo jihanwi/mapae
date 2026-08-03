@@ -1,0 +1,18 @@
+{
+  "offering": "0xd6aba374ded5dd68d56c2e8daf7eb1319664da5a",
+  "price": "10000000000000000000000",
+  "qSale": "100000000000000000000",
+  "deadline": "1785576113",
+  "participants": [
+    {
+      "address": "0xfcb455da31ae46ced826563d7280e7add7a1e67a",
+      "committed": "200000000000000000000000"
+    },
+    {
+      "address": "0x6f227f4754ad67a6c68451aa3bf80bb4de138c5a",
+      "committed": "100000000000000000000000"
+    }
+  ],
+  "suggestedSeed": "0xafe2aee8c69d19d57caf99b8fe5d0d1236dc888d42b677e38dffa7ef1387b7a2",
+  "seedBlock": 32230997
+}

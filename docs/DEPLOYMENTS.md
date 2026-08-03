@@ -4,7 +4,7 @@
 
 > **상태: 최종 배포 완료 — 2026-07-23 배포 · 2026-07-24 데모 완결 (UTC).**
 > **제출 컨트랙트 13종(타입) · 배포 주소 전량 Blockscout verified ✅** (직접 배포 + 내부 CREATE — 디플로이어·풀 포함).
-> **최종 검증: 2026-07-30 18:48 KST** (C·D 정산 후 `verify-children.js` 각 `done: 8/8`, E 개설 후 `done: 7/7`). 롤링 데모 공모는 개설·정산 직후 `verify-children.js`로 검증한 뒤 아래 "롤링 데모 공모"에 추가하고 **이 줄을 갱신**한다.
+> **최종 검증: 2026-08-03 17:00 KST** (E 정산 후 `verify-children.js` `done: 8/8`, F 개설 후 `done: 7/7`). 롤링 데모 공모는 개설·정산 직후 `verify-children.js`로 검증한 뒤 아래 "롤링 데모 공모"에 추가하고 **이 줄을 갱신**한다.
 > 배포자: `0x67a29AE83f3320C5E9b81D8a1531dE8FcCBED00C` · 심사위원 워크스루: [`docs/SUBMISSION.md`](SUBMISSION.md)
 
 ## 제출 컨트랙트 (v1.0-gasok · 불변 · 전량 verified ✅)
@@ -51,7 +51,8 @@
 |---|---|---|
 | C (세연 MAPC) | 정산 완료 · 거래중 | [`0xc1E385aA03C77fc980aB23E38342b5b938de9A30`](https://sepolia-explorer.giwa.io/address/0xc1E385aA03C77fc980aB23E38342b5b938de9A30) |
 | D (다온 MAPD) | 정산 완료 · 거래중 | [`0xD2f83a3f032faec96AB81edF27b8Fb704093549a`](https://sepolia-explorer.giwa.io/address/0xD2f83a3f032faec96AB81edF27b8Fb704093549a) |
-| E (이든 MAPE) | 라이브 · 정산 대기 | [`0xd6Aba374DED5dD68D56c2E8DaF7eB1319664da5a`](https://sepolia-explorer.giwa.io/address/0xd6Aba374DED5dD68D56c2E8DaF7eB1319664da5a) |
+| E (이든 MAPE) | 정산 완료 · 거래중 | [`0xd6Aba374DED5dD68D56c2E8DaF7eB1319664da5a`](https://sepolia-explorer.giwa.io/address/0xd6Aba374DED5dD68D56c2E8DaF7eB1319664da5a) |
+| F (가온 MAPF) | 라이브 · 정산 대기 | [`0x2679f7B132cC48133Be051bb14f437d55D1a6207`](https://sepolia-explorer.giwa.io/address/0x2679f7B132cC48133Be051bb14f437d55D1a6207) |
 
 ## 데모 히스토리 (Stage 1~3 완결 ✅)
 

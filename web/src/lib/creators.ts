@@ -7,6 +7,7 @@ const BY_SYMBOL: Record<string, {name: string; en: string}> = {
     MAPC: {name: "세연", en: "SEOYEON"},
     MAPD: {name: "다온", en: "DAON"}, // 롤링 사이클 1 (D)
     MAPE: {name: "이든", en: "EDEN"}, // 롤링 사이클 2 (E)
+    MAPF: {name: "가온", en: "GAON"}, // 롤링 사이클 3 (F)
 };
 
 /** 심볼 로드 전(null)에는 호출부에서 스켈레톤을 렌더한다 — 폴백 텍스트 금지 */
