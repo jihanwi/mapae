@@ -5,6 +5,30 @@
 > **상태: 최종 배포 완료 (M5, 2026-07-23 배포 · 2026-07-25 데모 완결), 전 컨트랙트 verified ✅.**
 > 배포자: `0x67a29AE83f3320C5E9b81D8a1531dE8FcCBED00C` · 심사위원 워크스루: [`docs/SUBMISSION.md`](SUBMISSION.md)
 
+## v5.2 (Milestone A · `v2.0-core`) 재배포 — 준비 완료, 브로드캐스트 대기
+
+v5.2는 신규 컨트랙트(FeeRouter·BuybackVault·BuybackExecutor)와 등급제 팩토리를
+추가한다. 배포 스크립트(`script/Deploy.s.sol`)와 verify 헬퍼(`script/verify-children.js`)는
+새 시그니처로 갱신·검증되었고, 전체 흐름은 `script/DemoV2.s.sol` 시뮬레이션으로 확인했다.
+**실 배포는 keystore(`deployer`) 언락이 필요한 대화형·외부 작업이라 이 세션에서 실행하지
+않았다.** 운영자가 아래를 실행하면 `deployments/giwa-sepolia.json`이 새 주소로 갱신된다:
+
+```bash
+# 1) 배포 + 상위(직접 배포) 컨트랙트 자동 verify
+forge script script/Deploy.s.sol --account deployer --rpc-url $GIWA_SEPOLIA_RPC_URL \
+  --broadcast --verify --verifier blockscout --verifier-url https://sepolia-explorer.giwa.io/api
+# 2) 팩토리가 CREATE로 만든 자식 컨트랙트 verify (데모로 자식이 생성된 뒤)
+node script/verify-children.js --rpc $GIWA_SEPOLIA_RPC_URL \
+  --verifier-url https://sepolia-explorer.giwa.io/api --factory <factoryMock 주소>
+```
+
+새 배포에 포함되는 컨트랙트: MockKRW · MockDojang · PoolFactory · **FeeRouter** ·
+**BuybackVault** · **BuybackExecutor** · MapaeFactory(mock) · DojangEASAdapter ·
+MapaeFactory(EAS). 데모 4종(① L1 풀사이클 ② L0 미니 T=1h ③ 유료 드랍 ④ 바이백)은
+`script/DemoV2.s.sol`로 실행하며 전부 explorer에서 추적 가능하다.
+
+아래는 **M5(v1.0-gasok) 시점의 배포 기록**(역사 보존, GASOK 제출 증빙)이다.
+
 ## 컨트랙트 주소 (전부 verified ✅)
 
 ### 코어

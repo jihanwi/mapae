@@ -54,13 +54,17 @@ if (logs.length === 0) {
     console.log(`no OfferingCreated events in blocks ${fromBlock}–${toBlock} — check --from-block`);
 }
 
+// v5.2 constructor signatures. OfferingParams gained minRaise, platformTokenBps,
+// feeRouter, tier, mapaeFactory and dropped the per-offering swap bps (swap fees
+// now come from the FeeRouter by tier). RedeemManager/Sponsorship/Vesting/Pool
+// gained tier + FeeRouter/BuybackVault wiring.
 const OFFERING_CTOR =
-    "constructor((address,address,address,address,string,string,uint256,uint256,uint256,uint256,uint256,uint16,uint16,uint16,uint8,uint256,uint16,address,uint16,uint16,(address,address,address)))";
+    "constructor((address,address,address,address,string,string,uint256,uint256,uint256,uint256,uint256,uint256,uint16,uint16,uint16,uint16,uint8,uint256,uint16,address,address,uint8,address,(address,address,address)))";
 const TOKEN_CTOR = "constructor(string,string,address,uint256,uint16,address[])";
-const RM_CTOR = "constructor(address,address)";
-const VESTING_CTOR = "constructor(address,uint64,uint64,uint64)";
-const SPONSORSHIP_CTOR = "constructor(address,address,address,uint16,uint16)";
-const POOL_CTOR = "constructor(address,address,address,uint16,uint16)";
+const RM_CTOR = "constructor(address,address,address,address,uint8,address)";
+const VESTING_CTOR = "constructor(address,uint64,uint64,uint64,uint8)";
+const SPONSORSHIP_CTOR = "constructor(address,address,address,uint16,uint16,uint8,address)";
+const POOL_CTOR = "constructor(address,address,address,address,uint8,address)";
 
 function verify(addr, contractPath, ctorSig, ctorValues) {
     const argFlags =
@@ -111,60 +115,71 @@ for (const log of logs) {
     const symbol = JSON.parse(call(token, "symbol()(string)"));
     const price = num(call(offering, "price()(uint256)"));
     const raiseTarget = num(call(offering, "raiseTarget()(uint256)"));
+    const minRaise = num(call(offering, "minRaise()(uint256)"));
     const deadline = num(call(offering, "deadline()(uint256)"));
     const walletLimit = num(call(offering, "walletLimit()(uint256)"));
     const minCommit = num(call(offering, "minCommit()(uint256)"));
     const fBps = call(offering, "fBps()(uint16)");
     const cBps = call(offering, "cBps()(uint16)");
     const creatorTokenBps = call(offering, "creatorTokenBps()(uint16)");
+    const platformTokenBps = call(offering, "platformTokenBps()(uint16)");
     const refundMode = call(offering, "refundMode()(uint8)");
     const lockDuration = num(call(token, "transferLockDuration()(uint256)"));
     const capBps = call(token, "holdingCapBps()(uint16)");
     const poolFactory = call(offering, "poolFactory()(address)");
-    const swapRoyaltyBps = call(offering, "swapRoyaltyBps()(uint16)");
-    const swapBurnBps = call(offering, "swapBurnBps()(uint16)");
+    const feeRouter = call(offering, "feeRouter()(address)");
+    const tier = call(offering, "tier()(uint8)");
+    const mapaeFactory = call(offering, "mapaeFactory()(address)");
     const recips = call(offering, "recipients()(address,address,address)").split("\n");
     const [cv, pf, rs] = recips;
 
     const paramsTuple =
         `(${paymentToken},${dojang},${creator},${platformOwner},"${name}","${symbol}",` +
-        `${price},${raiseTarget},${deadline},${walletLimit},${minCommit},` +
-        `${fBps},${cBps},${creatorTokenBps},${refundMode},${lockDuration},${capBps},` +
-        `${poolFactory},${swapRoyaltyBps},${swapBurnBps},(${cv},${pf},${rs}))`;
+        `${price},${raiseTarget},${minRaise},${deadline},${walletLimit},${minCommit},` +
+        `${fBps},${cBps},${creatorTokenBps},${platformTokenBps},${refundMode},${lockDuration},${capBps},` +
+        `${poolFactory},${feeRouter},${tier},${mapaeFactory},(${cv},${pf},${rs}))`;
 
     verify(offering, "src/Offering.sol:Offering", OFFERING_CTOR, [paramsTuple]) ? ok++ : fail++;
     verify(token, "src/MembershipToken.sol:MembershipToken", TOKEN_CTOR, [
         name, symbol, offering, lockDuration, capBps, `[${cv},${pf},${rs}]`,
     ]) ? ok++ : fail++;
-    verify(redeemManager, "src/RedeemManager.sol:RedeemManager", RM_CTOR, [token, creator]) ? ok++ : fail++;
 
-    // ---- MapaeVesting: cliffSeconds = cliff() − start() ----
+    // ---- RedeemManager(token, creator, krw, feeRouter, tier, buybackVault) ----
+    const rmVault = call(redeemManager, "buybackVault()(address)");
+    verify(redeemManager, "src/RedeemManager.sol:RedeemManager", RM_CTOR, [
+        token, creator, paymentToken, feeRouter, tier, rmVault,
+    ]) ? ok++ : fail++;
+
+    // ---- MapaeVesting: cliffSeconds = cliff() − start(); tier from the offering ----
     const vStart = num(call(vesting, "start()(uint256)"));
     const vDuration = num(call(vesting, "duration()(uint256)"));
     const vCliffAbs = num(call(vesting, "cliff()(uint256)"));
     const vCliffSeconds = (BigInt(vCliffAbs) - BigInt(vStart)).toString();
-    verify(vesting, "src/MapaeVesting.sol:MapaeVesting", VESTING_CTOR, [creator, vStart, vDuration, vCliffSeconds])
-        ? ok++
-        : fail++;
-
-    // ---- Sponsorship ----
-    const spBurnBps = call(sponsorship, "burnShareBps()(uint16)");
-    const spSlippageBps = call(sponsorship, "maxSlippageBps()(uint16)");
-    verify(sponsorship, "src/Sponsorship.sol:Sponsorship", SPONSORSHIP_CTOR, [
-        token, paymentToken, creator, spBurnBps, spSlippageBps,
+    verify(vesting, "src/MapaeVesting.sol:MapaeVesting", VESTING_CTOR, [
+        creator, vStart, vDuration, vCliffSeconds, tier,
     ]) ? ok++ : fail++;
 
-    // ---- MapaePool: only exists after settle (Stage 2) ----
+    // ---- Sponsorship(token, krw, creator, burnBps, slippageBps, tier, vault) ----
+    const spBurnBps = call(sponsorship, "burnShareBps()(uint16)");
+    const spSlippageBps = call(sponsorship, "maxSlippageBps()(uint16)");
+    const spVault = call(sponsorship, "buybackVault()(address)");
+    verify(sponsorship, "src/Sponsorship.sol:Sponsorship", SPONSORSHIP_CTOR, [
+        token, paymentToken, creator, spBurnBps, spSlippageBps, tier, spVault,
+    ]) ? ok++ : fail++;
+
+    // ---- MapaePool: only exists after settle. ----
+    // ctor(token, krw, creator, feeRouter, tier, factory)
     const pool = call(offering, "pool()(address)");
     if (pool === "0x0000000000000000000000000000000000000000") {
         pendingPools.push(offering);
         continue;
     }
-    const royaltyBps = call(pool, "royaltyBps()(uint16)");
-    const burnBps = call(pool, "burnBps()(uint16)");
-    verify(pool, "src/MapaePool.sol:MapaePool", POOL_CTOR, [token, paymentToken, creator, royaltyBps, burnBps])
-        ? ok++
-        : fail++;
+    const poolFeeRouter = call(pool, "feeRouter()(address)");
+    const poolTier = call(pool, "tier()(uint8)");
+    const poolBurnerFactory = call(pool, "factory()(address)");
+    verify(pool, "src/MapaePool.sol:MapaePool", POOL_CTOR, [
+        token, paymentToken, creator, poolFeeRouter, poolTier, poolBurnerFactory,
+    ]) ? ok++ : fail++;
 }
 
 if (pendingPools.length > 0) {

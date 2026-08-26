@@ -55,3 +55,37 @@ Offering 정산의 신뢰 구조와 그 한계를 명시한다. (PM 결정 D2·D
 4. **양도 잠금 중 `sponsorToken`(토큰 결제 후원) 불가** — 소각 경로가 아닌
    `transferFrom` 경로이므로 전송 게이트가 적용된다. KRWs 후원(`sponsorKRWs`)은
    잠금과 무관하게 동작한다.
+
+## v5.2 신뢰 모델 — 수수료·등급제·바이백
+
+### FeeRouter 밴드가 신뢰의 근거
+
+- 모든 수수료는 FeeRouter에서 등급별로 읽는다. **온체인 밴드(하드코딩 상수)** 밖 값은
+  오너의 `setFees`로도 설정 불가(revert). 즉 오너가 장악해도 L0 스왑 플랫폼 몫을 60bps
+  미만으로 내리거나, 스왑 총합을 밴드 밖으로 밀거나, 없어야 할 플랫폼 토큰 배분을
+  만들 수 없다. **밴드 자체가 신뢰 보증**이며 초기 프리셋은 밴드 내부에 위치한다.
+- 공모 대금 플랫폼 몫(offeringFeeBps)은 **개설 시점 스냅샷**이라 진행 중 공모의 분배에
+  소급 적용되지 않는다.
+
+### swapForBurn / BuybackVault — "소각 외 목적지 없음"을 코드로 증명
+
+- `swapForBurn`은 Factory 등록 버너(Sponsorship·BuybackVault)만 호출 가능하고, 매수한
+  토큰은 같은 트랜잭션에서 전량 소각한다(호출자에게 반환 없음). 후원 소각 경로는
+  FeeRouter를 호출하지 않으므로 "후원 수수료 0%"가 코드 부재로 증명된다.
+- **BuybackVault에는 withdraw/rescue/sweep 함수가 없다.** executor를 악의 주소로
+  교체해도 KRWs는 `executeBuyback → swapForBurn → 소각` 외 경로로 나갈 수 없다.
+  자금·회계는 볼트에, 전략은 교체 가능한 executor에 분리했다.
+
+### BuybackExecutor v1의 한계 (의도된 단순 트레이드오프)
+
+1. **트리거는 onlyOwner** — keeper 자동화(무허가 크랭크)는 로드맵이다. v1은 오너가
+   `run(token)`을 수동 호출한다. 즉 바이백 실행 타이밍은 오너 신뢰에 의존한다(단,
+   실행되어도 소각뿐이므로 자금 탈취 위험은 없다 — 위 볼트 불변식).
+2. **슬리피지 가드는 스팟 기준** — TWAP가 아니라 실행 블록 스팟에 대해
+   `maxSlippageBps`(기본 5%)만 검증한다. 다중 블록 사전 펌핑은 방어하지 않는다
+   (후원 슬리피지 가드와 동일 한계).
+3. **dailyCapBps는 풀 KRWs 리저브 대비 비율** — 시간가중이 아닌 단순 상한이며,
+   `intervalSec`(기본 24h)로 실행 빈도만 제한한다. 정교한 TWAP 분할 매수는 v2 전략
+   컨트랙트로 executor를 교체해 도입한다(볼트/회계 변경 없이).
+4. **환원율 route는 무허가 입금** — `route`/`topUp` 모두 누구나 KRWs를 넣을 수 있다.
+   withdraw가 없어 넣은 자금도 소각으로만 나가므로 탈취 위험은 없다([Q6]).

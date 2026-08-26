@@ -6,14 +6,14 @@ pragma solidity ^0.8.26;
 //   forge script script/Deploy.s.sol --account deployer --rpc-url $GIWA_SEPOLIA_RPC_URL \
 //     --broadcast --verify --verifier blockscout --verifier-url $BLOCKSCOUT_API_URL
 //
-// M3 dual-stack deployment:
-//   1) Main demo stack — MockKRW + MockDojang + MapaeFactory(MockDojang).
-//      All demo transactions run here (we control verification flags).
-//   2) GIWA-native showcase — DojangEASAdapter (live EAS predeploy + live
-//      DojangScroll) + MapaeFactory(adapter). Real Verified Address wallets
-//      can create offerings here without any code change.
-// Addresses are recorded in deployments/giwa-sepolia.json for the demo
-// scripts and verify-children.js.
+// v5.2 stack (Milestone A):
+//   1) Shared infra — MockKRW + MockDojang + PoolFactory + FeeRouter (tiered
+//      fee model, treasury = deployer) + BuybackVault + BuybackExecutor.
+//   2) Main demo stack — MapaeFactory(MockDojang) (fully controllable verify).
+//   3) GIWA-native showcase — DojangEASAdapter + MapaeFactory(adapter).
+// Both factories share one FeeRouter + BuybackVault (the vault is a global
+// singleton and is registered as a burner inside each factory's constructor).
+// Addresses land in deployments/giwa-sepolia.json.
 
 import {Script, console} from "forge-std/Script.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -22,11 +22,17 @@ import {IEAS, IDojangScroll} from "../src/interfaces/IEAS.sol";
 import {GiwaSepolia} from "../src/Constants.sol";
 import {MapaeFactory} from "../src/MapaeFactory.sol";
 import {PoolFactory} from "../src/PoolFactory.sol";
+import {FeeRouter} from "../src/FeeRouter.sol";
+import {BuybackVault} from "../src/BuybackVault.sol";
+import {BuybackExecutor} from "../src/BuybackExecutor.sol";
 import {DojangEASAdapter} from "../src/DojangEASAdapter.sol";
 import {MockKRW} from "../src/mocks/MockKRW.sol";
 import {MockDojang} from "../src/mocks/MockDojang.sol";
 
 contract Deploy is Script {
+    /// @notice Hard raise floor forwarded to every offering (testnet value).
+    uint256 internal constant MIN_RAISE = 500_000e18;
+
     function run() external {
         vm.startBroadcast();
         (, address deployer,) = vm.readCallers();
@@ -35,8 +41,15 @@ contract Deploy is Script {
         MockDojang mockDojang = new MockDojang();
         PoolFactory poolFactory = new PoolFactory();
 
-        // Platform guide. L max is 30% of R for the demo (only ~6 fan wallets
-        // must be able to oversubscribe R); production 가안 is 0.1~5%.
+        // Tiered fee model. Treasury = deployer for the demo.
+        FeeRouter feeRouter = new FeeRouter(deployer, deployer);
+        // Global buyback vault + v1 executor strategy.
+        BuybackVault buybackVault = new BuybackVault(IERC20(address(krw)), deployer);
+        BuybackExecutor buybackExecutor = new BuybackExecutor(buybackVault, deployer);
+        buybackVault.setExecutor(address(buybackExecutor));
+
+        // Platform guide (L1/L2 bands). L max is 30% of R for the demo; L0
+        // offerings bypass the guide and only face the MIN_RAISE floor.
         MapaeFactory.Guide memory guide = MapaeFactory.Guide({
             minPrice: 1000e18,
             maxPrice: 100_000e18,
@@ -48,17 +61,34 @@ contract Deploy is Script {
         MapaeFactory.FeeRecipients memory recipients =
             MapaeFactory.FeeRecipients({platform: deployer, reserve: deployer});
 
-        // Stack 1: main demo (mock verification, fully controllable)
+        // Stack 2: main demo (mock verification, fully controllable)
         MapaeFactory factoryMock = new MapaeFactory(
-            IDojang(address(mockDojang)), IERC20(address(krw)), deployer, poolFactory, recipients, guide
+            IDojang(address(mockDojang)),
+            IERC20(address(krw)),
+            deployer,
+            poolFactory,
+            feeRouter,
+            buybackVault,
+            MIN_RAISE,
+            recipients,
+            guide
         );
 
-        // Stack 2: GIWA-native showcase (live Dojang attestation stack)
+        // Stack 3: GIWA-native showcase (live Dojang attestation stack)
         DojangEASAdapter adapter = new DojangEASAdapter(
             IEAS(GiwaSepolia.EAS), IDojangScroll(GiwaSepolia.DOJANG_SCROLL), GiwaSepolia.VERIFIED_ADDRESS_SCHEMA_UID
         );
-        MapaeFactory factoryDojang =
-            new MapaeFactory(IDojang(address(adapter)), IERC20(address(krw)), deployer, poolFactory, recipients, guide);
+        MapaeFactory factoryDojang = new MapaeFactory(
+            IDojang(address(adapter)),
+            IERC20(address(krw)),
+            deployer,
+            poolFactory,
+            feeRouter,
+            buybackVault,
+            MIN_RAISE,
+            recipients,
+            guide
+        );
 
         vm.stopBroadcast();
 
@@ -67,17 +97,23 @@ contract Deploy is Script {
         vm.serializeAddress(json, "deployer", deployer);
         vm.serializeAddress(json, "mockKRW", address(krw));
         vm.serializeAddress(json, "poolFactory", address(poolFactory));
+        vm.serializeAddress(json, "feeRouter", address(feeRouter));
+        vm.serializeAddress(json, "buybackVault", address(buybackVault));
+        vm.serializeAddress(json, "buybackExecutor", address(buybackExecutor));
         vm.serializeAddress(json, "mockDojang", address(mockDojang));
         vm.serializeAddress(json, "factoryMock", address(factoryMock));
         vm.serializeAddress(json, "dojangEASAdapter", address(adapter));
         string memory out = vm.serializeAddress(json, "factoryDojang", address(factoryDojang));
         vm.writeJson(out, "deployments/giwa-sepolia.json");
 
-        console.log("MockKRW:          ", address(krw));
-        console.log("PoolFactory:      ", address(poolFactory));
-        console.log("MockDojang:       ", address(mockDojang));
+        console.log("MockKRW:           ", address(krw));
+        console.log("PoolFactory:       ", address(poolFactory));
+        console.log("FeeRouter:         ", address(feeRouter));
+        console.log("BuybackVault:      ", address(buybackVault));
+        console.log("BuybackExecutor:   ", address(buybackExecutor));
+        console.log("MockDojang:        ", address(mockDojang));
         console.log("MapaeFactory(mock):", address(factoryMock));
-        console.log("DojangEASAdapter: ", address(adapter));
+        console.log("DojangEASAdapter:  ", address(adapter));
         console.log("MapaeFactory(EAS): ", address(factoryDojang));
     }
 }

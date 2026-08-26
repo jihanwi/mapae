@@ -7,6 +7,47 @@ MAPAE: GIWA 체인(업비트/두나무의 이더리움 L2) 위의 크리에이�
 검증된 크리에이터가 실명 지갑으로 발행하는 고정 공급 양도가능 회원권 ERC-20.
 발행은 정가 공모, 유통은 AMM, 소비(리딤)는 원화 고정가.
 
+## v5.2 변경 (Milestone A · 코어) — 이 절이 하위 절과 상충 시 **우선**
+
+수수료 모델 개편 + 유틸리티 등급제를 코어에 반영 (태그 `v2.0-core`, 브랜치 `v2-dev`,
+베이스라인 `v1.0-gasok`). 논업그레이더블·민트권한 소각·OZ v5 유지. [QUESTION]·스펙
+이탈 상세는 `docs/WORKLOG_v2.md`.
+
+- **FeeRouter (신규 모듈)** — 등급별 수수료 단일 소스. `enum UtilityTier {L0,L1,L2}`,
+  `TierFees{offeringFeeBps, swapPlatformBps, swapRoyaltyBps, swapBurnBps, swapLpBps,
+  merchFeeBps}`. 초기 프리셋 L0={500,60,20,20,0,0}/L1={750,40,60,30,20,400}/
+  L2={750,40,60,30,20,300}. **온체인 밴드(하드코딩 상수, 오너도 위반 불가)**:
+  L0 swapPlatform∈[60,80]·스왑합∈[80,100]·offering∈[0,500]·merch=0;
+  L1/L2 스왑합∈[100,150]·swapPlatform∈[20,60]·offering∈[500,1000]·merch∈[0,500].
+  `setFees` onlyOwner + 밴드 검증 revert, `platformTreasury` 교체 가능.
+  **후원은 이 컨트랙트를 호출하는 경로가 없어 "후원 0%"를 코드 부재로 증명.**
+- **등급제** — `createOffering(...,tier)`, Factory `tokenTier(token)` (전 모듈 게이트 근거),
+  `isBurner(addr)` (swapForBurn 허용목록). 지갑당 라이브 토큰: L1/L2=1, **L0=3**
+  (실패 슬롯 미소모). `minRaise` 배포 인자(테스트넷 500,000) — 전 등급 `R<minRaise` revert.
+- **등급별 밴드** — 기간 T: L1/L2 [12h,48h] / **L0 [1h,48h]**. 토크노믹스 L0: f∈[70,80]%,
+  발행자 배분∈[5,15]%, **플랫폼 토큰=0 강제**, c 기본 25%. 베스팅 L0 3~6mo·클리프 0 허용.
+  **L0는 `cancel()` 무조건 revert**(응모=확정), 프리즈 로직 비활성.
+- **공모 대금 플랫폼 몫** — 하드코딩 10% → `FeeRouter.getFees(tier).offeringFeeBps`,
+  **개설 시점 스냅샷**(진행 중 요율 변경 소급 금지). 실행가능식:
+  `f + 발행자배분 + 플랫폼토큰배분 + c×f ≤ 100%`.
+- **MapaePool 수수료** — 고정 2% 3분할 → FeeRouter 조회 기반 등급별 **4분할**
+  (platform/royalty/burn/lp). platform 몫은 매수 시 KRWs, 매도 시 토큰으로 즉시
+  treasury 이체([Q2]). lp가 라운딩 잔여 흡수 → 4분할 합 = 총 요율(정밀 손실 0).
+  **`swapForBurn(amountIn,minOut)` 신규 — 수수료 0 경로**: Factory 등록 Sponsorship·
+  BuybackVault만 호출 가능(그 외 revert), 출력은 풀이 원자 소각(반환 없음).
+  `convertAndBurn`도 이 0% 경로로 통일.
+- **RedeemManager** — `createPaidDrop`/`purchaseDrop` 유료 드랍(merchFee→treasury,
+  환원율분→BuybackVault, 잔여→크리에이터). **L0는 소각형·유료 드랍 전부 revert.**
+- **Sponsorship** — 소각 매수를 `swapForBurn`(0%) 경유로 교체, 환원율 route 훅.
+  **L0 revert.**
+- **BuybackVault (신규, 전역 싱글턴)** — `route`/`topUp`/`executeBuyback`(onlyExecutor)/
+  `setExecutor`. **withdraw 계열 부재 = executor를 악의 주소로 바꿔도 KRWs는 소각 매수
+  외 경로로 유출 불가**(핵심 불변식). 크리에이터별 환원율 0~30% 저장. L0 revert.
+- **BuybackExecutor v1 (신규, 교체 가능 전략)** — `run(token)`: intervalSec(기본 24h),
+  dailyCapBps(풀 깊이 대비, 기본 500), maxSlippageBps. onlyOwner (keeper 자동화는 로드맵).
+- **IPrimaryMarket 추출** — `token()/settlementToken()/phase()`; Offering이 구현,
+  Factory는 이 인터페이스로 상호작용(후속 CurveSale이 같은 자리에 꽂힘).
+
 ## 모듈 구성 (8개 — 이번 제출 최소 범위는 1–4번)
 
 1. **MapaeFactory** — 크리에이터별 토큰+공모+리딤 스택 배포·와이어링. 호출자는 Dojang Verified Address 필수 (`IDojang.isVerified(msg.sender)` — **fail-closed**: 조회 실패 시 거부), `creator = msg.sender` 강제 (대리 발행 금지). **지갑당 발행 1회 = 라이브 기준 (M2 확정)**: 크리에이터당 활성 토큰 1개, 직전 공모가 실패 종료(`refunding && totalSupply == 0`)한 경우만 재발행 허용 — 실패는 슬롯을 소모하지 않음 (재도전 허용이 제품 의도). P·R·L은 플랫폼 가이드 밴드 검증 (오너 갱신 가능 config, 컨트랙트는 논업그레이더블). settle 권한은 항상 플랫폼 운영 지갑 (`platformOwner` 주입).
@@ -69,6 +110,21 @@ MAPAE: GIWA 체인(업비트/두나무의 이더리움 L2) 위의 크리에이�
 10. 모드 B 미판매분은 소각 외 어떤 경로도 없음
 11. LP 시딩은 l = c×f 준수 → 상장가 = 공모가 (파라미터 무관)
 12. BuybackVault 매입 토큰은 소각 외 어떤 전송 경로도 없음 (홀더 분배 불가)
+
+### v5.2 신규 불변식 (test/FeeRouterV2·InvariantsV2·PeripheralsV2 — 신규 28 테스트)
+
+1. `swapForBurn`은 등록된 Sponsorship/BuybackVault 외 호출자에서 항상 revert (fuzz)
+2. `swapForBurn` 실행 후 어떤 주소의 토큰 잔고도 증가하지 않고 `totalSupply`만 감소
+3. L0 Offering `cancel()`은 모든 상태에서 revert (fuzz: 임의 금액·시각)
+4. L0 공모는 플랫폼 토큰 배분 0 외 값으로 개설 불가
+5. 모든 공모 개설 시 `R ≥ minRaise`
+6. FeeRouter `setFees`는 밴드 밖 값에서 revert (경계값 ±1 + 전수 fuzz)
+7. L0 `swapPlatformBps`는 어떤 갱신 경로로도 60 미만 불가 (fuzz)
+8. L0 토큰은 RedeemManager(소각형·유료 드랍)·Sponsorship·BuybackVault 호출 전부 revert
+9. BuybackVault: executor를 임의 주소로 교체해도 KRWs는 소각 매수 외 경로로 감소 불가 (fuzz)
+10. 스왑 수수료 4분할 합 = 총 요율, 정밀도 손실 0 (fuzz: 임의 금액)
+11. 공모 진행 중 FeeRouter 갱신이 진행 중 공모 분배에 영향 없음 (스냅샷 검증)
+12. 상장가 = 공모가 (l=c×f) — L0 프리셋(f=70%, c=25%)에서도 성립 (회귀)
 
 ## 배포 환경
 
