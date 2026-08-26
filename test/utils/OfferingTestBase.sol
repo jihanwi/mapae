@@ -5,6 +5,8 @@ import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IDojang} from "../../src/interfaces/IDojang.sol";
 import {IOffering} from "../../src/interfaces/IOffering.sol";
+import {IFeeRouter} from "../../src/interfaces/IFeeRouter.sol";
+import {FeeRouter} from "../../src/FeeRouter.sol";
 import {Offering} from "../../src/Offering.sol";
 import {MembershipToken} from "../../src/MembershipToken.sol";
 import {MockKRW} from "../../src/mocks/MockKRW.sol";
@@ -22,22 +24,27 @@ abstract contract OfferingTestBase is Test {
     uint16 internal constant F_BPS = 6000;
     uint16 internal constant C_BPS = 1500;
     uint16 internal constant CREATOR_TOKEN_BPS = 2500;
+    // v5.2: hard raise floor forwarded to every offering; RAISE (1M) sits above it.
+    uint256 internal constant MIN_RAISE = 500_000e18;
 
     MockKRW internal krw;
     MockDojang internal dojang;
     PoolFactory internal poolFactory;
+    FeeRouter internal feeRouter;
 
     address internal creator = makeAddr("creator");
     address internal creatorVesting = makeAddr("creatorVesting");
     address internal lpEscrow = makeAddr("lpEscrow");
     address internal platform = makeAddr("platform");
     address internal reserve = makeAddr("reserve");
+    address internal treasury = makeAddr("treasury");
 
     function setUp() public virtual {
         vm.warp(1_750_000_000); // realistic clock so deadline math is sane
         krw = new MockKRW();
         dojang = new MockDojang();
         poolFactory = new PoolFactory();
+        feeRouter = new FeeRouter(address(this), treasury);
     }
 
     function defaultParams(IOffering.RefundMode mode) internal view returns (IOffering.OfferingParams memory p) {
@@ -49,18 +56,21 @@ abstract contract OfferingTestBase is Test {
         p.tokenSymbol = "CRTM";
         p.price = PRICE;
         p.raiseTarget = RAISE;
+        p.minRaise = MIN_RAISE;
         p.deadline = block.timestamp + 24 hours;
         p.walletLimit = WALLET_LIMIT;
         p.minCommit = MIN_COMMIT;
         p.fBps = F_BPS;
         p.cBps = C_BPS;
         p.creatorTokenBps = CREATOR_TOKEN_BPS;
+        p.platformTokenBps = 500; // L1/L2 fixed 5%
         p.refundMode = mode;
         p.transferLockDuration = 0;
         p.holdingCapBps = 0;
         p.poolFactory = poolFactory;
-        p.swapRoyaltyBps = 100;
-        p.swapBurnBps = 50;
+        p.feeRouter = feeRouter;
+        p.tier = IFeeRouter.UtilityTier.L1; // default premium tier
+        p.mapaeFactory = address(0); // no burner registry in isolated offering tests
         p.recipients =
             IOffering.AllocationRecipients({creatorVesting: creatorVesting, platform: platform, reserve: reserve});
     }

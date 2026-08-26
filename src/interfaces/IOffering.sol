@@ -3,6 +3,8 @@ pragma solidity ^0.8.26;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IDojang} from "./IDojang.sol";
+import {IFeeRouter} from "./IFeeRouter.sol";
+import {IPrimaryMarket} from "./IPrimaryMarket.sol";
 import {PoolFactory} from "../PoolFactory.sol";
 
 /// @title IOffering
@@ -13,7 +15,9 @@ import {PoolFactory} from "../PoolFactory.sol";
 /// @dev Settlement is atomic (D4): mint sold+unsold, burn unsold, distribute
 ///      token allocations, enable transfers, and distribute proceeds happen in
 ///      a single settle() call — there is no separate burnUnsold() step.
-interface IOffering {
+///      Inherits IPrimaryMarket (token/settlementToken/phase + the Phase enum);
+///      the factory drives sales through that slot (Step 3).
+interface IOffering is IPrimaryMarket {
     // ---------------------------------------------------------------------
     // Types
     // ---------------------------------------------------------------------
@@ -24,23 +28,6 @@ interface IOffering {
     enum RefundMode {
         AllOrNothing,
         Partial
-    }
-
-    /// @notice Offering lifecycle.
-    /// @dev Open      — commits and cancels accepted.
-    ///      Frozen    — cancel freeze (deadline − 2h) reached; commits still
-    ///                  accepted until the deadline, cancels rejected.
-    ///      Settled   — allocation root committed; settlement was atomic, so
-    ///                  tokens are minted, unsold burned, transfers enabled,
-    ///                  proceeds distributed; claims open.
-    ///      Finalized — reserved (settlement is atomic in M1; unused).
-    ///      Refunding — mode A target missed or settle timeout; deposits refundable.
-    enum Phase {
-        Open,
-        Frozen,
-        Settled,
-        Finalized,
-        Refunding
     }
 
     /// @notice Token allocation recipients, injected at construction (D4).
@@ -54,6 +41,10 @@ interface IOffering {
     }
 
     /// @notice Full constructor configuration for an Offering.
+    /// @dev Swap fees are no longer per-offering: they live in the FeeRouter,
+    ///      keyed by `tier`, and the pool reads them live. The offering fee
+    ///      (platform proceeds cut) is snapshotted from the FeeRouter at
+    ///      construction and never re-read (invariant 11).
     struct OfferingParams {
         IERC20 paymentToken;
         IDojang dojang;
@@ -63,18 +54,21 @@ interface IOffering {
         string tokenSymbol;
         uint256 price; // P: payment-token wei per 1e18 token wei
         uint256 raiseTarget; // R: payment-token wei
-        uint256 deadline; // unix timestamp; duration must be within [12h, 48h]
+        uint256 minRaise; // hard floor: R < minRaise reverts, all tiers (invariant 5)
+        uint256 deadline; // unix timestamp; duration band is tier-dependent
         uint256 walletLimit; // L: max cumulative commit per wallet (payment wei)
         uint256 minCommit; // minimum first commit (payment wei)
-        uint16 fBps; // sale fraction of total supply, in bps (5000–7000)
-        uint16 cBps; // LP share of proceeds, in bps (1500–3000); token side l = c × f
-        uint16 creatorTokenBps; // creator share of S', in bps (1500–3000)
+        uint16 fBps; // sale fraction of total supply, in bps (tier band)
+        uint16 cBps; // LP share of proceeds, in bps; token side l = c × f
+        uint16 creatorTokenBps; // creator (issuer) share of S', in bps (tier band)
+        uint16 platformTokenBps; // platform token cut (L0 must be 0; L1/L2 = 500)
         RefundMode refundMode;
         uint256 transferLockDuration; // optional post-settle transfer lock; 0 = none
         uint16 holdingCapBps; // optional per-wallet holding cap in bps of supply; 0 = none
         PoolFactory poolFactory; // deploys the AMM pool at settle (D8 at-par listing)
-        uint16 swapRoyaltyBps; // pool swap royalty to creator (0–150, default 100)
-        uint16 swapBurnBps; // pool swap burn share (0–100, default 50)
+        IFeeRouter feeRouter; // tiered fee source (offering fee snapshot + pool swap fees)
+        IFeeRouter.UtilityTier tier; // utility grade (gates + fee schedule)
+        address mapaeFactory; // burner registry the pool consults for swapForBurn
         AllocationRecipients recipients;
     }
 
@@ -138,6 +132,8 @@ interface IOffering {
     error OverWalletLimit(address account, uint256 attempted, uint256 limit);
     /// @notice Cancel rejected inside the freeze window (deadline − 2h onwards).
     error CommitFrozen();
+    /// @notice L0 disables cancel entirely — 응모 = 확정 (invariant 3).
+    error CancelDisabled();
     /// @notice The issuing creator's wallet cannot participate in its own offering.
     error IssuerCannotCommit();
     /// @notice Action requires the offering to be settled first.

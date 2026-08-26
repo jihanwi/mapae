@@ -3,6 +3,7 @@ pragma solidity ^0.8.26;
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IOffering} from "../src/interfaces/IOffering.sol";
+import {IPrimaryMarket} from "../src/interfaces/IPrimaryMarket.sol";
 import {Offering} from "../src/Offering.sol";
 import {MembershipToken} from "../src/MembershipToken.sol";
 import {MapaePool} from "../src/MapaePool.sol";
@@ -167,7 +168,7 @@ contract OfferingUnitTest is OfferingTestBase {
         (,, uint256 deadline,,,) = offering.params();
         vm.warp(deadline - 1 hours);
         offering.commit(50_000e18);
-        assertEq(uint8(offering.phase()), uint8(IOffering.Phase.Frozen));
+        assertEq(uint8(offering.phase()), uint8(IPrimaryMarket.Phase.Frozen));
         vm.warp(deadline);
         vm.expectRevert(IOffering.DeadlinePassed.selector);
         offering.commit(50_000e18);
@@ -339,7 +340,7 @@ contract OfferingUnitTest is OfferingTestBase {
         commitAs(offering, fan1, 100_000e18);
         _warpPastDeadline();
         offering.settle(leafFor(fan1, 10e18, 0), 10e18, 100_000e18, bytes32(0));
-        vm.expectRevert(abi.encodeWithSelector(IOffering.InvalidPhase.selector, IOffering.Phase.Settled));
+        vm.expectRevert(abi.encodeWithSelector(IOffering.InvalidPhase.selector, IPrimaryMarket.Phase.Settled));
         offering.settle(bytes32(0), 10e18, 100_000e18, bytes32(0));
     }
 
@@ -373,11 +374,12 @@ contract OfferingUnitTest is OfferingTestBase {
         // LP shares permanently at 0xdEaD (불변식 7)
         assertEq(pool.balanceOf(pool.DEAD()), pool.totalSupply());
         assertEq(token.pool(), address(pool));
-        // proceeds: platform 10%, LP 15% seeded, creator = remainder
-        assertEq(krw.balanceOf(creator), 225_000e18);
-        assertEq(krw.balanceOf(platform), 30_000e18);
+        // proceeds: platform offering fee 7.5% (L1 preset), LP 15% seeded,
+        // creator = remainder (v5.2: fee moved from fixed 10% to FeeRouter L1).
+        assertEq(krw.balanceOf(creator), 232_500e18);
+        assertEq(krw.balanceOf(platform), 22_500e18);
         assertEq(krw.balanceOf(address(offering)), 0); // raised == committed, nothing left
-        assertEq(uint8(offering.phase()), uint8(IOffering.Phase.Settled));
+        assertEq(uint8(offering.phase()), uint8(IPrimaryMarket.Phase.Settled));
     }
 
     /// Mode A cannot settle under target — it must go down the refund path.
@@ -472,7 +474,7 @@ contract OfferingUnitTest is OfferingTestBase {
         vm.warp(deadline);
         vm.prank(fan2); // anyone can call
         modeA.enableRefunds();
-        assertEq(uint8(modeA.phase()), uint8(IOffering.Phase.Refunding));
+        assertEq(uint8(modeA.phase()), uint8(IPrimaryMarket.Phase.Refunding));
 
         // full pull refund
         vm.prank(fan1);
@@ -524,7 +526,7 @@ contract OfferingUnitTest is OfferingTestBase {
         (,, uint256 deadline,,,) = offering.params();
         vm.warp(deadline + 7 days);
         offering.emergencyRefund();
-        vm.expectRevert(abi.encodeWithSelector(IOffering.InvalidPhase.selector, IOffering.Phase.Refunding));
+        vm.expectRevert(abi.encodeWithSelector(IOffering.InvalidPhase.selector, IPrimaryMarket.Phase.Refunding));
         offering.settle(leafFor(fan1, 30e18, 0), 30e18, 300_000e18, bytes32(0));
     }
 
@@ -540,12 +542,12 @@ contract OfferingUnitTest is OfferingTestBase {
     // ------------------------------------------------------------------
 
     function test_PhaseProgression() public {
-        assertEq(uint8(offering.phase()), uint8(IOffering.Phase.Open));
+        assertEq(uint8(offering.phase()), uint8(IPrimaryMarket.Phase.Open));
         (,, uint256 deadline,,,) = offering.params();
         vm.warp(deadline - 2 hours);
-        assertEq(uint8(offering.phase()), uint8(IOffering.Phase.Frozen));
+        assertEq(uint8(offering.phase()), uint8(IPrimaryMarket.Phase.Frozen));
         vm.warp(deadline + 1);
-        assertEq(uint8(offering.phase()), uint8(IOffering.Phase.Frozen)); // awaiting settle
+        assertEq(uint8(offering.phase()), uint8(IPrimaryMarket.Phase.Frozen)); // awaiting settle
     }
 
     // ------------------------------------------------------------------

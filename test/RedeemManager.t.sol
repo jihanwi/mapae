@@ -3,17 +3,26 @@ pragma solidity ^0.8.26;
 
 import {Test} from "forge-std/Test.sol";
 import {IERC20Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IRedeemManager} from "../src/interfaces/IRedeemManager.sol";
 import {RedeemManager} from "../src/RedeemManager.sol";
 import {MembershipToken} from "../src/MembershipToken.sol";
+import {FeeRouter} from "../src/FeeRouter.sol";
+import {IFeeRouter} from "../src/interfaces/IFeeRouter.sol";
+import {BuybackVault} from "../src/BuybackVault.sol";
+import {MockKRW} from "../src/mocks/MockKRW.sol";
 
 /// @notice Unit tests for burn-to-redeem. The test contract plays the offering
-///         (mints supply, distributes to fans).
+///         (mints supply, distributes to fans). Tier L1 keeps redeemables enabled.
 contract RedeemManagerTest is Test {
     MembershipToken internal token;
     RedeemManager internal redeemManager;
+    MockKRW internal krw;
+    FeeRouter internal feeRouter;
+    BuybackVault internal buybackVault;
 
     address internal creator = makeAddr("creator");
+    address internal treasury = makeAddr("treasury");
     address internal fan;
     uint256 internal fanKey;
 
@@ -23,9 +32,13 @@ contract RedeemManagerTest is Test {
     function setUp() public {
         vm.warp(1_750_000_000);
         (fan, fanKey) = makeAddrAndKey("fan");
+        krw = new MockKRW();
+        feeRouter = new FeeRouter(address(this), treasury);
+        buybackVault = new BuybackVault(IERC20(address(krw)), address(this));
         // Token with an active transfer lock — redeeming must work through it.
         token = new MembershipToken("Creator Membership", "CRTM", address(this), LOCK_DURATION, 0, new address[](0));
-        redeemManager = new RedeemManager(token, creator);
+        redeemManager =
+            new RedeemManager(token, creator, IERC20(address(krw)), feeRouter, IFeeRouter.UtilityTier.L1, buybackVault);
 
         address[] memory to = new address[](2);
         uint256[] memory amounts = new uint256[](2);

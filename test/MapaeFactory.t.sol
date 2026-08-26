@@ -5,7 +5,9 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IDojang} from "../src/interfaces/IDojang.sol";
 import {IOffering} from "../src/interfaces/IOffering.sol";
+import {IFeeRouter} from "../src/interfaces/IFeeRouter.sol";
 import {MapaeFactory} from "../src/MapaeFactory.sol";
+import {BuybackVault} from "../src/BuybackVault.sol";
 import {Offering} from "../src/Offering.sol";
 import {MembershipToken} from "../src/MembershipToken.sol";
 import {RedeemManager} from "../src/RedeemManager.sol";
@@ -13,17 +15,22 @@ import {OfferingTestBase} from "./utils/OfferingTestBase.sol";
 
 abstract contract MapaeFactoryTestBase is OfferingTestBase {
     MapaeFactory internal factory;
+    BuybackVault internal buybackVault;
 
     address internal creator2 = makeAddr("creator2");
     address internal fan1 = makeAddr("fan1");
 
     function setUp() public virtual override {
         super.setUp();
+        buybackVault = new BuybackVault(IERC20(address(krw)), address(this));
         factory = new MapaeFactory(
             IDojang(address(dojang)),
             IERC20(address(krw)),
             address(this), // platform ops wallet (settle authority)
             poolFactory,
+            feeRouter,
+            buybackVault,
+            MIN_RAISE,
             MapaeFactory.FeeRecipients({platform: platform, reserve: reserve}),
             // Test guide: wide enough for the E2E fixtures (L = 30% of R).
             MapaeFactory.Guide({
@@ -50,11 +57,10 @@ abstract contract MapaeFactoryTestBase is OfferingTestBase {
         cp.fBps = F_BPS;
         cp.cBps = C_BPS;
         cp.creatorTokenBps = CREATOR_TOKEN_BPS;
+        cp.tier = IFeeRouter.UtilityTier.L1;
         cp.refundMode = IOffering.RefundMode.AllOrNothing;
         cp.transferLockDuration = 0;
         cp.holdingCapBps = 0;
-        cp.swapRoyaltyBps = 100;
-        cp.swapBurnBps = 50;
         cp.sponsorBurnBps = 1000;
         cp.vestingDuration = 1080 days; // 36mo
         cp.vestingCliff = 180 days; // 6mo
