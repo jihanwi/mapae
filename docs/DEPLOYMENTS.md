@@ -5,27 +5,50 @@
 > **상태: 최종 배포 완료 (M5, 2026-07-23 배포 · 2026-07-25 데모 완결), 전 컨트랙트 verified ✅.**
 > 배포자: `0x67a29AE83f3320C5E9b81D8a1531dE8FcCBED00C` · 심사위원 워크스루: [`docs/SUBMISSION.md`](SUBMISSION.md)
 
-## v5.2 (Milestone A · `v2.0-core`) 재배포 — 준비 완료, 브로드캐스트 대기
+## v5.2 (Milestone A · `v2.0.1-core`) 배포 — 완료 ✅
 
-v5.2는 신규 컨트랙트(FeeRouter·BuybackVault·BuybackExecutor)와 등급제 팩토리를
-추가한다. 배포 스크립트(`script/Deploy.s.sol`)와 verify 헬퍼(`script/verify-children.js`)는
-새 시그니처로 갱신·검증되었고, 전체 흐름은 `script/DemoV2.s.sol` 시뮬레이션으로 확인했다.
-**실 배포는 keystore(`deployer`) 언락이 필요한 대화형·외부 작업이라 이 세션에서 실행하지
-않았다.** 운영자가 아래를 실행하면 `deployments/giwa-sepolia.json`이 새 주소로 갱신된다:
+체인 91342 · 배포자 `0x67a29AE83f3320C5E9b81D8a1531dE8FcCBED00C` · 상위 9개 컨트랙트
+`forge script --verify`로 Blockscout verify 완료. 온체인 배선 검증: FeeRouter L1 프리셋
+`(750,40,60,30,20,400)`, treasury=deployer, factoryMock.minRaise=500,000e18,
+isBurner(vault)=true. (주소 매핑은 배포 스크립트가 기록한 `deployments/giwa-sepolia.json` /
+`== Logs ==` 기준 — 브로드캐스트 영수증의 contractName 라벨은 이번 런에서 뒤섞여 사용 안 함.)
 
-```bash
-# 1) 배포 + 상위(직접 배포) 컨트랙트 자동 verify
-forge script script/Deploy.s.sol --account deployer --rpc-url $GIWA_SEPOLIA_RPC_URL \
-  --broadcast --verify --verifier blockscout --verifier-url https://sepolia-explorer.giwa.io/api
-# 2) 팩토리가 CREATE로 만든 자식 컨트랙트 verify (데모로 자식이 생성된 뒤)
-node script/verify-children.js --rpc $GIWA_SEPOLIA_RPC_URL \
-  --verifier-url https://sepolia-explorer.giwa.io/api --factory <factoryMock 주소>
-```
+### 신규/코어 컨트랙트
 
-새 배포에 포함되는 컨트랙트: MockKRW · MockDojang · PoolFactory · **FeeRouter** ·
-**BuybackVault** · **BuybackExecutor** · MapaeFactory(mock) · DojangEASAdapter ·
-MapaeFactory(EAS). 데모 4종(① L1 풀사이클 ② L0 미니 T=1h ③ 유료 드랍 ④ 바이백)은
-`script/DemoV2.s.sol`로 실행하며 전부 explorer에서 추적 가능하다.
+| 컨트랙트 | 주소 |
+|---|---|
+| MockKRW (KRWs) | [`0x8954a3a4738a10B9c4493e85aA24E95E2c85E400`](https://sepolia-explorer.giwa.io/address/0x8954a3a4738a10B9c4493e85aA24E95E2c85E400) |
+| MockDojang | [`0xeB589Ec91b1a787e10fedaCfD69BA8b7304885ab`](https://sepolia-explorer.giwa.io/address/0xeB589Ec91b1a787e10fedaCfD69BA8b7304885ab) |
+| PoolFactory | [`0x8Ea1d921EC72EA572eA27904dc836fc5AAB21805`](https://sepolia-explorer.giwa.io/address/0x8Ea1d921EC72EA572eA27904dc836fc5AAB21805) |
+| **FeeRouter** (등급별 수수료 + 온체인 밴드) | [`0x2B264a6Ea5deAF8C584f461eD92a905DFB4C9696`](https://sepolia-explorer.giwa.io/address/0x2B264a6Ea5deAF8C584f461eD92a905DFB4C9696) |
+| **BuybackVault** (withdraw 부재 = 소각 외 유출 불가) | [`0x200E2e763466902F78EEf9d9d4a7c61Fa4763A6C`](https://sepolia-explorer.giwa.io/address/0x200E2e763466902F78EEf9d9d4a7c61Fa4763A6C) |
+| **BuybackExecutor** v1 | [`0x69dBEB61d7438D3C726796f621D8f137CBEBe147`](https://sepolia-explorer.giwa.io/address/0x69dBEB61d7438D3C726796f621D8f137CBEBe147) |
+| **MapaeFactory (메인 데모, 등급제)** | [`0xd157b7be02E67Fbb0B098B4D982De0FB8ffFef7F`](https://sepolia-explorer.giwa.io/address/0xd157b7be02E67Fbb0B098B4D982De0FB8ffFef7F) |
+| DojangEASAdapter | [`0x692C37F95dF80be611C2A64f6C7B7C9fb7E2fa7D`](https://sepolia-explorer.giwa.io/address/0x692C37F95dF80be611C2A64f6C7B7C9fb7E2fa7D) |
+| MapaeFactory (GIWA-Native 쇼케이스) | [`0xe629D3B3a616D4cff6319F40F61AEfAe72531141`](https://sepolia-explorer.giwa.io/address/0xe629D3B3a616D4cff6319F40F61AEfAe72531141) |
+
+### 배포 tx (contractAddress로 매핑 — 라벨 무시)
+
+| 컨트랙트 | 배포 tx |
+|---|---|
+| MockKRW | [`0x91c0dc19…7d66d`](https://sepolia-explorer.giwa.io/tx/0x91c0dc192358d7d65746ad24061c20fbc1f4a18d9e6405e78d89b7527ff7d66d) |
+| MockDojang | [`0xadf8160a…0d346`](https://sepolia-explorer.giwa.io/tx/0xadf8160a0b89f719797a1fb12181d5477d8a575db239d5c0bcf4cbf94090d346) |
+| PoolFactory | [`0x0cbcfa3d…29f0`](https://sepolia-explorer.giwa.io/tx/0x0cbcfa3df27ee7323f3ea4a83accf035ea0bf32bbd7d1f921869aff0250829f0) |
+| FeeRouter | [`0x2debec53…77cfa`](https://sepolia-explorer.giwa.io/tx/0x2debec53e3680897a5f3c5a19586bb3a656abf94be758e00ca2277eb36577cfa) |
+| BuybackVault | [`0xde8d74ea…29bbe`](https://sepolia-explorer.giwa.io/tx/0xde8d74eab6567150ced3578e8773b4700d95f356bb568a0bc4e3f548d8c29bbe) |
+| BuybackExecutor | [`0xfb36d70c…34fcf9`](https://sepolia-explorer.giwa.io/tx/0xfb36d70ca3fae7b672ec7e1def72fa456a3a8f2779f1145e256c31343934fcf9) |
+| MapaeFactory(mock) | [`0x5cce4fea…5933`](https://sepolia-explorer.giwa.io/tx/0x5cce4fead412659fc1f9636472f49a0f1ae55d26a3dd26e62fc41dfe19ee5933) |
+| DojangEASAdapter | [`0x950b5f8f…0fa2b`](https://sepolia-explorer.giwa.io/tx/0x950b5f8fb788598a6a88b5e550f325fa9ed6adb7b2e7d6bf22fb0d9b6390fa2b) |
+| MapaeFactory(EAS) | [`0x77574899…0912`](https://sepolia-explorer.giwa.io/tx/0x77574899824672985e87569314ebaae0cfd58c051a0fe39a05a7642334420912) |
+
+### 데모 스택 (등급제 4 시나리오)
+
+`script/DemoStage1On.s.sol`(L0·L1 개설+응모) → deadline 경과 후
+`script/DemoStage2aL0.s.sol`(≈1h: L0 settle·상장·클레임·스왑) /
+`script/DemoStage2bL1.s.sol`(≈12h: L1 settle·클레임·리딤·유료 드랍·바이백).
+데모 오퍼링 주소·tx 해시는 스테이지 실행 후 아래에 채운다.
+
+<!-- DEMO-ADDRESSES -->
 
 아래는 **M5(v1.0-gasok) 시점의 배포 기록**(역사 보존, GASOK 제출 증빙)이다.
 
