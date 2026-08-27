@@ -58,6 +58,16 @@ Offering 정산의 신뢰 구조와 그 한계를 명시한다. (PM 결정 D2·D
 
 ## v5.2 신뢰 모델 — 수수료·등급제·바이백
 
+### 스왑 수수료 방향별 수취 (R1) — treasury·royalty는 KRWs만
+
+플랫폼은 크리에이터 토큰을 보유하지 않는다(트레저리가 유저에게 되파는 이해충돌 차단).
+따라서 스왑 수수료를 방향별로 받는다: 매수(KRW 입력)는 4분할 전부 입력 KRWs 기준, 매도(토큰
+입력)는 burn·lp만 입력 토큰에서 처리하고 platform·royalty는 출력 KRWs에서 수취한다. 결과로
+**royalty는 모든 방향에서 KRWs, platformTreasury는 KRWs만 수취**한다(불변식 17로 검증 —
+임의 스왑 시퀀스 후 트레저리의 토큰 잔고는 항상 0). royalty·burn 요율은 크리에이터가 tier
+밴드 내에서 설정해 개설 시 스냅샷하며(R2, offering fee와 동일 원칙), platform·LP 요율은
+FeeRouter 조회로 오버라이드 불가다.
+
 ### FeeRouter 밴드가 신뢰의 근거
 
 - 모든 수수료는 FeeRouter에서 등급별로 읽는다. **온체인 밴드(하드코딩 상수)** 밖 값은

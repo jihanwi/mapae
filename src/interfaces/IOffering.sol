@@ -41,10 +41,10 @@ interface IOffering is IPrimaryMarket {
     }
 
     /// @notice Full constructor configuration for an Offering.
-    /// @dev Swap fees are no longer per-offering: they live in the FeeRouter,
-    ///      keyed by `tier`, and the pool reads them live. The offering fee
-    ///      (platform proceeds cut) is snapshotted from the FeeRouter at
-    ///      construction and never re-read (invariant 11).
+    /// @dev Swap-fee split has two sources: platform + LP shares come from the
+    ///      FeeRouter live (not overridable — invariant 7), while creator royalty
+    ///      and burn are per-offering (creator sets them within a tier band; they
+    ///      are snapshotted at construction, same principle as the offering fee).
     struct OfferingParams {
         IERC20 paymentToken;
         IDojang dojang;
@@ -62,6 +62,8 @@ interface IOffering is IPrimaryMarket {
         uint16 cBps; // LP share of proceeds, in bps; token side l = c × f
         uint16 creatorTokenBps; // creator (issuer) share of S', in bps (tier band)
         uint16 platformTokenBps; // platform token cut (L0 must be 0; L1/L2 = 500)
+        uint16 swapRoyaltyBps; // per-pool creator royalty (tier band; snapshot)
+        uint16 swapBurnBps; // per-pool creator burn (tier band; snapshot)
         RefundMode refundMode;
         uint256 transferLockDuration; // optional post-settle transfer lock; 0 = none
         uint16 holdingCapBps; // optional per-wallet holding cap in bps of supply; 0 = none

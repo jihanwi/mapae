@@ -59,12 +59,12 @@ if (logs.length === 0) {
 // now come from the FeeRouter by tier). RedeemManager/Sponsorship/Vesting/Pool
 // gained tier + FeeRouter/BuybackVault wiring.
 const OFFERING_CTOR =
-    "constructor((address,address,address,address,string,string,uint256,uint256,uint256,uint256,uint256,uint256,uint16,uint16,uint16,uint16,uint8,uint256,uint16,address,address,uint8,address,(address,address,address)))";
+    "constructor((address,address,address,address,string,string,uint256,uint256,uint256,uint256,uint256,uint256,uint16,uint16,uint16,uint16,uint16,uint16,uint8,uint256,uint16,address,address,uint8,address,(address,address,address)))";
 const TOKEN_CTOR = "constructor(string,string,address,uint256,uint16,address[])";
 const RM_CTOR = "constructor(address,address,address,address,uint8,address)";
 const VESTING_CTOR = "constructor(address,uint64,uint64,uint64,uint8)";
 const SPONSORSHIP_CTOR = "constructor(address,address,address,uint16,uint16,uint8,address)";
-const POOL_CTOR = "constructor(address,address,address,address,uint8,address)";
+const POOL_CTOR = "constructor(address,address,address,address,uint8,address,uint16,uint16)";
 
 function verify(addr, contractPath, ctorSig, ctorValues) {
     const argFlags =
@@ -123,6 +123,8 @@ for (const log of logs) {
     const cBps = call(offering, "cBps()(uint16)");
     const creatorTokenBps = call(offering, "creatorTokenBps()(uint16)");
     const platformTokenBps = call(offering, "platformTokenBps()(uint16)");
+    const swapRoyaltyBps = call(offering, "swapRoyaltyBps()(uint16)");
+    const swapBurnBps = call(offering, "swapBurnBps()(uint16)");
     const refundMode = call(offering, "refundMode()(uint8)");
     const lockDuration = num(call(token, "transferLockDuration()(uint256)"));
     const capBps = call(token, "holdingCapBps()(uint16)");
@@ -136,7 +138,8 @@ for (const log of logs) {
     const paramsTuple =
         `(${paymentToken},${dojang},${creator},${platformOwner},"${name}","${symbol}",` +
         `${price},${raiseTarget},${minRaise},${deadline},${walletLimit},${minCommit},` +
-        `${fBps},${cBps},${creatorTokenBps},${platformTokenBps},${refundMode},${lockDuration},${capBps},` +
+        `${fBps},${cBps},${creatorTokenBps},${platformTokenBps},${swapRoyaltyBps},${swapBurnBps},` +
+        `${refundMode},${lockDuration},${capBps},` +
         `${poolFactory},${feeRouter},${tier},${mapaeFactory},(${cv},${pf},${rs}))`;
 
     verify(offering, "src/Offering.sol:Offering", OFFERING_CTOR, [paramsTuple]) ? ok++ : fail++;
@@ -177,8 +180,10 @@ for (const log of logs) {
     const poolFeeRouter = call(pool, "feeRouter()(address)");
     const poolTier = call(pool, "tier()(uint8)");
     const poolBurnerFactory = call(pool, "factory()(address)");
+    const poolRoyaltyBps = call(pool, "royaltyBps()(uint16)");
+    const poolBurnBps = call(pool, "burnBps()(uint16)");
     verify(pool, "src/MapaePool.sol:MapaePool", POOL_CTOR, [
-        token, paymentToken, creator, poolFeeRouter, poolTier, poolBurnerFactory,
+        token, paymentToken, creator, poolFeeRouter, poolTier, poolBurnerFactory, poolRoyaltyBps, poolBurnBps,
     ]) ? ok++ : fail++;
 }
 

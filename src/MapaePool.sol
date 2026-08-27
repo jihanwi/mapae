@@ -14,16 +14,18 @@ import {IBurnerRegistry} from "./interfaces/IBurnerRegistry.sol";
 /// @notice Minimal constant-product AMM for a single MembershipToken/KRWs pair
 ///         (D7 — deliberately NOT a UniV2 fork: a ~300-line pool is auditable).
 ///
-///         Swap fee is a tiered 4-way split, taken from the input amount and
-///         read LIVE from the FeeRouter by tier (Step 4). Splits (bps of input):
-///         - platform  → paid to FeeRouter.platformTreasury immediately (NEW).
-///                       KRWs on a buy, membership tokens on a sell ([Q2]).
-///         - royalty   → input asset to the creator (unchanged).
-///         - burn      → membership-token input burns immediately; KRWs input
-///                       accrues in `burnBuffer` until convertAndBurn() (unchanged).
-///         - lp        → stays in reserves, UniV2-style; also absorbs the split's
-///                       rounding remainder so the four shares sum EXACTLY to the
-///                       total fee (invariant 10). Dust stays with LPs/fans.
+///         Swap fee is a tiered 4-way split. platform + LP shares come from the
+///         FeeRouter live by tier (not overridable); royalty + burn are per-pool
+///         creator settings snapshotted at creation (R2). The split is
+///         DIRECTIONAL so royalty is always paid in KRWs and the treasury never
+///         holds creator tokens (R1, invariant 17):
+///         - Buy (KRWs in):  all four taken from the KRWs input — platform →
+///                           treasury, royalty → creator, burn → burnBuffer, lp
+///                           stays in reserve (absorbs rounding → invariant 10).
+///         - Sell (token in): burn burns from the token input, lp stays in
+///                           reserve (both input-side); platform + royalty are
+///                           carved from the KRWs output (treasury/creator in
+///                           KRWs), and the caller receives the remainder.
 ///
 ///         `swapForBurn` is a 0%-fee buy-and-burn open only to MapaeFactory-
 ///         registered burners (Sponsorship / the BuybackVault). The bought
@@ -54,8 +56,8 @@ contract MapaePool is ERC20, ReentrancyGuard {
     event ConvertedAndBurned(address indexed caller, uint256 krwIn, uint256 tokensBurned);
     /// @notice 0%-fee buy-and-burn driven by a registered burner (invariant 2).
     event BurnSwapped(address indexed caller, uint256 krwIn, uint256 tokensBurned);
-    /// @notice Platform swap cut sent to treasury (krwSide=true → KRWs, false → tokens).
-    event PlatformFeePaid(address indexed treasury, bool krwSide, uint256 amount);
+    /// @notice Platform swap cut sent to treasury — ALWAYS in KRWs (invariant 17).
+    event PlatformFeePaid(address indexed treasury, uint256 amount);
 
     uint16 public constant BPS = 10_000;
     uint256 internal constant WAD = 1e18;
@@ -64,13 +66,18 @@ contract MapaePool is ERC20, ReentrancyGuard {
     MembershipToken public immutable membershipToken;
     IERC20 public immutable krw;
     address public immutable creator;
-    /// @notice Tiered fee source; swap fees are read live per swap.
+    /// @notice Tiered fee source — supplies the platform + LP swap shares live
+    ///         (not overridable). Royalty/burn are per-pool (below).
     IFeeRouter public immutable feeRouter;
-    /// @notice Utility grade — selects the fee schedule.
+    /// @notice Utility grade — selects the FeeRouter schedule.
     IFeeRouter.UtilityTier public immutable tier;
     /// @notice Burner registry (the MapaeFactory) consulted by swapForBurn.
     ///         address(0) means no registry → swapForBurn always reverts.
     address public immutable factory;
+    /// @notice Per-pool creator royalty share (bps), snapshotted at creation (R2).
+    uint16 public immutable royaltyBps;
+    /// @notice Per-pool creator burn share (bps), snapshotted at creation (R2).
+    uint16 public immutable burnBps;
 
     uint256 public reserveToken;
     uint256 public reserveKrw;
@@ -84,7 +91,9 @@ contract MapaePool is ERC20, ReentrancyGuard {
         address creator_,
         IFeeRouter feeRouter_,
         IFeeRouter.UtilityTier tier_,
-        address factory_
+        address factory_,
+        uint16 royaltyBps_,
+        uint16 burnBps_
     ) ERC20("MAPAE LP", "MAPAE-LP") {
         if (
             address(membershipToken_) == address(0) || address(krw_) == address(0) || creator_ == address(0)
@@ -96,6 +105,8 @@ contract MapaePool is ERC20, ReentrancyGuard {
         feeRouter = feeRouter_;
         tier = tier_;
         factory = factory_; // may be address(0) in isolated tests → swapForBurn disabled
+        royaltyBps = royaltyBps_;
+        burnBps = burnBps_;
     }
 
     // ------------------------------------------------------------------
@@ -144,35 +155,23 @@ contract MapaePool is ERC20, ReentrancyGuard {
     }
 
     // ------------------------------------------------------------------
-    // Fee math (tiered 4-way split, read live from the FeeRouter)
+    // Fee math (R1 — directional so royalty is ALWAYS paid in KRWs and the
+    // platform treasury only ever receives KRWs; invariant 17)
     // ------------------------------------------------------------------
 
-    /// @dev Split `amountIn` into the four fee shares + the effective swap input.
-    ///      platform/royalty/burn are floored bps of amountIn; lp = totalFee −
-    ///      those three, so platform+royalty+burn+lp == totalFee EXACTLY (no
-    ///      precision loss — invariant 10) and lp ≥ 0 (sum of floors ≤ floor of
-    ///      sum). effectiveIn = amountIn − totalFee is what actually swaps.
-    function _split(uint256 amountIn)
-        internal
-        view
-        returns (uint256 platform, uint256 royalty, uint256 burnAmt, uint256 lp, uint256 effectiveIn)
-    {
+    /// @dev The four swap-fee bps for this pool. platform + lp come from the
+    ///      FeeRouter live (not overridable); royalty + burn are the per-pool
+    ///      snapshot (R2).
+    function _bps() internal view returns (uint16 platformBps, uint16 lpBps) {
         IFeeRouter.TierFees memory f = feeRouter.getFees(tier);
-        uint256 totalBps = uint256(f.swapPlatformBps) + f.swapRoyaltyBps + f.swapBurnBps + f.swapLpBps;
-        uint256 totalFee = amountIn * totalBps / BPS;
-        platform = amountIn * f.swapPlatformBps / BPS;
-        royalty = amountIn * f.swapRoyaltyBps / BPS;
-        burnAmt = amountIn * f.swapBurnBps / BPS;
-        lp = totalFee - platform - royalty - burnAmt;
-        effectiveIn = amountIn - totalFee;
+        return (f.swapPlatformBps, f.swapLpBps);
     }
 
-    // ------------------------------------------------------------------
-    // Swaps (tiered split fee on input)
-    // ------------------------------------------------------------------
-
-    /// @notice Buy membership tokens with KRWs. Works during the transfer lock
-    ///         (the pool is a lock-exempt sender — buys allowed, sells blocked).
+    /// @notice Buy membership tokens with KRWs. Fees are taken from the KRWs
+    ///         input: platform → treasury, royalty → creator, burn → burnBuffer,
+    ///         lp stays in reserve (absorbs the split's rounding remainder so the
+    ///         four shares sum EXACTLY to the total fee — invariant 10). Works
+    ///         during the transfer lock (pool is a lock-exempt sender).
     function swapKrwForToken(uint256 amountIn, uint256 minOut, address to)
         external
         nonReentrant
@@ -181,7 +180,14 @@ contract MapaePool is ERC20, ReentrancyGuard {
         if (amountIn == 0) revert ZeroAmount();
         krw.safeTransferFrom(msg.sender, address(this), amountIn);
 
-        (uint256 platform, uint256 royalty, uint256 burnAmt,, uint256 effectiveIn) = _split(amountIn);
+        (uint16 platformBps, uint16 lpBps) = _bps();
+        uint256 totalBps = uint256(platformBps) + royaltyBps + burnBps + lpBps;
+        uint256 totalFee = amountIn * totalBps / BPS;
+        uint256 platform = amountIn * platformBps / BPS;
+        uint256 royalty = amountIn * royaltyBps / BPS;
+        uint256 burnAmt = amountIn * burnBps / BPS;
+        // lp = remainder → reserve (dust to LPs/fans); effectiveIn actually swaps.
+        uint256 effectiveIn = amountIn - totalFee;
 
         amountOut = reserveToken * effectiveIn / (reserveKrw + effectiveIn);
         if (amountOut < minOut) revert InsufficientOutput(amountOut, minOut);
@@ -189,9 +195,9 @@ contract MapaePool is ERC20, ReentrancyGuard {
 
         if (platform > 0) {
             krw.safeTransfer(feeRouter.platformTreasury(), platform);
-            emit PlatformFeePaid(feeRouter.platformTreasury(), true, platform);
+            emit PlatformFeePaid(feeRouter.platformTreasury(), platform);
         }
-        if (royalty > 0) krw.safeTransfer(creator, royalty);
+        if (royalty > 0) krw.safeTransfer(creator, royalty); // royalty in KRWs
         if (burnAmt > 0) {
             burnBuffer += burnAmt;
             emit BurnBufferAccrued(burnAmt, burnBuffer);
@@ -202,8 +208,11 @@ contract MapaePool is ERC20, ReentrancyGuard {
         emit Swapped(msg.sender, to, true, amountIn, amountOut, royalty);
     }
 
-    /// @notice Sell membership tokens for KRWs. The token-side burn fee burns
-    ///         immediately (Transfer → 0x0 on every sell).
+    /// @notice Sell membership tokens for KRWs. burn + lp are taken from the
+    ///         token INPUT (burn is burned immediately — Transfer → 0x0; lp stays
+    ///         in reserve). platform + royalty are taken from the KRWs OUTPUT, so
+    ///         royalty is paid in KRWs and the treasury never holds tokens
+    ///         (invariant 17). The caller receives the output net of both.
     function swapTokenForKrw(uint256 amountIn, uint256 minOut, address to)
         external
         nonReentrant
@@ -212,24 +221,31 @@ contract MapaePool is ERC20, ReentrancyGuard {
         if (amountIn == 0) revert ZeroAmount();
         IERC20(address(membershipToken)).safeTransferFrom(msg.sender, address(this), amountIn);
 
-        (uint256 platform, uint256 royalty, uint256 burnAmt,, uint256 effectiveIn) = _split(amountIn);
+        (uint16 platformBps, uint16 lpBps) = _bps();
+        // Input-side fees (token): burn burns, lp stays in reserve.
+        uint256 burnAmt = amountIn * burnBps / BPS;
+        uint256 lpAmt = amountIn * lpBps / BPS;
+        uint256 effectiveIn = amountIn - burnAmt - lpAmt;
 
-        amountOut = reserveKrw * effectiveIn / (reserveToken + effectiveIn);
+        // Gross KRWs out of the curve, then carve the output-side fees.
+        uint256 grossOut = reserveKrw * effectiveIn / (reserveToken + effectiveIn);
+        uint256 platform = grossOut * platformBps / BPS;
+        uint256 royalty = grossOut * royaltyBps / BPS;
+        amountOut = grossOut - platform - royalty; // caller absorbs rounding dust
         if (amountOut < minOut) revert InsufficientOutput(amountOut, minOut);
-        if (amountOut >= reserveKrw) revert InsufficientLiquidity();
+        if (grossOut >= reserveKrw) revert InsufficientLiquidity();
 
-        // [Q2] platform cut on a sell is denominated in membership tokens.
-        if (platform > 0) {
-            IERC20(address(membershipToken)).safeTransfer(feeRouter.platformTreasury(), platform);
-            emit PlatformFeePaid(feeRouter.platformTreasury(), false, platform);
-        }
-        if (royalty > 0) IERC20(address(membershipToken)).safeTransfer(creator, royalty);
         if (burnAmt > 0) {
             membershipToken.burn(burnAmt);
             emit TokensBurned(burnAmt);
         }
-        reserveToken += amountIn - platform - royalty - burnAmt; // lp + effectiveIn stay in reserve
-        reserveKrw -= amountOut;
+        if (platform > 0) {
+            krw.safeTransfer(feeRouter.platformTreasury(), platform); // KRWs only
+            emit PlatformFeePaid(feeRouter.platformTreasury(), platform);
+        }
+        if (royalty > 0) krw.safeTransfer(creator, royalty); // royalty in KRWs
+        reserveToken += amountIn - burnAmt; // burn left; lp + effectiveIn stay
+        reserveKrw -= grossOut; // full gross output leaves the reserve
         krw.safeTransfer(to, amountOut);
         emit Swapped(msg.sender, to, false, amountIn, amountOut, royalty);
     }
@@ -284,21 +300,27 @@ contract MapaePool is ERC20, ReentrancyGuard {
         return reserveKrw * WAD / reserveToken;
     }
 
-    /// @notice Total swap fee in bps for this pool's tier (platform+royalty+burn+lp).
+    /// @notice Total swap fee in bps (platform+lp from FeeRouter, royalty+burn
+    ///         per-pool). Buy path applies all four to the input; the sell path
+    ///         splits them across input (burn+lp) and output (platform+royalty).
     function totalFeeBps() public view returns (uint16) {
-        IFeeRouter.TierFees memory f = feeRouter.getFees(tier);
-        return f.swapPlatformBps + f.swapRoyaltyBps + f.swapBurnBps + f.swapLpBps;
+        (uint16 platformBps, uint16 lpBps) = _bps();
+        return platformBps + royaltyBps + burnBps + lpBps;
     }
 
-    /// @notice Quote for a KRWs→token swap after all fees.
+    /// @notice Quote for a KRWs→token swap: all fees taken from the KRWs input.
     function getTokenOut(uint256 krwIn) external view returns (uint256) {
         uint256 effectiveIn = krwIn - (krwIn * totalFeeBps() / BPS);
         return reserveToken * effectiveIn / (reserveKrw + effectiveIn);
     }
 
-    /// @notice Quote for a token→KRWs swap after all fees.
+    /// @notice Quote for a token→KRWs swap, net of fees the caller actually pays:
+    ///         burn+lp come off the token input, platform+royalty off the KRWs
+    ///         output. Returns the KRWs the caller receives.
     function getKrwOut(uint256 tokenIn) external view returns (uint256) {
-        uint256 effectiveIn = tokenIn - (tokenIn * totalFeeBps() / BPS);
-        return reserveKrw * effectiveIn / (reserveToken + effectiveIn);
+        (uint16 platformBps, uint16 lpBps) = _bps();
+        uint256 effectiveIn = tokenIn - (tokenIn * burnBps / BPS) - (tokenIn * lpBps / BPS);
+        uint256 grossOut = reserveKrw * effectiveIn / (reserveToken + effectiveIn);
+        return grossOut - (grossOut * platformBps / BPS) - (grossOut * royaltyBps / BPS);
     }
 }

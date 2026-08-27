@@ -74,6 +74,8 @@ contract MapaeFactory is Ownable, IBurnerRegistry {
         uint16 fBps;
         uint16 cBps;
         uint16 creatorTokenBps;
+        uint16 swapRoyaltyBps; // per-pool creator royalty (tier band; default = FeeRouter tier table)
+        uint16 swapBurnBps; // per-pool creator burn (tier band; default = FeeRouter tier table)
         IFeeRouter.UtilityTier tier; // utility grade (gates + fee schedule + bands)
         IOffering.RefundMode refundMode;
         uint256 transferLockDuration;
@@ -233,17 +235,22 @@ contract MapaeFactory is Ownable, IBurnerRegistry {
         return address(rm);
     }
 
-    /// @dev Count the creator's non-failed offerings and revert if adding one
-    ///      more would exceed the tier's live cap (L0 = 3, L1/L2 = 1).
+    /// @dev Live-token cap by SEPARATE buckets (R3): L0 and membership (L1+L2)
+    ///      are counted independently so an L0 issuer is never blocked from an
+    ///      L1 raise (L0→L1 upsell funnel). L0 create needs liveL0 < 3; L1/L2
+    ///      create needs liveMembership == 0. Failed offerings (refunding + zero
+    ///      supply) don't count in either bucket. Cross-holding is allowed.
     function _enforceLiveCap(address[] storage prior, IFeeRouter.UtilityTier tier) internal view {
-        uint256 cap = tier == IFeeRouter.UtilityTier.L0 ? 3 : 1;
-        uint256 live;
+        uint256 liveL0;
+        uint256 liveMembership;
         for (uint256 i = 0; i < prior.length; i++) {
             IPrimaryMarket o = IPrimaryMarket(prior[i]);
-            bool failed = o.phase() == IPrimaryMarket.Phase.Refunding && o.token().totalSupply() == 0;
-            if (!failed) live++;
+            if (o.phase() == IPrimaryMarket.Phase.Refunding && o.token().totalSupply() == 0) continue; // failed
+            if (tokenTier[address(o.token())] == IFeeRouter.UtilityTier.L0) liveL0++;
+            else liveMembership++;
         }
-        if (live >= cap) {
+        bool overCap = tier == IFeeRouter.UtilityTier.L0 ? liveL0 >= 3 : liveMembership >= 1;
+        if (overCap) {
             revert ActiveOfferingExists(msg.sender, prior.length > 0 ? prior[prior.length - 1] : address(0));
         }
     }
@@ -272,6 +279,8 @@ contract MapaeFactory is Ownable, IBurnerRegistry {
         p.cBps = cp.cBps;
         p.creatorTokenBps = cp.creatorTokenBps;
         p.platformTokenBps = cp.tier == IFeeRouter.UtilityTier.L0 ? 0 : PREMIUM_PLATFORM_TOKEN_BPS;
+        p.swapRoyaltyBps = cp.swapRoyaltyBps;
+        p.swapBurnBps = cp.swapBurnBps;
         p.refundMode = cp.refundMode;
         p.transferLockDuration = cp.transferLockDuration;
         p.holdingCapBps = cp.holdingCapBps;

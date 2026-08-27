@@ -60,6 +60,12 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
     uint16 public constant MIN_C_BPS = 1500;
     uint16 public constant MAX_C_BPS = 3000;
 
+    // Per-pool swap royalty/burn bands (R2 — creator-set within tier band,
+    // snapshotted at construction). platform/LP shares stay FeeRouter-sourced.
+    uint16 public constant MAX_SWAP_ROYALTY_BPS = 80; // L1/L2
+    uint16 public constant MAX_SWAP_ROYALTY_BPS_L0 = 30; // L0
+    uint16 public constant MAX_SWAP_BURN_BPS = 50; // all tiers
+
     uint16 public constant BPS = 10_000;
     uint256 internal constant WAD = 1e18;
 
@@ -108,6 +114,11 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
     uint256 public immutable minRaise;
     /// @notice MapaeFactory address, forwarded to the pool as its burner registry.
     address public immutable mapaeFactory;
+    /// @notice Per-pool creator swap royalty, snapshotted (tier band). The pool's
+    ///         platform/LP shares still come from the FeeRouter live.
+    uint16 public immutable swapRoyaltyBps;
+    /// @notice Per-pool creator swap burn, snapshotted (tier band).
+    uint16 public immutable swapBurnBps;
 
     AllocationRecipients public recipients;
 
@@ -171,6 +182,12 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
         }
         if (p.cBps < MIN_C_BPS || p.cBps > MAX_C_BPS) revert InvalidConfig();
 
+        // Per-pool swap royalty/burn bands (R2), tier-dependent for royalty.
+        {
+            uint16 maxRoyalty = p.tier == IFeeRouter.UtilityTier.L0 ? MAX_SWAP_ROYALTY_BPS_L0 : MAX_SWAP_ROYALTY_BPS;
+            if (p.swapRoyaltyBps > maxRoyalty || p.swapBurnBps > MAX_SWAP_BURN_BPS) revert InvalidConfig();
+        }
+
         // Duration band is tier-dependent: L1/L2 [12h,48h], L0 [1h,48h].
         if (p.deadline <= block.timestamp) revert InvalidDuration();
         uint256 duration = p.deadline - block.timestamp;
@@ -208,6 +225,9 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
         // Snapshot the platform proceeds cut — invariant 11 (never re-read).
         offeringFeeBps = p.feeRouter.getFees(p.tier).offeringFeeBps;
         mapaeFactory = p.mapaeFactory;
+        // Snapshot creator swap royalty/burn (same principle as the offering fee).
+        swapRoyaltyBps = p.swapRoyaltyBps;
+        swapBurnBps = p.swapBurnBps;
         recipients = p.recipients;
 
         address[] memory capExempt = new address[](3);
@@ -342,7 +362,9 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
         krwSeed = tokenSeed * price / WAD;
 
         if (tokenSeed > 0 && krwSeed > 0) {
-            MapaePool pool_ = poolFactory.createPool(token, paymentToken, creator, feeRouter, tier, mapaeFactory);
+            MapaePool pool_ = poolFactory.createPool(
+                token, paymentToken, creator, feeRouter, tier, mapaeFactory, swapRoyaltyBps, swapBurnBps
+            );
             token.registerPool(address(pool_));
             pool = pool_;
             IERC20(address(token)).safeTransfer(address(pool_), tokenSeed);

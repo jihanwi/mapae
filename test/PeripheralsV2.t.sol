@@ -91,6 +91,8 @@ contract PeripheralsV2Test is Test {
         cp.fBps = 6000;
         cp.cBps = 1500;
         cp.creatorTokenBps = 2500;
+        cp.swapRoyaltyBps = 60;
+        cp.swapBurnBps = 30;
         cp.tier = IFeeRouter.UtilityTier.L1;
         cp.refundMode = IOffering.RefundMode.Partial;
         cp.sponsorBurnBps = 1000;

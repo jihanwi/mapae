@@ -64,6 +64,8 @@ abstract contract OfferingTestBase is Test {
         p.cBps = C_BPS;
         p.creatorTokenBps = CREATOR_TOKEN_BPS;
         p.platformTokenBps = 500; // L1/L2 fixed 5%
+        p.swapRoyaltyBps = 60; // L1 default (FeeRouter tier table)
+        p.swapBurnBps = 30; // L1 default
         p.refundMode = mode;
         p.transferLockDuration = 0;
         p.holdingCapBps = 0;

@@ -129,6 +129,8 @@ contract DemoV2 is Script {
         cp.fBps = 6000;
         cp.cBps = 1500;
         cp.creatorTokenBps = 2500;
+        cp.swapRoyaltyBps = 60;
+        cp.swapBurnBps = 30;
         cp.tier = IFeeRouter.UtilityTier.L1;
         cp.refundMode = IOffering.RefundMode.Partial;
         cp.sponsorBurnBps = 1000;
@@ -190,6 +192,8 @@ contract DemoV2 is Script {
         cp.fBps = 7000; // L0 band
         cp.cBps = 2500; // c 기본 25%
         cp.creatorTokenBps = 500; // issuer 5%
+        cp.swapRoyaltyBps = 20; // L0 royalty band [0,30]
+        cp.swapBurnBps = 20;
         cp.tier = IFeeRouter.UtilityTier.L0;
         cp.refundMode = IOffering.RefundMode.Partial;
         cp.sponsorBurnBps = 0; // L0 has no sponsorship anyway

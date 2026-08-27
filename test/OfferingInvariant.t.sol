@@ -224,6 +224,8 @@ contract OfferingInvariantModeBTest is Test {
         p.poolFactory = new PoolFactory();
         p.minRaise = 500_000e18;
         p.platformTokenBps = 500;
+        p.swapRoyaltyBps = 60;
+        p.swapBurnBps = 30;
         p.feeRouter = new FeeRouter(address(this), makeAddr("treasury"));
         p.tier = IFeeRouter.UtilityTier.L1;
         p.mapaeFactory = address(0);
@@ -328,6 +330,8 @@ contract OfferingInvariantModeATest is Test {
         p.poolFactory = new PoolFactory();
         p.minRaise = 500_000e18;
         p.platformTokenBps = 500;
+        p.swapRoyaltyBps = 60;
+        p.swapBurnBps = 30;
         p.feeRouter = new FeeRouter(address(this), makeAddr("treasury"));
         p.tier = IFeeRouter.UtilityTier.L1;
         p.mapaeFactory = address(0);

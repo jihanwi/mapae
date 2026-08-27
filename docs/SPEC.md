@@ -22,20 +22,29 @@ MAPAE: GIWA 체인(업비트/두나무의 이더리움 L2) 위의 크리에이�
   `setFees` onlyOwner + 밴드 검증 revert, `platformTreasury` 교체 가능.
   **후원은 이 컨트랙트를 호출하는 경로가 없어 "후원 0%"를 코드 부재로 증명.**
 - **등급제** — `createOffering(...,tier)`, Factory `tokenTier(token)` (전 모듈 게이트 근거),
-  `isBurner(addr)` (swapForBurn 허용목록). 지갑당 라이브 토큰: L1/L2=1, **L0=3**
-  (실패 슬롯 미소모). `minRaise` 배포 인자(테스트넷 500,000) — 전 등급 `R<minRaise` revert.
+  `isBurner(addr)` (swapForBurn 허용목록). **지갑당 라이브 토큰 = 버킷 분리(R3)**: liveL0 / 
+  liveMembership(L1+L2) 독립 카운트 — L0 개설 `liveL0<3`, L1/L2 개설 `liveMembership==0`,
+  **교차 보유 허용**(L0→L1 업셀 퍼널). 실패 공모(refunding+0공급)는 버킷별 슬롯 미소모.
+  `minRaise` 배포 인자(테스트넷 500,000) — **L0 포함 전 등급** `R<minRaise` revert(Offering
+  레벨 floor라 L0 가이드 우회와 무관).
 - **등급별 밴드** — 기간 T: L1/L2 [12h,48h] / **L0 [1h,48h]**. 토크노믹스 L0: f∈[70,80]%,
   발행자 배분∈[5,15]%, **플랫폼 토큰=0 강제**, c 기본 25%. 베스팅 L0 3~6mo·클리프 0 허용.
   **L0는 `cancel()` 무조건 revert**(응모=확정), 프리즈 로직 비활성.
 - **공모 대금 플랫폼 몫** — 하드코딩 10% → `FeeRouter.getFees(tier).offeringFeeBps`,
   **개설 시점 스냅샷**(진행 중 요율 변경 소급 금지). 실행가능식:
   `f + 발행자배분 + 플랫폼토큰배분 + c×f ≤ 100%`.
-- **MapaePool 수수료** — 고정 2% 3분할 → FeeRouter 조회 기반 등급별 **4분할**
-  (platform/royalty/burn/lp). platform 몫은 매수 시 KRWs, 매도 시 토큰으로 즉시
-  treasury 이체([Q2]). lp가 라운딩 잔여 흡수 → 4분할 합 = 총 요율(정밀 손실 0).
-  **`swapForBurn(amountIn,minOut)` 신규 — 수수료 0 경로**: Factory 등록 Sponsorship·
-  BuybackVault만 호출 가능(그 외 revert), 출력은 풀이 원자 소각(반환 없음).
-  `convertAndBurn`도 이 0% 경로로 통일.
+- **MapaePool 수수료 (방향별 4분할, R1)** — platform·LP 몫은 FeeRouter tier 조회(오버라이드
+  불가), royalty·burn 몫은 **per-token 크리에이터 설정**(R2, 개설 시 tier 밴드 검증 + 스냅샷).
+  방향별 수취로 **royalty는 항상 KRWs, treasury는 KRWs만 수취**:
+  - 매수(KRW in): 4분할 전부 입력 KRWs 기준 — platform→treasury, royalty→creator,
+    burn→burnBuffer, lp 잔류(라운딩 흡수 → 각 몫=floor(base×bps), 합=총 요율).
+  - 매도(token in): burn·lp는 입력 토큰(burn 즉시 소각, lp 잔류), platform·royalty는
+    **출력 KRWs**에서 수취(treasury/creator KRWs), 잔여 dust는 호출자(팬) 몫.
+  - **불변식 17**: 임의 스왑 시퀀스 후 platformTreasury의 크리에이터 토큰 잔고는 항상 0.
+- **per-token royalty·burn 밴드 (R2)** — L1/L2 royalty [0,80]bps·burn [0,50]bps,
+  L0 royalty [0,30]·burn [0,50]. 기본값은 FeeRouter tier 테이블. platform·LP는 조회 유지.
+- **`swapForBurn(amountIn,minOut)` — 수수료 0 경로**: Factory 등록 Sponsorship·BuybackVault만
+  호출(그 외 revert), 출력은 풀이 원자 소각(반환 없음). `convertAndBurn`도 이 0% 경로로 통일.
 - **RedeemManager** — `createPaidDrop`/`purchaseDrop` 유료 드랍(merchFee→treasury,
   환원율분→BuybackVault, 잔여→크리에이터). **L0는 소각형·유료 드랍 전부 revert.**
 - **Sponsorship** — 소각 매수를 `swapForBurn`(0%) 경유로 교체, 환원율 route 훅.
@@ -122,9 +131,13 @@ MAPAE: GIWA 체인(업비트/두나무의 이더리움 L2) 위의 크리에이�
 7. L0 `swapPlatformBps`는 어떤 갱신 경로로도 60 미만 불가 (fuzz)
 8. L0 토큰은 RedeemManager(소각형·유료 드랍)·Sponsorship·BuybackVault 호출 전부 revert
 9. BuybackVault: executor를 임의 주소로 교체해도 KRWs는 소각 매수 외 경로로 감소 불가 (fuzz)
-10. 스왑 수수료 4분할 합 = 총 요율, 정밀도 손실 0 (fuzz: 임의 금액)
+10. 스왑 수수료 몫 = floor(base×bps), 방향별 base (매수=입력 KRWs / 매도=입력토큰(burn·lp)+
+    출력 KRWs(platform·royalty)) — 매수 4분할 합 = 총 요율, 매도 출력분할 합 = grossOut,
+    정밀도 손실 0 (fuzz 양방향)
 11. 공모 진행 중 FeeRouter 갱신이 진행 중 공모 분배에 영향 없음 (스냅샷 검증)
 12. 상장가 = 공모가 (l=c×f) — L0 프리셋(f=70%, c=25%)에서도 성립 (회귀)
+17. 임의 스왑 시퀀스 후 platformTreasury의 크리에이터 토큰 잔고 = 0 (R1, fuzz) —
+    treasury는 KRWs만 수취, royalty도 항상 KRWs
 
 ## 배포 환경
 

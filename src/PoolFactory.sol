@@ -26,14 +26,16 @@ contract PoolFactory {
         address creator,
         IFeeRouter feeRouter,
         IFeeRouter.UtilityTier tier,
-        address factory
+        address factory,
+        uint16 royaltyBps,
+        uint16 burnBps
     ) external returns (MapaePool pool) {
         if (poolOf[address(token)] != address(0)) {
             revert PoolExists(address(token), poolOf[address(token)]);
         }
         if (msg.sender != token.offering()) revert NotTokenOffering(msg.sender, token.offering());
 
-        pool = new MapaePool(token, krw, creator, feeRouter, tier, factory);
+        pool = new MapaePool(token, krw, creator, feeRouter, tier, factory, royaltyBps, burnBps);
         poolOf[address(token)] = address(pool);
         _allPools.push(address(pool));
         emit PoolCreated(address(token), address(pool), creator);
