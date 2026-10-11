@@ -88,12 +88,13 @@ contract OfferingE2ETest is OfferingTestBase {
         assertEq(token.balanceOf(address(offering)), 0);
         assertEq(krw.balanceOf(address(offering)), 0);
 
-        // Proceeds: platform 10%, LP 15% seeded into the pool at par, creator =
-        // remainder + KRW seed rounding dust (10000 wei here — never the platform).
+        // Proceeds: platform offering fee 7.5% (L1), LP 15% seeded into the pool
+        // at par, creator = remainder + KRW seed rounding dust (10000 wei here —
+        // never the platform). v5.2: fee moved from fixed 10% to FeeRouter L1.
         MapaePool poolA = offering.pool();
         assertEq(krw.balanceOf(address(poolA)), 149_999_999_999_999_999_990_000);
-        assertEq(krw.balanceOf(creator), 750_000e18 + 10_000);
-        assertEq(krw.balanceOf(platform), 100_000e18);
+        assertEq(krw.balanceOf(creator), 775_000e18 + 10_000);
+        assertEq(krw.balanceOf(platform), 75_000e18);
         assertEq(poolA.spotPrice(), PRICE); // 상장가 == 공모가
         assertEq(poolA.balanceOf(poolA.DEAD()), poolA.totalSupply()); // LP 영구 락업
 
@@ -137,11 +138,12 @@ contract OfferingE2ETest is OfferingTestBase {
         assertEq(token.balanceOf(address(offering)), 0);
         assertEq(krw.balanceOf(address(offering)), 0);
 
-        // Proceeds of 600k: platform 10%, LP 15% seeded at par, creator remainder.
+        // Proceeds of 600k: platform offering fee 7.5% (L1), LP 15% seeded at
+        // par, creator remainder. v5.2: fee moved from fixed 10% to FeeRouter L1.
         MapaePool poolB = offering.pool();
         assertEq(krw.balanceOf(address(poolB)), 90_000e18);
-        assertEq(krw.balanceOf(creator), 450_000e18);
-        assertEq(krw.balanceOf(platform), 60_000e18);
+        assertEq(krw.balanceOf(creator), 465_000e18);
+        assertEq(krw.balanceOf(platform), 45_000e18);
         assertEq(poolB.spotPrice(), PRICE); // 상장가 == 공모가 (모드 B 미달에서도)
     }
 

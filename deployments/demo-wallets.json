@@ -1,5 +1,5 @@
 {
-  "note": "TEST-ONLY demo wallets (M5 clean set), derived from the mnemonic hardcoded in script/DemoStage1.s.sol. Publicly known by design — never hold real value here. M3 wallets are retired (deployments/archive-m3/).",
+  "note": "TEST-ONLY demo wallets (M5 clean set), derived from the mnemonic hardcoded in script/DemoStage1On.s.sol (same mnemonic as the v1.0 DemoStage1.s.sol). Publicly known by design — never hold real value here. M3 wallets are retired (deployments/archive-m3/).",
   "derivationPath": "m/44'/60'/0'/0/{index}",
   "wallets": [
     {

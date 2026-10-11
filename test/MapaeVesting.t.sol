@@ -4,6 +4,7 @@ pragma solidity ^0.8.26;
 import {Test} from "forge-std/Test.sol";
 import {MapaeVesting} from "../src/MapaeVesting.sol";
 import {MembershipToken} from "../src/MembershipToken.sol";
+import {IFeeRouter} from "../src/interfaces/IFeeRouter.sol";
 
 /// @notice Vesting unit tests (D10). 불변식 6: nothing moves before the cliff,
 ///         releases never exceed the linear schedule.
@@ -20,7 +21,7 @@ contract MapaeVestingTest is Test {
     function setUp() public {
         vm.warp(1_750_000_000);
         start = uint64(block.timestamp + 1 days); // ≈ offering deadline
-        vesting = new MapaeVesting(creator, start, DURATION, CLIFF);
+        vesting = new MapaeVesting(creator, start, DURATION, CLIFF, IFeeRouter.UtilityTier.L1);
 
         // Token minted straight to the vesting contract (as settle does).
         token = new MembershipToken("Creator Membership", "CRTM", address(this), 0, 0, new address[](0));
@@ -41,20 +42,20 @@ contract MapaeVestingTest is Test {
     function test_Constructor_BandValidation() public {
         // duration below 12mo
         vm.expectRevert(MapaeVesting.InvalidVestingConfig.selector);
-        new MapaeVesting(creator, start, 359 days, CLIFF);
+        new MapaeVesting(creator, start, 359 days, CLIFF, IFeeRouter.UtilityTier.L1);
         // duration above 48mo
         vm.expectRevert(MapaeVesting.InvalidVestingConfig.selector);
-        new MapaeVesting(creator, start, 1441 days, CLIFF);
+        new MapaeVesting(creator, start, 1441 days, CLIFF, IFeeRouter.UtilityTier.L1);
         // cliff below 3mo
         vm.expectRevert(MapaeVesting.InvalidVestingConfig.selector);
-        new MapaeVesting(creator, start, DURATION, 89 days);
+        new MapaeVesting(creator, start, DURATION, 89 days, IFeeRouter.UtilityTier.L1);
         // cliff beyond duration — OZ VestingWalletCliff's own check fires first
         // (base constructor order), which is equally fail-safe
         vm.expectRevert();
-        new MapaeVesting(creator, start, 360 days, 361 days);
+        new MapaeVesting(creator, start, 360 days, 361 days, IFeeRouter.UtilityTier.L1);
         // exact band edges pass
-        new MapaeVesting(creator, start, 360 days, 90 days);
-        new MapaeVesting(creator, start, 1440 days, 1440 days);
+        new MapaeVesting(creator, start, 360 days, 90 days, IFeeRouter.UtilityTier.L1);
+        new MapaeVesting(creator, start, 1440 days, 1440 days, IFeeRouter.UtilityTier.L1);
     }
 
     /// 불변식 6: zero releasable before the cliff.

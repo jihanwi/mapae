@@ -5,7 +5,9 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IDojang} from "../src/interfaces/IDojang.sol";
 import {IOffering} from "../src/interfaces/IOffering.sol";
+import {IFeeRouter} from "../src/interfaces/IFeeRouter.sol";
 import {MapaeFactory} from "../src/MapaeFactory.sol";
+import {BuybackVault} from "../src/BuybackVault.sol";
 import {Offering} from "../src/Offering.sol";
 import {MembershipToken} from "../src/MembershipToken.sol";
 import {RedeemManager} from "../src/RedeemManager.sol";
@@ -13,17 +15,22 @@ import {OfferingTestBase} from "./utils/OfferingTestBase.sol";
 
 abstract contract MapaeFactoryTestBase is OfferingTestBase {
     MapaeFactory internal factory;
+    BuybackVault internal buybackVault;
 
     address internal creator2 = makeAddr("creator2");
     address internal fan1 = makeAddr("fan1");
 
     function setUp() public virtual override {
         super.setUp();
+        buybackVault = new BuybackVault(IERC20(address(krw)), address(this));
         factory = new MapaeFactory(
             IDojang(address(dojang)),
             IERC20(address(krw)),
             address(this), // platform ops wallet (settle authority)
             poolFactory,
+            feeRouter,
+            buybackVault,
+            MIN_RAISE,
             MapaeFactory.FeeRecipients({platform: platform, reserve: reserve}),
             // Test guide: wide enough for the E2E fixtures (L = 30% of R).
             MapaeFactory.Guide({
@@ -50,11 +57,12 @@ abstract contract MapaeFactoryTestBase is OfferingTestBase {
         cp.fBps = F_BPS;
         cp.cBps = C_BPS;
         cp.creatorTokenBps = CREATOR_TOKEN_BPS;
+        cp.swapRoyaltyBps = 60;
+        cp.swapBurnBps = 30;
+        cp.tier = IFeeRouter.UtilityTier.L1;
         cp.refundMode = IOffering.RefundMode.AllOrNothing;
         cp.transferLockDuration = 0;
         cp.holdingCapBps = 0;
-        cp.swapRoyaltyBps = 100;
-        cp.swapBurnBps = 50;
         cp.sponsorBurnBps = 1000;
         cp.vestingDuration = 1080 days; // 36mo
         cp.vestingCliff = 180 days; // 6mo
@@ -64,6 +72,22 @@ abstract contract MapaeFactoryTestBase is OfferingTestBase {
         vm.prank(who);
         (address o, address t, address rm) = factory.createOffering(defaultCreateParams());
         return (Offering(o), MembershipToken(t), RedeemManager(rm));
+    }
+
+    /// @dev L0 CreateParams (guide bypassed; L0 tokenomics/duration bands).
+    function l0CreateParams() internal view returns (MapaeFactory.CreateParams memory cp) {
+        cp = defaultCreateParams();
+        cp.tier = IFeeRouter.UtilityTier.L0;
+        cp.raiseTarget = 500_000e18; // >= minRaise floor
+        cp.walletLimit = 500_000e18;
+        cp.deadline = block.timestamp + 2 hours; // L0 [1h,48h]
+        cp.fBps = 7000;
+        cp.cBps = 2500;
+        cp.creatorTokenBps = 500;
+        cp.swapRoyaltyBps = 20; // L0 royalty band [0,30]
+        cp.swapBurnBps = 20;
+        cp.vestingDuration = 120 days; // L0 [3mo,6mo]
+        cp.vestingCliff = 0; // L0 cliff 0 allowed
     }
 }
 
@@ -228,5 +252,46 @@ contract MapaeFactoryTest is MapaeFactoryTestBase {
         vm.warp(1_750_000_000);
         createAs(creator); // allowed
         assertEq(factory.offeringsByCreator(creator).length, 2);
+    }
+
+    // ------------------------------------------------------------------
+    // R3 — live-token buckets are separate (L0 vs membership)
+    // ------------------------------------------------------------------
+
+    function test_R3_L0HolderCanCreateMembership() public {
+        vm.prank(creator);
+        factory.createOffering(l0CreateParams()); // L0 live
+        vm.prank(creator);
+        factory.createOffering(defaultCreateParams()); // L1 — separate bucket, allowed
+        assertEq(factory.offeringsByCreator(creator).length, 2);
+    }
+
+    function test_R3_MembershipHolderCanCreateL0() public {
+        vm.prank(creator);
+        factory.createOffering(defaultCreateParams()); // L1 live
+        vm.prank(creator);
+        factory.createOffering(l0CreateParams()); // L0 — allowed
+        assertEq(factory.offeringsByCreator(creator).length, 2);
+    }
+
+    function test_R3_L0BucketCapThree() public {
+        vm.startPrank(creator);
+        factory.createOffering(l0CreateParams());
+        factory.createOffering(l0CreateParams());
+        factory.createOffering(l0CreateParams()); // 3 live L0 ok
+        vm.expectRevert(); // 4th L0 blocked (liveL0 >= 3)
+        factory.createOffering(l0CreateParams());
+        vm.stopPrank();
+        assertEq(factory.offeringsByCreator(creator).length, 3);
+    }
+
+    function test_R3_MembershipBucketCapOne() public {
+        vm.prank(creator);
+        factory.createOffering(defaultCreateParams()); // L1 live
+        MapaeFactory.CreateParams memory l2 = defaultCreateParams();
+        l2.tier = IFeeRouter.UtilityTier.L2;
+        vm.prank(creator);
+        vm.expectRevert(); // L2 shares the membership bucket → blocked
+        factory.createOffering(l2);
     }
 }

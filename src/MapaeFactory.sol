@@ -5,6 +5,9 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IDojang} from "./interfaces/IDojang.sol";
 import {IOffering} from "./interfaces/IOffering.sol";
+import {IPrimaryMarket} from "./interfaces/IPrimaryMarket.sol";
+import {IFeeRouter} from "./interfaces/IFeeRouter.sol";
+import {IBurnerRegistry} from "./interfaces/IBurnerRegistry.sol";
 import {Offering} from "./Offering.sol";
 import {OfferingDeployer} from "./OfferingDeployer.sol";
 import {StackDeployer} from "./StackDeployer.sol";
@@ -13,23 +16,24 @@ import {RedeemManager} from "./RedeemManager.sol";
 import {MapaeVesting} from "./MapaeVesting.sol";
 import {Sponsorship} from "./Sponsorship.sol";
 import {PoolFactory} from "./PoolFactory.sol";
+import {BuybackVault} from "./BuybackVault.sol";
 
 /// @title MapaeFactory
 /// @notice Deploys and wires the per-creator stack: MembershipToken (via
-///         Offering) + Offering + RedeemManager.
+///         Offering) + Vesting + RedeemManager + Sponsorship, and is the
+///         canonical registry the whole system gates on — tokenTier() and
+///         isBurner() (the swapForBurn allow-list).
 ///
 ///         Rules enforced here:
 ///         - Caller must hold a Dojang Verified Address (fail-closed) and is
 ///           ALWAYS the creator — no proxy issuance.
-///         - One live token per creator: a new offering is allowed only if the
-///           creator has none yet, or their latest offering ended in failure
-///           (refunding with zero token supply). Failed raises don't consume
-///           the slot — retrying is intended product behavior.
-///         - P/R/L must sit inside the platform guide bands (owner-updatable
-///           config; the contracts themselves stay non-upgradeable).
-///         Duration, fBps/cBps/creatorTokenBps bands and share feasibility are
-///         enforced by the Offering constructor and propagate from here.
-contract MapaeFactory is Ownable {
+///         - Live-token cap by tier ([Q4]): L1/L2 = 1 live, L0 = 3 live, where
+///           "live" = a non-failed offering. Failed raises don't consume a slot.
+///         - L1/L2 keep the platform guide bands (P/R/L); L0 skips them
+///           (lightweight curation — Dojang + tokenomics bands + raise floor).
+///         Duration, tokenomics bands and share feasibility are enforced by the
+///         Offering constructor per tier and propagate from here.
+contract MapaeFactory is Ownable, IBurnerRegistry {
     error NotVerifiedCreator(address account);
     error ActiveOfferingExists(address creator, address offering);
     error PriceOutOfBand(uint256 price);
@@ -38,16 +42,16 @@ contract MapaeFactory is Ownable {
     error InvalidGuide();
     error ZeroAddress();
 
+    /// @notice Platform token cut for premium tiers (L1/L2). L0 is forced to 0.
+    uint16 public constant PREMIUM_PLATFORM_TOKEN_BPS = 500;
+
     /// @notice Platform-side allocation recipients wired into every offering.
-    ///         (The LP share needs no recipient since M4: it seeds the AMM pool
-    ///         at settle with LP shares locked at 0xdEaD.)
     struct FeeRecipients {
         address platform;
         address reserve;
     }
 
-    /// @notice Platform guide bands for creator-chosen parameters.
-    ///         Wallet limit L is validated as a fraction of R (bps).
+    /// @notice Platform guide bands for creator-chosen parameters (L1/L2 only).
     struct Guide {
         uint256 minPrice;
         uint256 maxPrice;
@@ -70,14 +74,15 @@ contract MapaeFactory is Ownable {
         uint16 fBps;
         uint16 cBps;
         uint16 creatorTokenBps;
+        uint16 swapRoyaltyBps; // per-pool creator royalty (tier band; default = FeeRouter tier table)
+        uint16 swapBurnBps; // per-pool creator burn (tier band; default = FeeRouter tier table)
+        IFeeRouter.UtilityTier tier; // utility grade (gates + fee schedule + bands)
         IOffering.RefundMode refundMode;
         uint256 transferLockDuration;
         uint16 holdingCapBps;
-        uint16 swapRoyaltyBps; // pool royalty (0–150, 기본 100)
-        uint16 swapBurnBps; // pool burn share (0–100, 기본 50)
         uint16 sponsorBurnBps; // sponsorship burn share X (0–2000, 기본 1000)
-        uint64 vestingDuration; // 12–48mo (기본 36mo)
-        uint64 vestingCliff; // ≥3mo (기본 6mo)
+        uint64 vestingDuration; // tier-dependent band
+        uint64 vestingCliff; // tier-dependent band
     }
 
     event OfferingCreated(
@@ -107,6 +112,12 @@ contract MapaeFactory is Ownable {
     StackDeployer public immutable stackDeployer;
     /// @notice Global AMM pool factory (one pool per token, D7/D8).
     PoolFactory public immutable poolFactory;
+    /// @notice Tiered fee source shared by every offering/pool/redeem.
+    IFeeRouter public immutable feeRouter;
+    /// @notice Global buyback vault (registered as a burner below).
+    BuybackVault public immutable buybackVault;
+    /// @notice Hard raise floor forwarded to every offering (invariant 5).
+    uint256 public immutable minRaise;
 
     /// @notice Sponsorship burn-buy slippage tolerance vs spot (§8-B ②).
     uint16 public constant SPONSOR_MAX_SLIPPAGE_BPS = 500;
@@ -119,27 +130,42 @@ contract MapaeFactory is Ownable {
     mapping(address offering => address redeemManager) public redeemManagerOf;
     mapping(address offering => address vesting) public vestingOf;
     mapping(address offering => address sponsorship) public sponsorshipOf;
+    /// @notice Utility grade of a deployed membership token — the gate reference
+    ///         for every module (invariant 8 etc.). Set once at creation.
+    mapping(address token => IFeeRouter.UtilityTier) public tokenTier;
+    /// @inheritdoc IBurnerRegistry
+    mapping(address account => bool) public isBurner;
 
     constructor(
         IDojang dojang_,
         IERC20 paymentToken_,
         address platformOwner_,
         PoolFactory poolFactory_,
+        IFeeRouter feeRouter_,
+        BuybackVault buybackVault_,
+        uint256 minRaise_,
         FeeRecipients memory feeRecipients_,
         Guide memory guide_
     ) Ownable(platformOwner_) {
         if (
             address(dojang_) == address(0) || address(paymentToken_) == address(0)
-                || address(poolFactory_) == address(0) || feeRecipients_.platform == address(0)
+                || address(poolFactory_) == address(0) || address(feeRouter_) == address(0)
+                || address(buybackVault_) == address(0) || feeRecipients_.platform == address(0)
                 || feeRecipients_.reserve == address(0)
         ) revert ZeroAddress();
+        if (minRaise_ == 0) revert InvalidGuide();
         dojang = dojang_;
         paymentToken = paymentToken_;
         platformOwner = platformOwner_;
         poolFactory = poolFactory_;
+        feeRouter = feeRouter_;
+        buybackVault = buybackVault_;
+        minRaise = minRaise_;
         offeringDeployer = new OfferingDeployer();
         stackDeployer = new StackDeployer();
         feeRecipients = feeRecipients_;
+        // The global vault is a permanent burner (swapForBurn allow-list).
+        isBurner[address(buybackVault_)] = true;
         _setGuide(guide_);
     }
 
@@ -157,8 +183,7 @@ contract MapaeFactory is Ownable {
         emit GuideUpdated(g.minPrice, g.maxPrice, g.minRaise, g.maxRaise, g.minWalletLimitBps, g.maxWalletLimitBps);
     }
 
-    /// @notice Deploy a new offering stack for the caller (the creator):
-    ///         Vesting → Offering(+Token) → RedeemManager + Sponsorship.
+    /// @notice Deploy a new offering stack for the caller (the creator).
     function createOffering(CreateParams calldata cp)
         external
         returns (address offering, address token, address redeemManager)
@@ -166,28 +191,78 @@ contract MapaeFactory is Ownable {
         // Fail-closed: a reverting or false-returning Dojang lookup rejects the call.
         if (!dojang.isVerified(msg.sender)) revert NotVerifiedCreator(msg.sender);
 
-        // One live token per creator: only a failed latest offering frees the slot.
-        address[] storage prior = _offeringsByCreator[msg.sender];
-        if (prior.length > 0) {
-            Offering last = Offering(prior[prior.length - 1]);
-            bool failed = last.refunding() && last.token().totalSupply() == 0;
-            if (!failed) revert ActiveOfferingExists(msg.sender, address(last));
-        }
+        // Live-token cap by tier ([Q4]). A "failed" offering (refunding + zero
+        // supply) does not count — retrying a failed raise is intended.
+        _enforceLiveCap(_offeringsByCreator[msg.sender], cp.tier);
+        _checkGuide(cp);
 
-        // Platform guide bands (P, R, L-as-fraction-of-R).
+        MapaeVesting vesting =
+            stackDeployer.deployVesting(msg.sender, uint64(cp.deadline), cp.vestingDuration, cp.vestingCliff, cp.tier);
+        Offering o = offeringDeployer.deploy(_buildParams(cp, address(vesting)));
+        redeemManager = _wire(o, cp, address(vesting));
+        return (address(o), address(o.token()), redeemManager);
+    }
+
+    /// @dev L1/L2 keep the guide bands; L0 skips them (lightweight curation).
+    function _checkGuide(CreateParams calldata cp) internal view {
+        if (cp.tier == IFeeRouter.UtilityTier.L0) return;
         if (cp.price < guide.minPrice || cp.price > guide.maxPrice) revert PriceOutOfBand(cp.price);
         if (cp.raiseTarget < guide.minRaise || cp.raiseTarget > guide.maxRaise) revert RaiseOutOfBand(cp.raiseTarget);
         if (
             cp.walletLimit < cp.raiseTarget * guide.minWalletLimitBps / 10_000
                 || cp.walletLimit > cp.raiseTarget * guide.maxWalletLimitBps / 10_000
         ) revert WalletLimitOutOfBand(cp.walletLimit);
+    }
 
-        // Creator allocation vests from the offering deadline (≈ settle time),
-        // linear with cliff (D10) — irrevocable, non-upgradeable (불변식 6).
-        MapaeVesting vesting =
-            stackDeployer.deployVesting(msg.sender, uint64(cp.deadline), cp.vestingDuration, cp.vestingCliff);
+    /// @dev Deploy peripherals, record bookkeeping, register the tier + burner,
+    ///      and emit. Split out of createOffering to stay under the stack limit.
+    function _wire(Offering o, CreateParams calldata cp, address vesting) internal returns (address) {
+        MembershipToken t = o.token();
+        (RedeemManager rm, Sponsorship sp) = stackDeployer.deployPeripherals(
+            t, paymentToken, msg.sender, cp.sponsorBurnBps, SPONSOR_MAX_SLIPPAGE_BPS, feeRouter, cp.tier, buybackVault
+        );
 
-        IOffering.OfferingParams memory p;
+        _allOfferings.push(address(o));
+        _offeringsByCreator[msg.sender].push(address(o));
+        redeemManagerOf[address(o)] = address(rm);
+        vestingOf[address(o)] = vesting;
+        sponsorshipOf[address(o)] = address(sp);
+        tokenTier[address(t)] = cp.tier;
+        // Each Sponsorship is a burner (swapForBurn allow-list).
+        isBurner[address(sp)] = true;
+
+        emit OfferingCreated(msg.sender, address(o), address(t), address(rm), vesting, address(sp));
+        return address(rm);
+    }
+
+    /// @dev Live-token cap by SEPARATE buckets (R3): L0 and membership (L1+L2)
+    ///      are counted independently so an L0 issuer is never blocked from an
+    ///      L1 raise (L0→L1 upsell funnel). L0 create needs liveL0 < 3; L1/L2
+    ///      create needs liveMembership == 0. Failed offerings (refunding + zero
+    ///      supply) don't count in either bucket. Cross-holding is allowed.
+    function _enforceLiveCap(address[] storage prior, IFeeRouter.UtilityTier tier) internal view {
+        uint256 liveL0;
+        uint256 liveMembership;
+        for (uint256 i = 0; i < prior.length; i++) {
+            IPrimaryMarket o = IPrimaryMarket(prior[i]);
+            if (o.phase() == IPrimaryMarket.Phase.Refunding && o.token().totalSupply() == 0) continue; // failed
+            if (tokenTier[address(o.token())] == IFeeRouter.UtilityTier.L0) liveL0++;
+            else liveMembership++;
+        }
+        bool overCap = tier == IFeeRouter.UtilityTier.L0 ? liveL0 >= 3 : liveMembership >= 1;
+        if (overCap) {
+            revert ActiveOfferingExists(msg.sender, prior.length > 0 ? prior[prior.length - 1] : address(0));
+        }
+    }
+
+    /// @dev Assemble OfferingParams. platformTokenBps is forced by tier
+    ///      (L0 = 0 → invariant 4; L1/L2 = 5%). Split out to keep createOffering
+    ///      under the stack-depth limit.
+    function _buildParams(CreateParams calldata cp, address vesting)
+        internal
+        view
+        returns (IOffering.OfferingParams memory p)
+    {
         p.paymentToken = paymentToken;
         p.dojang = dojang;
         p.creator = msg.sender; // no proxy issuance
@@ -196,35 +271,26 @@ contract MapaeFactory is Ownable {
         p.tokenSymbol = cp.tokenSymbol;
         p.price = cp.price;
         p.raiseTarget = cp.raiseTarget;
+        p.minRaise = minRaise;
         p.deadline = cp.deadline;
         p.walletLimit = cp.walletLimit;
         p.minCommit = cp.minCommit;
         p.fBps = cp.fBps;
         p.cBps = cp.cBps;
         p.creatorTokenBps = cp.creatorTokenBps;
+        p.platformTokenBps = cp.tier == IFeeRouter.UtilityTier.L0 ? 0 : PREMIUM_PLATFORM_TOKEN_BPS;
+        p.swapRoyaltyBps = cp.swapRoyaltyBps;
+        p.swapBurnBps = cp.swapBurnBps;
         p.refundMode = cp.refundMode;
         p.transferLockDuration = cp.transferLockDuration;
         p.holdingCapBps = cp.holdingCapBps;
         p.poolFactory = poolFactory;
-        p.swapRoyaltyBps = cp.swapRoyaltyBps;
-        p.swapBurnBps = cp.swapBurnBps;
+        p.feeRouter = feeRouter;
+        p.tier = cp.tier;
+        p.mapaeFactory = address(this);
         p.recipients = IOffering.AllocationRecipients({
-            creatorVesting: address(vesting), platform: feeRecipients.platform, reserve: feeRecipients.reserve
+            creatorVesting: vesting, platform: feeRecipients.platform, reserve: feeRecipients.reserve
         });
-
-        Offering o = offeringDeployer.deploy(p);
-        MembershipToken t = o.token();
-        (RedeemManager rm, Sponsorship sp) =
-            stackDeployer.deployPeripherals(t, paymentToken, msg.sender, cp.sponsorBurnBps, SPONSOR_MAX_SLIPPAGE_BPS);
-
-        _allOfferings.push(address(o));
-        prior.push(address(o));
-        redeemManagerOf[address(o)] = address(rm);
-        vestingOf[address(o)] = address(vesting);
-        sponsorshipOf[address(o)] = address(sp);
-
-        emit OfferingCreated(msg.sender, address(o), address(t), address(rm), address(vesting), address(sp));
-        return (address(o), address(t), address(rm));
     }
 
     function allOfferings() external view returns (address[] memory) {

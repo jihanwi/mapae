@@ -6,22 +6,33 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {MapaePool} from "../src/MapaePool.sol";
 import {PoolFactory} from "../src/PoolFactory.sol";
 import {MembershipToken} from "../src/MembershipToken.sol";
+import {FeeRouter} from "../src/FeeRouter.sol";
+import {IFeeRouter} from "../src/interfaces/IFeeRouter.sol";
 import {MockKRW} from "../src/mocks/MockKRW.sol";
 
 /// @notice Pool unit tests. The test contract plays the offering: sole minter,
 ///         pool registrar, and liquidity seeder.
+/// @dev v5.2: swap fee is a directional 4-way split (R1/R2). platform+lp come
+///      from the FeeRouter (L1: 40/20); royalty+burn are per-pool (here 60/30).
+///      Buy: all four off the KRWs input. Sell: burn+lp off the token input,
+///      platform+royalty off the KRWs output (so royalty/treasury are KRWs).
 contract MapaePoolTest is Test {
     MockKRW internal krw;
     MembershipToken internal token;
     PoolFactory internal poolFactory;
+    FeeRouter internal feeRouter;
     MapaePool internal pool;
 
     address internal creator = makeAddr("creator");
+    address internal treasury = makeAddr("treasury");
     address internal fan = makeAddr("fan");
     address internal lp2 = makeAddr("lp2");
 
-    uint16 internal constant ROYALTY_BPS = 100;
-    uint16 internal constant BURN_BPS = 50;
+    IFeeRouter.UtilityTier internal constant TIER = IFeeRouter.UtilityTier.L1;
+    uint16 internal constant PLATFORM_BPS = 40;
+    uint16 internal constant ROYALTY_BPS = 60;
+    uint16 internal constant BURN_BPS = 30;
+    uint16 internal constant LP_BPS = 20;
     uint256 internal constant SEED_TOKEN = 100e18;
     uint256 internal constant SEED_KRW = 1_000_000e18; // spot = 10,000 KRWs/token
 
@@ -29,6 +40,7 @@ contract MapaePoolTest is Test {
         vm.warp(1_750_000_000);
         krw = new MockKRW();
         poolFactory = new PoolFactory();
+        feeRouter = new FeeRouter(address(this), treasury);
         token = new MembershipToken("Creator Membership", "CRTM", address(this), 0, 0, new address[](0));
 
         // Mint supply (test = offering): pool seed + fan + this
@@ -40,7 +52,11 @@ contract MapaePoolTest is Test {
         amounts[1] = 100e18;
         token.mintAllocations(to, amounts);
 
-        pool = poolFactory.createPool(token, IERC20(address(krw)), creator, ROYALTY_BPS, BURN_BPS);
+        // factory == address(0): swapForBurn is disabled here (covered by the
+        // swapForBurn invariant suite); convertAndBurn stays permissionless.
+        pool = poolFactory.createPool(
+            token, IERC20(address(krw)), creator, feeRouter, TIER, address(0), ROYALTY_BPS, BURN_BPS
+        );
         token.registerPool(address(pool));
 
         // Seed at par and lock LP at dEaD (as settle does)
@@ -65,11 +81,12 @@ contract MapaePoolTest is Test {
         // LP permanently at dEaD (불변식 7)
         assertEq(pool.balanceOf(pool.DEAD()), pool.totalSupply());
         assertGt(pool.totalSupply(), 0);
+        assertEq(pool.totalFeeBps(), PLATFORM_BPS + ROYALTY_BPS + BURN_BPS + LP_BPS);
     }
 
     function test_Factory_OnePoolPerToken() public {
         vm.expectRevert(abi.encodeWithSelector(PoolFactory.PoolExists.selector, address(token), address(pool)));
-        poolFactory.createPool(token, IERC20(address(krw)), creator, ROYALTY_BPS, BURN_BPS);
+        poolFactory.createPool(token, IERC20(address(krw)), creator, feeRouter, TIER, address(0), ROYALTY_BPS, BURN_BPS);
     }
 
     function test_Factory_OnlyTokenOffering() public {
@@ -77,7 +94,7 @@ contract MapaePoolTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(PoolFactory.NotTokenOffering.selector, address(this), makeAddr("otherOffering"))
         );
-        poolFactory.createPool(other, IERC20(address(krw)), creator, ROYALTY_BPS, BURN_BPS);
+        poolFactory.createPool(other, IERC20(address(krw)), creator, feeRouter, TIER, address(0), ROYALTY_BPS, BURN_BPS);
     }
 
     function test_RegisterPool_OnlyOfferingAndOnce() public {
@@ -89,7 +106,7 @@ contract MapaePoolTest is Test {
     }
 
     // ------------------------------------------------------------------
-    // Swaps + 2% split fee
+    // Swaps + tiered split fee
     // ------------------------------------------------------------------
 
     function test_SwapKrwForToken_FeeSplit() public {
@@ -103,13 +120,14 @@ contract MapaePoolTest is Test {
         uint256 out = pool.swapKrwForToken(amountIn, 0, fan);
         vm.stopPrank();
 
-        // royalty 1% in KRWs straight to creator
+        // royalty in KRWs straight to creator
         assertEq(krw.balanceOf(creator) - creatorBefore, amountIn * ROYALTY_BPS / 10_000);
-        // burn share 0.5% accrues in the buffer (KRWs input side)
+        // platform cut in KRWs straight to treasury (NEW)
+        assertEq(krw.balanceOf(treasury), amountIn * PLATFORM_BPS / 10_000);
+        // burn share accrues in the buffer (KRWs input side)
         assertEq(pool.burnBuffer(), amountIn * BURN_BPS / 10_000);
         // LP fee retained → k grows
         assertGt(_k(), kBefore);
-        // output ≈ 0.98 tokens' worth minus price impact
         assertGt(out, 0.9e18);
         assertEq(token.balanceOf(fan), 100e18 + out);
         // solvency: pool balances match reserves (+buffer)
@@ -121,19 +139,30 @@ contract MapaePoolTest is Test {
         uint256 amountIn = 10e18;
         uint256 kBefore = _k();
         uint256 supplyBefore = token.totalSupply();
+        uint256 reserveKrwBefore = pool.reserveKrw();
+        uint256 bufBefore = pool.burnBuffer();
 
         vm.startPrank(fan);
         token.approve(address(pool), amountIn);
         uint256 out = pool.swapTokenForKrw(amountIn, 0, fan);
         vm.stopPrank();
 
-        // royalty 1% in tokens to creator
-        assertEq(token.balanceOf(creator), amountIn * ROYALTY_BPS / 10_000);
-        // burn share 0.5% burned immediately (Transfer → 0x0)
+        uint256 platformKrw = krw.balanceOf(treasury);
+        uint256 royaltyKrw = krw.balanceOf(creator);
+        // R1: platform + royalty paid in KRWs from the OUTPUT — no tokens leak to
+        // treasury/creator (invariant 17). gross KRWs out = user out + both cuts.
+        uint256 grossOut = reserveKrwBefore - pool.reserveKrw();
+        assertEq(platformKrw, grossOut * PLATFORM_BPS / 10_000);
+        assertEq(royaltyKrw, grossOut * ROYALTY_BPS / 10_000);
+        assertEq(out, grossOut - platformKrw - royaltyKrw);
+        assertEq(token.balanceOf(creator), 0);
+        assertEq(token.balanceOf(treasury), 0);
+        // burn share burned immediately from the token INPUT (only this cuts supply)
         assertEq(supplyBefore - token.totalSupply(), amountIn * BURN_BPS / 10_000);
-        assertGt(_k(), kBefore);
-        assertGt(out, 0); // ~90,000 KRWs minus fees/impact
+        assertGt(_k(), kBefore); // lp fee retained → k grows
+        assertGt(out, 0);
         assertEq(krw.balanceOf(fan), out);
+        assertEq(pool.burnBuffer(), bufBefore); // sell doesn't touch the KRWs buffer
         assertEq(krw.balanceOf(address(pool)), pool.reserveKrw() + pool.burnBuffer());
         assertEq(token.balanceOf(address(pool)), pool.reserveToken());
     }
@@ -151,7 +180,6 @@ contract MapaePoolTest is Test {
     /// D9: during the transfer lock, fans can BUY (pool is lock-exempt sender)
     /// but cannot SELL (fan is a locked sender).
     function test_LockedToken_BuyAllowedSellBlocked() public {
-        // fresh locked token + pool
         MembershipToken locked = new MembershipToken("Locked", "LCK", address(this), 30 days, 0, new address[](0));
         address[] memory to = new address[](2);
         uint256[] memory amounts = new uint256[](2);
@@ -160,7 +188,9 @@ contract MapaePoolTest is Test {
         to[1] = fan;
         amounts[1] = 100e18;
         locked.mintAllocations(to, amounts);
-        MapaePool lockedPool = poolFactory.createPool(locked, IERC20(address(krw)), creator, ROYALTY_BPS, BURN_BPS);
+        MapaePool lockedPool = poolFactory.createPool(
+            locked, IERC20(address(krw)), creator, feeRouter, TIER, address(0), ROYALTY_BPS, BURN_BPS
+        );
         locked.registerPool(address(lockedPool));
         locked.transfer(address(lockedPool), SEED_TOKEN); // this == offering: lock-exempt
         krw.faucet(SEED_KRW);
@@ -191,7 +221,7 @@ contract MapaePoolTest is Test {
         pool.swapKrwForToken(100_000e18, 0, fan);
         vm.stopPrank();
         uint256 buffer = pool.burnBuffer();
-        assertEq(buffer, 500e18); // 0.5% of 100k
+        assertEq(buffer, uint256(100_000e18) * BURN_BPS / 10_000); // burn share of 100k
 
         uint256 supplyBefore = token.totalSupply();
         uint256 kBefore = _k();
@@ -211,7 +241,6 @@ contract MapaePoolTest is Test {
     // ------------------------------------------------------------------
 
     function test_SecondaryLp_AddAndRemove() public {
-        // lp2 adds 10% of current reserves
         uint256 addToken = pool.reserveToken() / 10;
         uint256 addKrw = pool.reserveKrw() / 10;
         token.transfer(lp2, addToken);
@@ -222,7 +251,6 @@ contract MapaePoolTest is Test {
         uint256 liquidity = pool.mint(lp2);
         assertGt(liquidity, 0);
 
-        // remove: transfer LP shares back and burn
         pool.transfer(address(pool), liquidity);
         (uint256 outToken, uint256 outKrw) = pool.burn(lp2);
         vm.stopPrank();

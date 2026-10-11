@@ -26,14 +26,16 @@ export DEMO_MNEMONIC="<새 니모닉>"     # 모든 DemoStage 스크립트가 �
 forge script script/Deploy.s.sol --account deployer --rpc-url $GIWA_SEPOLIA_RPC_URL \
   --broadcast --verify --verifier blockscout --verifier-url $BLOCKSCOUT_API_URL
 
-# 1) Stage 1: 데모 지갑 세팅 + Offering A/B 개설 + 응모 (12h 카운트다운 시작)
-forge script script/DemoStage1.s.sol --account deployer --rpc-url $GIWA_SEPOLIA_RPC_URL --broadcast
+# 1) Stage 1: 데모 지갑 세팅 + L0(≈1h)·L1(≈12h) 개설 + 응모. 데모 니모닉 기본값 출처 = DemoStage1On.s.sol
+#    주소·deadline은 deployments/demo-v2-state.json에 기록된다
+forge script script/DemoStage1On.s.sol --account deployer --rpc-url $GIWA_SEPOLIA_RPC_URL --broadcast
 
 # 1.5) Factory 내부 생성분(Offering/Token/RedeemManager) verify
 FACTORY=$(python3 -c "import json;print(json.load(open('deployments/giwa-sepolia.json'))['factoryMock'])")
 node script/verify-children.js --rpc $GIWA_SEPOLIA_RPC_URL --verifier-url $BLOCKSCOUT_API_URL --factory $FACTORY
 
-# ---- 12시간 후 (deployments/demo-state.json의 deadlineA/B 경과 확인) ----
+# ---- deadline 경과 후 (deployments/demo-v2-state.json의 deadlineL0/deadlineL1 확인) ----
+# (2)는 v1.0 다수 응모자 배정 절차 — v2 Stage 2a/2b는 단일 leaf 루트를 스크립트 안에서 계산한다
 
 # 2) 스냅샷 → 배정 (Offering A, B 각각)
 OFF_A=$(python3 -c "import json;print(json.load(open('deployments/demo-state.json'))['offeringA'])")
@@ -49,11 +51,12 @@ node allocate.js --snapshot ../../deployments/snapshot-b.json \
   --out ../../deployments/allocations-b.json --foundry-out ../../deployments/alloc-b.json
 cd ../..
 
-# 3) Stage 2: settle → 정가 상장(LP → 0xdEaD) → 전원 claim → 리딤(소각) → B 미판매분 소각
-forge script script/DemoStage2.s.sol --account deployer --rpc-url $GIWA_SEPOLIA_RPC_URL --broadcast
+# 3) Stage 2a (L0, ≈1h 후): settle → 정가 상장(LP → 0xdEaD) → claim → 스왑
+forge script script/DemoStage2aL0.s.sol --account deployer --rpc-url $GIWA_SEPOLIA_RPC_URL --broadcast
 
-# 4) Stage 3: AMM 매수/매도 → 후원(10% 소각) → convertAndBurn(미니 바이백)
-forge script script/DemoStage3.s.sol --account deployer --rpc-url $GIWA_SEPOLIA_RPC_URL --broadcast
+# 4) Stage 2b (L1, ≈12h 후): settle → claim → 스왑 → 후원(swapForBurn) → 리딤 → 유료 드랍 → 바이백
+#    DEMO_BUNDLE=1~4로 서명자별 묶음 실행 가능 (스크립트 상단 주석)
+forge script script/DemoStage2bL1.s.sol --account deployer --rpc-url $GIWA_SEPOLIA_RPC_URL --broadcast --slow
 
 # 5) 체험용 공모 (48시간 수명 — 응모 밴드가 12~48h로 온체인 강제, Offering.sol:140)
 #    ★ 롤링: 같은 스크립트를 그대로 재실행하면 새 공모가 "열리지 않고" ActiveOfferingExists로

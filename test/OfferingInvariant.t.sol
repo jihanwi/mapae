@@ -13,6 +13,8 @@ import {MembershipToken} from "../src/MembershipToken.sol";
 import {MockKRW} from "../src/mocks/MockKRW.sol";
 import {MockDojang} from "../src/mocks/MockDojang.sol";
 import {PoolFactory} from "../src/PoolFactory.sol";
+import {FeeRouter} from "../src/FeeRouter.sol";
+import {IFeeRouter} from "../src/interfaces/IFeeRouter.sol";
 
 uint256 constant PRICE = 10_000e18;
 uint256 constant RAISE = 1_000_000e18;
@@ -220,8 +222,13 @@ contract OfferingInvariantModeBTest is Test {
         (p.fBps, p.cBps, p.creatorTokenBps) = _preset();
         p.refundMode = IOffering.RefundMode.Partial;
         p.poolFactory = new PoolFactory();
-        p.swapRoyaltyBps = 100;
-        p.swapBurnBps = 50;
+        p.minRaise = 500_000e18;
+        p.platformTokenBps = 500;
+        p.swapRoyaltyBps = 60;
+        p.swapBurnBps = 30;
+        p.feeRouter = new FeeRouter(address(this), makeAddr("treasury"));
+        p.tier = IFeeRouter.UtilityTier.L1;
+        p.mapaeFactory = address(0);
         p.recipients = IOffering.AllocationRecipients({
             creatorVesting: makeAddr("creatorVesting"), platform: makeAddr("platform"), reserve: makeAddr("reserve")
         });
@@ -321,8 +328,13 @@ contract OfferingInvariantModeATest is Test {
         (p.fBps, p.cBps, p.creatorTokenBps) = _preset();
         p.refundMode = IOffering.RefundMode.AllOrNothing;
         p.poolFactory = new PoolFactory();
-        p.swapRoyaltyBps = 100;
-        p.swapBurnBps = 50;
+        p.minRaise = 500_000e18;
+        p.platformTokenBps = 500;
+        p.swapRoyaltyBps = 60;
+        p.swapBurnBps = 30;
+        p.feeRouter = new FeeRouter(address(this), makeAddr("treasury"));
+        p.tier = IFeeRouter.UtilityTier.L1;
+        p.mapaeFactory = address(0);
         p.recipients = IOffering.AllocationRecipients({
             creatorVesting: makeAddr("creatorVesting"), platform: makeAddr("platform"), reserve: makeAddr("reserve")
         });

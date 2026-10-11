@@ -8,6 +8,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {MerkleProof} from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 import {IDojang} from "./interfaces/IDojang.sol";
 import {IOffering} from "./interfaces/IOffering.sol";
+import {IFeeRouter} from "./interfaces/IFeeRouter.sol";
 import {MembershipToken} from "./MembershipToken.sol";
 import {MapaePool} from "./MapaePool.sol";
 import {PoolFactory} from "./PoolFactory.sol";
@@ -29,25 +30,41 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
     // Constants
     // ---------------------------------------------------------------------
 
-    /// @notice Offering duration band, enforced on-chain (기획 v4.5).
+    /// @notice Duration band lower bound for premium tiers (L1/L2), 기획 v4.5.
     uint256 public constant MIN_DURATION = 12 hours;
-    /// @notice Offering duration band, enforced on-chain (기획 v4.5).
+    /// @notice Duration band lower bound for L0 (fast, same-day offerings).
+    uint256 public constant MIN_DURATION_L0 = 1 hours;
+    /// @notice Offering duration band upper bound (all tiers).
     uint256 public constant MAX_DURATION = 48 hours;
     /// @notice Cancel freeze before the deadline — absolute 2h, never proportional.
+    ///         L0 disables cancel entirely, so the freeze never applies there.
     uint256 public constant CANCEL_FREEZE = 2 hours;
     /// @notice After deadline + this timeout without settle, anyone can trigger refunds (D3).
     uint256 public constant SETTLE_TIMEOUT = 7 days;
 
+    // Tokenomics bands — premium tiers (L1/L2): f 50–70%, issuer 15–30%.
     uint16 public constant MIN_F_BPS = 5000;
     uint16 public constant MAX_F_BPS = 7000;
-    uint16 public constant MIN_C_BPS = 1500;
-    uint16 public constant MAX_C_BPS = 3000;
     uint16 public constant MIN_CREATOR_TOKEN_BPS = 1500;
     uint16 public constant MAX_CREATOR_TOKEN_BPS = 3000;
+    /// @notice Platform token cut for premium tiers (fixed 5%, 현행 유지).
+    uint16 public constant PREMIUM_PLATFORM_TOKEN_BPS = 500;
 
-    /// @dev Platform shares are fixed; creator/LP shares are parameterized (M2 Part B).
-    uint16 public constant PLATFORM_TOKEN_BPS = 500;
-    uint16 public constant PLATFORM_PROCEEDS_BPS = 1000;
+    // Tokenomics bands — L0: f 70–80%, issuer 5–15%, platform token forced 0.
+    uint16 public constant MIN_F_BPS_L0 = 7000;
+    uint16 public constant MAX_F_BPS_L0 = 8000;
+    uint16 public constant MIN_CREATOR_TOKEN_BPS_L0 = 500;
+    uint16 public constant MAX_CREATOR_TOKEN_BPS_L0 = 1500;
+
+    // c band shared across tiers ([Q3]); preset default 25%.
+    uint16 public constant MIN_C_BPS = 1500;
+    uint16 public constant MAX_C_BPS = 3000;
+
+    // Per-pool swap royalty/burn bands (R2 — creator-set within tier band,
+    // snapshotted at construction). platform/LP shares stay FeeRouter-sourced.
+    uint16 public constant MAX_SWAP_ROYALTY_BPS = 80; // L1/L2
+    uint16 public constant MAX_SWAP_ROYALTY_BPS_L0 = 30; // L0
+    uint16 public constant MAX_SWAP_BURN_BPS = 50; // all tiers
 
     uint16 public constant BPS = 10_000;
     uint256 internal constant WAD = 1e18;
@@ -78,12 +95,29 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
     uint16 public immutable creatorTokenBps;
     /// @notice LP token share of S' in bps = cBps × fBps / BPS (invariant 11: l = c × f).
     uint16 public immutable lpTokenBps;
+    /// @notice Platform token cut in bps (L0 = 0, L1/L2 = 500).
+    uint16 public immutable platformTokenBps;
     RefundMode public immutable refundMode;
     /// @inheritdoc IOffering
     uint256 public immutable qSale;
     /// @notice Deploys the AMM pool at settle (D8 at-par listing).
     PoolFactory public immutable poolFactory;
+    /// @notice Tiered fee source. Swap fees are read live by the pool; the
+    ///         offering fee below is snapshotted here at construction.
+    IFeeRouter public immutable feeRouter;
+    /// @notice Utility grade — selects fee schedule and tokenomics/duration bands.
+    IFeeRouter.UtilityTier public immutable tier;
+    /// @notice Platform proceeds cut, SNAPSHOTTED from FeeRouter at construction —
+    ///         a later FeeRouter change never affects this offering (invariant 11).
+    uint16 public immutable offeringFeeBps;
+    /// @notice Hard raise floor: raiseTarget < minRaise reverts (invariant 5).
+    uint256 public immutable minRaise;
+    /// @notice MapaeFactory address, forwarded to the pool as its burner registry.
+    address public immutable mapaeFactory;
+    /// @notice Per-pool creator swap royalty, snapshotted (tier band). The pool's
+    ///         platform/LP shares still come from the FeeRouter live.
     uint16 public immutable swapRoyaltyBps;
+    /// @notice Per-pool creator swap burn, snapshotted (tier band).
     uint16 public immutable swapBurnBps;
 
     AllocationRecipients public recipients;
@@ -120,24 +154,45 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
     constructor(OfferingParams memory p) Ownable(p.platformOwner) {
         if (
             address(p.paymentToken) == address(0) || address(p.dojang) == address(0) || p.creator == address(0)
-                || address(p.poolFactory) == address(0) || p.recipients.creatorVesting == address(0)
-                || p.recipients.platform == address(0) || p.recipients.reserve == address(0)
+                || address(p.poolFactory) == address(0) || address(p.feeRouter) == address(0)
+                || p.recipients.creatorVesting == address(0) || p.recipients.platform == address(0)
+                || p.recipients.reserve == address(0)
         ) revert InvalidConfig();
-        // Pool fee bands (spec 4-B); the pool constructor re-validates.
-        if (p.swapRoyaltyBps > 150 || p.swapBurnBps > 100) revert InvalidConfig();
         if (p.price == 0 || p.raiseTarget == 0 || p.walletLimit == 0 || p.minCommit == 0) revert InvalidConfig();
         if (p.minCommit > p.walletLimit) revert InvalidConfig();
-        if (p.fBps < MIN_F_BPS || p.fBps > MAX_F_BPS) revert InvalidConfig();
+        // Hard raise floor (invariant 5) — enforced at the Offering level so it
+        // holds even for offerings constructed outside the factory.
+        if (p.raiseTarget < p.minRaise) revert InvalidConfig();
+
+        // Tier-dependent tokenomics bands (Step 2). L0: f 70–80%, issuer 5–15%,
+        // platform token forced 0 (invariant 4). L1/L2: f 50–70%, issuer 15–30%,
+        // platform token fixed 5%.
+        if (p.tier == IFeeRouter.UtilityTier.L0) {
+            if (p.fBps < MIN_F_BPS_L0 || p.fBps > MAX_F_BPS_L0) revert InvalidConfig();
+            if (p.creatorTokenBps < MIN_CREATOR_TOKEN_BPS_L0 || p.creatorTokenBps > MAX_CREATOR_TOKEN_BPS_L0) {
+                revert InvalidConfig();
+            }
+            if (p.platformTokenBps != 0) revert InvalidConfig();
+        } else {
+            if (p.fBps < MIN_F_BPS || p.fBps > MAX_F_BPS) revert InvalidConfig();
+            if (p.creatorTokenBps < MIN_CREATOR_TOKEN_BPS || p.creatorTokenBps > MAX_CREATOR_TOKEN_BPS) {
+                revert InvalidConfig();
+            }
+            if (p.platformTokenBps != PREMIUM_PLATFORM_TOKEN_BPS) revert InvalidConfig();
+        }
         if (p.cBps < MIN_C_BPS || p.cBps > MAX_C_BPS) revert InvalidConfig();
-        if (p.creatorTokenBps < MIN_CREATOR_TOKEN_BPS || p.creatorTokenBps > MAX_CREATOR_TOKEN_BPS) {
-            revert InvalidConfig();
+
+        // Per-pool swap royalty/burn bands (R2), tier-dependent for royalty.
+        {
+            uint16 maxRoyalty = p.tier == IFeeRouter.UtilityTier.L0 ? MAX_SWAP_ROYALTY_BPS_L0 : MAX_SWAP_ROYALTY_BPS;
+            if (p.swapRoyaltyBps > maxRoyalty || p.swapBurnBps > MAX_SWAP_BURN_BPS) revert InvalidConfig();
         }
 
-        // 기획 v4.5: duration band enforced on-chain. MIN 12h > freeze 2h means
-        // a cancel window always exists.
+        // Duration band is tier-dependent: L1/L2 [12h,48h], L0 [1h,48h].
         if (p.deadline <= block.timestamp) revert InvalidDuration();
         uint256 duration = p.deadline - block.timestamp;
-        if (duration < MIN_DURATION || duration > MAX_DURATION) revert InvalidDuration();
+        uint256 minDur = p.tier == IFeeRouter.UtilityTier.L0 ? MIN_DURATION_L0 : MIN_DURATION;
+        if (duration < minDur || duration > MAX_DURATION) revert InvalidDuration();
 
         uint256 qSale_ = p.raiseTarget * WAD / p.price;
         if (qSale_ == 0) revert InvalidConfig();
@@ -146,23 +201,31 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
         // Combined feasibility: every share must fit within 100% of S', so
         // reserve = remainder ≥ 0 always holds and settle can never underflow.
         uint16 lpTokenBps_ = uint16(uint256(p.cBps) * p.fBps / BPS);
-        if (uint256(p.fBps) + p.creatorTokenBps + PLATFORM_TOKEN_BPS + lpTokenBps_ > BPS) revert InvalidConfig();
+        if (uint256(p.fBps) + p.creatorTokenBps + p.platformTokenBps + lpTokenBps_ > BPS) revert InvalidConfig();
 
         paymentToken = p.paymentToken;
         dojang = p.dojang;
         creator = p.creator;
         price = p.price;
         raiseTarget = p.raiseTarget;
+        minRaise = p.minRaise;
         deadline = p.deadline;
         walletLimit = p.walletLimit;
         minCommit = p.minCommit;
         fBps = p.fBps;
         cBps = p.cBps;
         creatorTokenBps = p.creatorTokenBps;
+        platformTokenBps = p.platformTokenBps;
         lpTokenBps = lpTokenBps_;
         refundMode = p.refundMode;
         qSale = qSale_;
         poolFactory = p.poolFactory;
+        feeRouter = p.feeRouter;
+        tier = p.tier;
+        // Snapshot the platform proceeds cut — invariant 11 (never re-read).
+        offeringFeeBps = p.feeRouter.getFees(p.tier).offeringFeeBps;
+        mapaeFactory = p.mapaeFactory;
+        // Snapshot creator swap royalty/burn (same principle as the offering fee).
         swapRoyaltyBps = p.swapRoyaltyBps;
         swapBurnBps = p.swapBurnBps;
         recipients = p.recipients;
@@ -201,6 +264,9 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
 
     /// @inheritdoc IOffering
     function cancel(uint256 amount) external nonReentrant {
+        // L0:응모 = 확정. Cancel is disabled in every state (invariant 3); the
+        // freeze logic below is never reached for L0.
+        if (tier == IFeeRouter.UtilityTier.L0) revert CancelDisabled();
         if (settled || refunding) revert InvalidPhase(phase());
         if (block.timestamp >= deadline - CANCEL_FREEZE) revert CommitFrozen();
         if (amount == 0) revert ZeroAmount();
@@ -261,7 +327,7 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
         uint256 unsold = qSale - totalSold_;
         uint256 creatorAmount = supply * creatorTokenBps / BPS;
         uint256 lpAmount = supply * lpTokenBps / BPS;
-        uint256 platformAmount = supply * PLATFORM_TOKEN_BPS / BPS;
+        uint256 platformAmount = supply * platformTokenBps / BPS; // 0 for L0
         // Reserve absorbs all rounding (D4); safe because share bps sum <= 100%.
         uint256 reserveAmount = supply - totalSold_ - creatorAmount - lpAmount - platformAmount;
 
@@ -296,7 +362,9 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
         krwSeed = tokenSeed * price / WAD;
 
         if (tokenSeed > 0 && krwSeed > 0) {
-            MapaePool pool_ = poolFactory.createPool(token, paymentToken, creator, swapRoyaltyBps, swapBurnBps);
+            MapaePool pool_ = poolFactory.createPool(
+                token, paymentToken, creator, feeRouter, tier, mapaeFactory, swapRoyaltyBps, swapBurnBps
+            );
             token.registerPool(address(pool_));
             pool = pool_;
             IERC20(address(token)).safeTransfer(address(pool_), tokenSeed);
@@ -309,11 +377,11 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
         }
     }
 
-    /// @dev Proceeds split: platform fixed 10%, LP share seeded into the pool
-    ///      (krwSeed), creator = remainder including all KRW rounding dust
-    ///      (never the platform — D1).
+    /// @dev Proceeds split: platform = offeringFeeBps (snapshot at construction,
+    ///      invariant 11), LP share seeded into the pool (krwSeed), creator =
+    ///      remainder including all KRW rounding dust (never the platform — D1).
     function _distributeProceeds(uint256 totalRaised_, uint256 krwSeed) internal {
-        uint256 platformProceeds = totalRaised_ * PLATFORM_PROCEEDS_BPS / BPS;
+        uint256 platformProceeds = totalRaised_ * offeringFeeBps / BPS;
         uint256 creatorProceeds = totalRaised_ - krwSeed - platformProceeds;
         if (platformProceeds > 0) paymentToken.safeTransfer(recipients.platform, platformProceeds);
         if (creatorProceeds > 0) paymentToken.safeTransfer(creator, creatorProceeds);
@@ -385,8 +453,16 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
     function phase() public view returns (Phase) {
         if (refunding) return Phase.Refunding;
         if (settled) return Phase.Settled;
+        // L0 has no freeze window — commits stay open right up to the deadline.
+        if (tier == IFeeRouter.UtilityTier.L0) return Phase.Open;
         if (block.timestamp < deadline - CANCEL_FREEZE) return Phase.Open;
         return Phase.Frozen;
+    }
+
+    /// @notice The ERC-20 used to settle the sale (IPrimaryMarket) — same token
+    ///         as paymentToken(); decimals are never hardcoded.
+    function settlementToken() external view returns (IERC20) {
+        return paymentToken;
     }
 
     /// @inheritdoc IOffering
