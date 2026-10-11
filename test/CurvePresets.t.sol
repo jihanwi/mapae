@@ -4,7 +4,7 @@ pragma solidity ^0.8.26;
 import {Test} from "forge-std/Test.sol";
 import {CurvePresets as P} from "../src/CurvePresets.sol";
 
-/// @notice Pins every v3 C0 preset (v6.1 §12) and checks the arithmetic they
+/// @notice Pins every v3 C0 preset (v6.2 §12) and checks the arithmetic they
 ///         must satisfy. A preset edit must fail here first.
 contract CurvePresetsTest is Test {
     // ------------------------------------------------------------------
@@ -26,52 +26,23 @@ contract CurvePresetsTest is Test {
         assertEq(P.VIRTUAL_QUOTE_RESERVE_WETH, 0.6e18);
     }
 
-    /// @dev Constant product: quote needed to drain CURVE_SUPPLY from the
-    ///      virtual reserves is V * curve / (vToken - curve) ≈ 2.93 V, and the
-    ///      final spot ≈ 14.4 V / DEX_SUPPLY FDV (v6.1 §12 rationale).
+    /// @dev Graduation threshold (quote to drain CURVE_SUPPLY) ≈ 2.93 V and
+    ///      closing FDV ≈ 14.4 V, reproducing the v6.2 §12 rationale.
     function test_GraduationEconomics() public pure {
         uint256 vq = P.VIRTUAL_QUOTE_RESERVE_KRWS;
-        uint256 raised = vq * P.CURVE_SUPPLY / (P.VIRTUAL_TOKEN_RESERVE - P.CURVE_SUPPLY);
-        // ≈ 2.93 × V
+        uint256 raised = P.graduationThreshold(vq);
         assertApproxEqRel(raised, vq * 293 / 100, 0.01e18);
 
         // closing spot = (vq + raised) / (vToken - curve); FDV = spot × TOTAL_SUPPLY
         uint256 fdv = (vq + raised) * P.TOTAL_SUPPLY / (P.VIRTUAL_TOKEN_RESERVE - P.CURVE_SUPPLY);
-        // ≈ 14.4 × V
         assertApproxEqRel(fdv, vq * 144 / 10, 0.01e18);
     }
 
-    // ------------------------------------------------------------------
-    // graduation N
-    // ------------------------------------------------------------------
-
-    function test_GraduationN() public pure {
-        assertEq(P.GRADUATION_N_TESTNET, 10);
-        assertEq(P.GRADUATION_N_MAINNET, 30);
-    }
-
-    // ------------------------------------------------------------------
-    // per-wallet caps
-    // ------------------------------------------------------------------
-
-    function test_Caps() public pure {
-        assertEq(P.CAP_PROGRESS_MID_BPS, 2500);
-        assertEq(P.CAP_PROGRESS_LATE_BPS, 7500);
-        assertEq(P.CAP_EARLY_BPS, 100);
-        assertEq(P.CAP_MID_BPS, 200);
-        assertEq(P.CAP_LATE_BPS, 300);
-        assertLt(P.CAP_EARLY_BPS, P.CAP_MID_BPS);
-        assertLt(P.CAP_MID_BPS, P.CAP_LATE_BPS);
-    }
-
-    /// @dev With a 3% cap, the curve (80% of supply) needs ≥ 27 wallets purely
-    ///      arithmetically; N=30 mainnet is above that, so N is the binding
-    ///      constraint and cannot be trivially met by cap-maxing wallets.
-    function test_CapVsGraduationN() public pure {
-        uint256 maxPerWallet = P.TOTAL_SUPPLY * P.CAP_LATE_BPS / P.BPS;
-        uint256 minWallets = (P.CURVE_SUPPLY + maxPerWallet - 1) / maxPerWallet;
-        assertEq(minWallets, 27);
-        assertGe(P.GRADUATION_N_MAINNET, minWallets);
+    /// @dev Threshold is linear in the virtual quote reserve, so the WETH
+    ///      preset scales identically (≈ 1.76 ETH).
+    function test_GraduationThreshold_Weth() public pure {
+        uint256 raised = P.graduationThreshold(P.VIRTUAL_QUOTE_RESERVE_WETH);
+        assertApproxEqRel(raised, 1.76e18, 0.01e18);
     }
 
     // ------------------------------------------------------------------
@@ -91,13 +62,8 @@ contract CurvePresetsTest is Test {
     }
 
     // ------------------------------------------------------------------
-    // refund floor / buyback
+    // buyback
     // ------------------------------------------------------------------
-
-    function test_RefundFloor() public pure {
-        assertEq(P.REFUND_FLOOR_BPS, 5000);
-        assertEq(P.REFUND_DEADLINE, 72 hours);
-    }
 
     function test_Buyback() public pure {
         assertEq(P.BUYBACK_BPS, 5000);
