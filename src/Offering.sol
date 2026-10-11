@@ -10,6 +10,7 @@ import {IDojang} from "./interfaces/IDojang.sol";
 import {IOffering} from "./interfaces/IOffering.sol";
 import {IFeeRouter} from "./interfaces/IFeeRouter.sol";
 import {MembershipToken} from "./MembershipToken.sol";
+import {MembershipTokenDeployer} from "./MembershipTokenDeployer.sol";
 import {MapaePool} from "./MapaePool.sol";
 import {PoolFactory} from "./PoolFactory.sol";
 
@@ -234,7 +235,9 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
         capExempt[0] = p.recipients.creatorVesting;
         capExempt[1] = p.recipients.platform;
         capExempt[2] = p.recipients.reserve;
-        token = new MembershipToken(
+        // Linked library (DELEGATECALL): CREATE runs from this address/nonce,
+        // identical to an inline `new` — bytecode lives outside our initcode (C8).
+        token = MembershipTokenDeployer.deploy(
             p.tokenName, p.tokenSymbol, address(this), p.transferLockDuration, p.holdingCapBps, capExempt
         );
     }
