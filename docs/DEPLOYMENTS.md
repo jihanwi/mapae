@@ -7,7 +7,8 @@
 
 ## v5.2 (Milestone A · `v2.0.1-core`) 배포 — 완료 ✅
 
-체인 91342 · 배포자 `0x67a29AE83f3320C5E9b81D8a1531dE8FcCBED00C` · 상위 9개 컨트랙트
+체인 91342 · 배포자 `0x67a29AE83f3320C5E9b81D8a1531dE8FcCBED00C` · 배포 블록 `34476489` ·
+상위 9개 + 팩토리 생성자가 배포한 Deployer 4개, 전부 Blockscout verified. 상위 9개는
 `forge script --verify`로 Blockscout verify 완료. 온체인 배선 검증: FeeRouter L1 프리셋
 `(750,40,60,30,20,400)`, treasury=deployer, factoryMock.minRaise=500,000e18,
 isBurner(vault)=true. (주소 매핑은 배포 스크립트가 기록한 `deployments/giwa-sepolia.json` /
@@ -26,29 +27,97 @@ isBurner(vault)=true. (주소 매핑은 배포 스크립트가 기록한 `deploy
 | **MapaeFactory (메인 데모, 등급제)** | [`0xd157b7be02E67Fbb0B098B4D982De0FB8ffFef7F`](https://sepolia-explorer.giwa.io/address/0xd157b7be02E67Fbb0B098B4D982De0FB8ffFef7F) |
 | DojangEASAdapter | [`0x692C37F95dF80be611C2A64f6C7B7C9fb7E2fa7D`](https://sepolia-explorer.giwa.io/address/0x692C37F95dF80be611C2A64f6C7B7C9fb7E2fa7D) |
 | MapaeFactory (GIWA-Native 쇼케이스) | [`0xe629D3B3a616D4cff6319F40F61AEfAe72531141`](https://sepolia-explorer.giwa.io/address/0xe629D3B3a616D4cff6319F40F61AEfAe72531141) |
+| ├ OfferingDeployer (메인 데모 팩토리) | [`0xA04259D36A63Efdd3116e6990e9b1551a1a66c0C`](https://sepolia-explorer.giwa.io/address/0xA04259D36A63Efdd3116e6990e9b1551a1a66c0C) |
+| ├ StackDeployer (메인 데모 팩토리) | [`0x7f3423F468c25204d8Cafa451971Ca67fF062b1f`](https://sepolia-explorer.giwa.io/address/0x7f3423F468c25204d8Cafa451971Ca67fF062b1f) |
+| ├ OfferingDeployer (GIWA-Native 팩토리) | [`0x62A5b43a4E78ABe108EF3e78A213674F8828F395`](https://sepolia-explorer.giwa.io/address/0x62A5b43a4E78ABe108EF3e78A213674F8828F395) |
+| └ StackDeployer (GIWA-Native 팩토리) | [`0x2f0A3150c17a97125fC2A258eA1864f829D3F653`](https://sepolia-explorer.giwa.io/address/0x2f0A3150c17a97125fC2A258eA1864f829D3F653) |
 
-### 배포 tx (contractAddress로 매핑 — 라벨 무시)
+Deployer 4개는 각 팩토리 생성자가 배포한다(Blockscout creator = 팩토리, 팩토리의
+`offeringDeployer()`/`stackDeployer()` getter로 대조).
+
+### 배포 tx (Blockscout creation tx 기준 — 영수증 라벨 무시)
 
 | 컨트랙트 | 배포 tx |
 |---|---|
-| MockKRW | [`0x91c0dc19…7d66d`](https://sepolia-explorer.giwa.io/tx/0x91c0dc192358d7d65746ad24061c20fbc1f4a18d9e6405e78d89b7527ff7d66d) |
-| MockDojang | [`0xadf8160a…0d346`](https://sepolia-explorer.giwa.io/tx/0xadf8160a0b89f719797a1fb12181d5477d8a575db239d5c0bcf4cbf94090d346) |
+| MockKRW | [`0xadf8160a…d346`](https://sepolia-explorer.giwa.io/tx/0xadf8160a0b89f719797a1fb12181d5477d8a575db239d5c0bcf4cbf94090d346) |
+| MockDojang | [`0x91c0dc19…d66d`](https://sepolia-explorer.giwa.io/tx/0x91c0dc192358d7d65746ad24061c20fbc1f4a18d9e6405e78d89b7527ff7d66d) |
 | PoolFactory | [`0x0cbcfa3d…29f0`](https://sepolia-explorer.giwa.io/tx/0x0cbcfa3df27ee7323f3ea4a83accf035ea0bf32bbd7d1f921869aff0250829f0) |
-| FeeRouter | [`0x2debec53…77cfa`](https://sepolia-explorer.giwa.io/tx/0x2debec53e3680897a5f3c5a19586bb3a656abf94be758e00ca2277eb36577cfa) |
-| BuybackVault | [`0xde8d74ea…29bbe`](https://sepolia-explorer.giwa.io/tx/0xde8d74eab6567150ced3578e8773b4700d95f356bb568a0bc4e3f548d8c29bbe) |
-| BuybackExecutor | [`0xfb36d70c…34fcf9`](https://sepolia-explorer.giwa.io/tx/0xfb36d70ca3fae7b672ec7e1def72fa456a3a8f2779f1145e256c31343934fcf9) |
-| MapaeFactory(mock) | [`0x5cce4fea…5933`](https://sepolia-explorer.giwa.io/tx/0x5cce4fead412659fc1f9636472f49a0f1ae55d26a3dd26e62fc41dfe19ee5933) |
-| DojangEASAdapter | [`0x950b5f8f…0fa2b`](https://sepolia-explorer.giwa.io/tx/0x950b5f8fb788598a6a88b5e550f325fa9ed6adb7b2e7d6bf22fb0d9b6390fa2b) |
-| MapaeFactory(EAS) | [`0x77574899…0912`](https://sepolia-explorer.giwa.io/tx/0x77574899824672985e87569314ebaae0cfd58c051a0fe39a05a7642334420912) |
+| FeeRouter | [`0x2debec53…7cfa`](https://sepolia-explorer.giwa.io/tx/0x2debec53e3680897a5f3c5a19586bb3a656abf94be758e00ca2277eb36577cfa) |
+| BuybackVault | [`0xde8d74ea…9bbe`](https://sepolia-explorer.giwa.io/tx/0xde8d74eab6567150ced3578e8773b4700d95f356bb568a0bc4e3f548d8c29bbe) |
+| BuybackExecutor | [`0x5cce4fea…5933`](https://sepolia-explorer.giwa.io/tx/0x5cce4fead412659fc1f9636472f49a0f1ae55d26a3dd26e62fc41dfe19ee5933) |
+| MapaeFactory(mock) + OfferingDeployer·StackDeployer | [`0x950b5f8f…fa2b`](https://sepolia-explorer.giwa.io/tx/0x950b5f8fb788598a6a88b5e550f325fa9ed6adb7b2e7d6bf22fb0d9b6390fa2b) |
+| DojangEASAdapter | [`0xd1f03d16…baf2`](https://sepolia-explorer.giwa.io/tx/0xd1f03d168ef523dd4811a44d091aa0dc6a3decdb4b955fd686e498ce2f8ebaf2) |
+| MapaeFactory(EAS) + OfferingDeployer·StackDeployer | [`0x77574899…0912`](https://sepolia-explorer.giwa.io/tx/0x77574899824672985e87569314ebaae0cfd58c051a0fe39a05a7642334420912) |
+| (배선) `BuybackVault.setExecutor` | [`0xfb36d70c…fcf9`](https://sepolia-explorer.giwa.io/tx/0xfb36d70ca3fae7b672ec7e1def72fa456a3a8f2779f1145e256c31343934fcf9) |
+
+> 2026-10-11 정정: 이전 표는 MockKRW↔MockDojang이 뒤바뀌고, BuybackExecutor 칸에 `setExecutor`
+> 호출 tx가, MapaeFactory(mock)·DojangEASAdapter 칸에 한 칸씩 밀린 tx가 들어가 있었다(5행).
 
 ### 데모 스택 (등급제 4 시나리오)
 
 `script/DemoStage1On.s.sol`(L0·L1 개설+응모) → deadline 경과 후
 `script/DemoStage2aL0.s.sol`(≈1h: L0 settle·상장·클레임·스왑) /
 `script/DemoStage2bL1.s.sol`(≈12h: L1 settle·클레임·리딤·유료 드랍·바이백).
-데모 오퍼링 주소·tx 해시는 스테이지 실행 후 아래에 채운다.
+데모 오퍼링 주소·tx 해시는 아래 (주소 원본: `deployments/demo-v2-state.json`).
 
 <!-- DEMO-ADDRESSES -->
+
+### v2.0.1 데모 — 온체인 실행 기록 (factoryMock)
+
+테스트 지갑은 리포 공개 데모 니모닉(`DemoStage1On.s.sol`) idx0~3: creatorL1 [`0x63FE…c297`](https://sepolia-explorer.giwa.io/address/0x63FE8983be7Ce4b4C93caaBB19c3A4D22a78c297) ·
+creatorL0 [`0x3EAe…03Fd`](https://sepolia-explorer.giwa.io/address/0x3EAe801088bF3eD75dF513367BF916eCcD8803Fd) · fanL1 [`0xFCB4…E67A`](https://sepolia-explorer.giwa.io/address/0xFCB455DA31Ae46cEd826563d7280E7add7A1E67A) ·
+fanL0 [`0x6F22…8C5a`](https://sepolia-explorer.giwa.io/address/0x6F227f4754ad67A6C68451Aa3bF80bB4DE138C5a).
+
+| 스택 | Offering | Token | Pool |
+|---|---|---|---|
+| L0 미니 (T≈1h) | [`0x4040…88ca`](https://sepolia-explorer.giwa.io/address/0x404041Df24F00419100aD1Dd045B6b32114788ca) | [`MAPL0`](https://sepolia-explorer.giwa.io/address/0x92004E6ef2Eb7De8e0540EA47cDF4AfFB299c68d) | [`0x04Cd…60b7`](https://sepolia-explorer.giwa.io/address/0x04Cd3c3594Fd6863D0bD52701261B01b9C2360b7) |
+| L1 (T≈12h) | [`0x6093…8DAf`](https://sepolia-explorer.giwa.io/address/0x6093e2b21195D6A4F5031cF3173D034AE2688DAf) | [`MAPL1`](https://sepolia-explorer.giwa.io/address/0x7B6C3718d9Ae681ad974d61555bffC143429e8C3) | [`0xaD47…80d5`](https://sepolia-explorer.giwa.io/address/0xaD47c88e6200d8d27287A28297f95fc07ca580d5) |
+
+**Stage 1 (2026-08-30, 블록 34757277~34757306)**: [`0xc8309833…`](https://sepolia-explorer.giwa.io/tx/0xc8309833d04793e02b0688f7e7c9f1d7dc56d8e4f8fcd2878d00620b0abe399c) setVerifiedBatch(4) ·
+가스 송금 4건 · createOffering [`0x0c1f2757…`](https://sepolia-explorer.giwa.io/tx/0x0c1f275755115788d63478eb978248ccbff692f433dde2aae070d70f09661408) (L0) /
+[`0x688f8dde…`](https://sepolia-explorer.giwa.io/tx/0x688f8dde1873bd3504c731bf8b5030def1a3f556b2b92917493de252e69ef44f) (L1) · commit L0 500k [`0x6ab35f0a…`](https://sepolia-explorer.giwa.io/tx/0x6ab35f0a3647dd86f33324ae8174a4ee6c6eda2ea9bdd4fe21dfa44071873207) ·
+commit L1 1.5M [`0xb8de8997…`](https://sepolia-explorer.giwa.io/tx/0xb8de89976536188fa187d30de24a4118e4b246a78f5ecb4d52f84408369312e3)
+
+#### L0 미니 (Stage 2a, 2026-08-30)
+
+| 항목 | 기대값 | 실측 | tx |
+|---|---|---|---|
+| 상장 스팟가 | = P | 10,000e18 (krwSeed 124,999.99… / tokenSeed 12.499…) | [`0xb03d5346…`](https://sepolia-explorer.giwa.io/tx/0xb03d53461bdca4b578fed7f58ec0dac88fe3302fffe1bef5782ad1cdade2ec47) |
+| LP 수령 주소 | 0xdEaD 100% | LP 1,249.99e18 전량 0xdEaD | 위 settle |
+| 플랫폼 배분 경로 토큰 | 0 (L0 강제) | `recipients.platform` 민트 0 (Transfer wad=0) | 위 settle |
+| reserve 몫 (커뮤니티 리저브) | 공급 7.5% | 5.357142857142857144e18 = 71.4285…e18 − 판매 50 − creator 5% − LP 17.5% (정확 일치) → `feeRecipients.reserve` = deployer | 위 settle |
+| treasury KRWs | > 0, 분해 일치 | offeringFee 25,000 (500bps) + 스왑 platform 300 (60bps) / royalty 100 (20bps) / burn buffer 150 (30bps) | settle · [`0xae51a309…`](https://sepolia-explorer.giwa.io/tx/0xae51a3090cc5809961fd5d54128eb36eedbf3aaa0d94fb030972daf1f98414f6) |
+| L0 cancel | revert `CancelDisabled()` | status 0, revert data `0x3a99ec16` (eth_call 동일) | [`0x8915ccfa…`](https://sepolia-explorer.giwa.io/tx/0x8915ccfaf9ee978f08c079ffff76b0e811d2c83d5106be51da19f9d56072ee1f) (2026-10-11) |
+
+팩토리 자식 12개(두 스택의 Offering·MembershipToken·MapaePool·RedeemManager·MapaeVesting·
+Sponsorship)는 2026-10-11 `node script/verify-children.js --factory 0xd157…Fef7F --from-block 34757177`
+로 전량 verified(그 전까지 미검증 — `docs/TRUST.md` 이탈 기록 4). cancel 실패 tx는 Blockscout에서
+`CancelDisabled()`로 디코딩된다.
+
+seed `0x50`은 고정값(단일 leaf, 배정 결과 영향 없음 — `docs/TRUST.md` 이탈 기록).
+
+#### L1 풀사이클 (Stage 2b, 2026-10-11)
+
+| 항목 | 기대값 | 실측 | tx |
+|---|---|---|---|
+| L1 settle | 성공, seed = 지연 블록해시 | seed = **블록 38350312 해시** `0x91db…bddb`, settle 포함 블록 38350471. 판매 150 / 미판매 350 소각 / 유효 공급 250 | [`0x443a4b77…`](https://sepolia-explorer.giwa.io/tx/0x443a4b775b981713b51a452ce9b0fd08cb9f4d870380a0c5f1f4a4268f0c6519) |
+| 상장 스팟가 | = P | 10,000e18 (krwSeed 225,000 / tokenSeed 22.5) | 위 settle |
+| LP 수령 주소 | 0xdEaD 100% | LP 2,250e18 전량 0xdEaD | 위 settle |
+| treasury KRWs | > 0, 분해 일치 | offeringFee 112,500 (750bps) · creator 1,162,500 · 풀 시딩 225,000 (합 1.5M) | 위 settle |
+| claim | 150e18 | fanL1 150e18 | [`0x7b258e69…`](https://sepolia-explorer.giwa.io/tx/0x7b258e69c359236904cc46dc69dd4e919c710c6a375f5d10d7fd099bb497cb33) |
+| 스왑 (대조군) | 수수료 이벤트 존재 | 20k → 1.8114e18, `PlatformFeePaid` 80 (40bps) · royalty 120 (60bps) · `BurnBufferAccrued` 60 (30bps), 스팟 10,000 → 11,829.70 | [`0xb872d62c…`](https://sepolia-explorer.giwa.io/tx/0xb872d62cda5c51cd05c14656f5b67a5e65120a68d26e287dc17f375050ed4194) |
+| swapForBurn (후원 경로) | 수수료 이벤트 부재 | 후원 10k: creator 9,000 / 1,000 → `BurnSwapped` 0.08419e18 소각, `PlatformFeePaid`·royalty·burn buffer 없음 | [`0x514abfa2…`](https://sepolia-explorer.giwa.io/tx/0x514abfa25280ea6c8e2dd00a55ab1f0af8431f816b89102da7dfc96f3c5be4db) |
+| 리딤 | 토큰 소각 | 5e18 소각 | [`0x8dd6546d…`](https://sepolia-explorer.giwa.io/tx/0x8dd6546d73ac0a7b72c11751993b4c5b88bdfa724dc4d289d3616787abefdd97) |
+| 유료 드랍 merchFee | FeeRouter 경로로 수취 | 100,000 → merchFee 4,000 (400bps) → `feeRouter.platformTreasury()` · reroute 19,200 → BuybackVault (`Routed`) · creator 76,800 | [`0xc3dc70e3…`](https://sepolia-explorer.giwa.io/tx/0xc3dc70e3753b67a2567535db73d4e3c866abc84397d9035b97719db56246bcec) |
+| 바이백 실행 | 소각만, 수수료 0 | 볼트 2,457.4 KRWs (dailyCap 1%) → `BurnSwapped` 0.204004e18 소각, 수수료 이벤트 없음 | [`0x54e3a411…`](https://sepolia-explorer.giwa.io/tx/0x54e3a41102e43d9dd0452e7172662974351d25520d4930a60945c74068da6e61) |
+
+L1 사이클 종료 상태: 스팟 12,166.30 · 총공급 244.7118e18 (= 250 − 0.0842 − 5 − 0.2040) ·
+볼트 잔여 16,742.6 KRWs · `vault.totalBurned(MAPL1)` 0.2040e18.
+설정 tx: createRedeemable [`0x97f73fca…`](https://sepolia-explorer.giwa.io/tx/0x97f73fca776ddbd358a4903f1903930df85d27a6221b3664eb590461171e18c4) ·
+createPaidDrop [`0x91611500…`](https://sepolia-explorer.giwa.io/tx/0x91611500add1d47b4688ab245351f8d5d1ac33a7a3423cbb6c29fdac94392da9) ·
+setRerouteRate(2000) [`0x52597991…`](https://sepolia-explorer.giwa.io/tx/0x5259799194161a381c22242dfdc5fa125bf2db24fc7c1b082863ffd07a9693e0) ·
+executor.setParams [`0xbe0baf05…`](https://sepolia-explorer.giwa.io/tx/0xbe0baf0599bc2ffbfcf5b683192ade653abc7224d2ea3ea8b2b6140c7b01fa08).
+
 
 아래는 **M5(v1.0-gasok) 시점의 배포 기록**(역사 보존, GASOK 제출 증빙)이다.
 

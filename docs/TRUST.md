@@ -99,3 +99,24 @@ FeeRouter 조회로 오버라이드 불가다.
    컨트랙트로 executor를 교체해 도입한다(볼트/회계 변경 없이).
 4. **환원율 route는 무허가 입금** — `route`/`topUp` 모두 누구나 KRWs를 넣을 수 있다.
    withdraw가 없어 넣은 자금도 소각으로만 나가므로 탈취 위험은 없다([Q6]).
+
+## v2.0.1 데모 배포 — 이탈 기록 (2026-10-11)
+
+1. **수령 주소 겸용** — v2.0.1 데모 배포는 `feeRecipients.platform` = `feeRecipients.reserve`
+   = `FeeRouter.platformTreasury` = deployer(`Deploy.s.sol:62`). 그 결과 deployer(treasury)
+   주소에 발행 토큰이 남아 있다: MAPL0 5.357e18(L0 reserve 7.5%), MAPL1 12.5e18(L1 platform
+   토큰 배분 5%, `PREMIUM_PLATFORM_TOKEN_BPS`) + 2.5e18(L1 reserve 1%).
+   - 불변식 17("treasury 토큰 잔고 0")은 **스왑·수수료 경로**에 대한 것이며 성립한다(스왑·
+     드랍·바이백 tx에서 treasury는 KRWs만 수취). L0 플랫폼 토큰 배분 = 0 강제도 온체인에서
+     작동했다(L0 settle의 platform 민트 = 0).
+   - reserve는 커뮤니티 리저브(배분 잔여 흡수, 활동 증명 기반 에어드랍·이벤트·신규 팬
+     온보딩 용도 — `docs/SPEC.md` 배분표·`product_spec.md` v5.2)로 별개 회계 항목이다.
+   - **v3 배포에서는 reserve·platform 토큰 수령 주소와 platformTreasury를 분리한다.**
+2. **고정 seed** — 8/30 L0 settle은 seed `0x50` 고정값을 썼다(단일 leaf, 배정 결과에
+   영향 없음). 10/11 L1 settle은 원칙대로 지연 블록해시(블록 38350312)를 썼다.
+3. **L1 settle 지연** — L1 데모 오퍼링은 deadline(2026-08-31) 후 41일 만에 settle됐다.
+   그동안 `SETTLE_TIMEOUT`(7일) 경과로 누구나 `emergencyRefund()`를 호출할 수 있는
+   상태였고, 호출이 없었으므로 정상 settle 경로로 마감했다.
+4. **팩토리 자식 verify 누락** — 8/30 데모로 생성된 자식 컨트랙트 12개가 10/11까지
+   Blockscout 미검증 상태였다. 10/11 `verify-children.js --from-block 34757177`로 전량
+   verified. 이후 자식 생성 시점에 즉시 실행한다.
