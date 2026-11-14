@@ -22,7 +22,14 @@ library CurvePresets {
     uint256 internal constant DEX_SUPPLY = 200_000_000e18;
 
     /// @notice Virtual token reserve of the constant-product curve.
-    uint256 internal constant VIRTUAL_TOKEN_RESERVE = 1_073_000_000e18;
+    /// @dev Chosen so the AMM seed price equals the curve closing price (PM 2026-11-14).
+    ///      At sell-out the curve holds r = Vq·S/(Vt−S) and quotes (Vq + r)/(Vt − S) = Vq·Vt/(Vt−S)².
+    ///      The pool is seeded with r against DEX_SUPPLY, i.e. price r/DEX = Vq·S/((Vt−S)·DEX).
+    ///      Equal prices ⇔ DEX = S·(Vt−S)/Vt ⇔ Vt = S²/(S − DEX).
+    ///      S = 800M, DEX = 200M ⇒ Vt = 3.2B/3 (rounded up to the next wei).
+    ///      Consequences: threshold = 3·Vq, closing FDV = 15·Vq, closing/start price = (Vt/(Vt−S))² = 16.
+    ///      Previous value 1,073M left the seed price 1.77% above the curve close.
+    uint256 internal constant VIRTUAL_TOKEN_RESERVE = 1_066_666_666_666_666_666_666_666_667;
 
     // ---------------------------------------------------------------------
     // Virtual quote reserves (per quote asset; factory maps quote → preset)
