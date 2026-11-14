@@ -12,17 +12,10 @@ import {MockDojangV3Abi, MockKRWV3Abi} from "../contracts/abisV3";
 import {giwaSepolia} from "../config/chain";
 import {Address, CtaState, ZERO} from "../hooks/curves";
 import {fmt} from "../lib/format";
+import {faucetAmount} from "../lib/faucet";
 import {useToast, useTx} from "./tx";
 import {PrimaryBtn, SecondaryBtn} from "./ui";
 
-const WHOLE = 10n ** 18n;
-const ROUND = 10_000n * WHOLE; // faucet amounts are rounded up to 10,000 KRWs
-
-/** Faucet amount: the shortfall rounded up to 10,000 KRWs, at least 10,000, at most FAUCET_CAP. */
-export function faucetAmount(shortfall: bigint, cap: bigint): bigint {
-    const want = shortfall <= 0n ? ROUND : ((shortfall + ROUND - 1n) / ROUND) * ROUND;
-    return want > cap ? cap : want;
-}
 
 /** CTA states that open the modal instead of rendering a disabled button. `insufficient` only
  *  counts when the user pays with v3 MockKRW (the only asset the modal can top up). */

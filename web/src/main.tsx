@@ -9,6 +9,7 @@ import App from "./App";
 import Home from "./pages/Home";
 import Curves from "./pages/Curves";
 import Token from "./pages/Token";
+import Create from "./pages/Create";
 import Offering from "./pages/Offering";
 import Membership from "./pages/Membership";
 import Redeem from "./pages/Redeem";
@@ -26,6 +27,7 @@ const router = createHashRouter([
         children: [
             {index: true, element: <Curves />}, // v3 curve list
             {path: "t/:curve", element: <Token />}, // v3 token page
+            {path: "create", element: <Create />}, // v3 curve creation
             {path: "offerings", element: <Home />}, // legacy fixed-price offerings (was "/")
             {path: "offering/:addr", element: <Offering />},
             {path: "membership", element: <Membership />},

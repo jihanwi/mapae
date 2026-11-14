@@ -95,3 +95,19 @@ export function sellExactTokenIn(vq: bigint, r: bigint, s: bigint, tokenIn: bigi
     const xNew = mulDivUp(vq, g.vToken, g.vToken - s + tokenIn);
     return x > xNew ? x - xNew : 0n;
 }
+
+/** Exact port of CurveSale._quoteBuy's charge (fees included), for previews before a curve exists
+ *  (e.g. the dev first buy on the create page). Live curves are quoted by the quoteBuy view. */
+export function quoteBuyWithFees(
+    vq: bigint,
+    r: bigint,
+    s: bigint,
+    quoteIn: bigint,
+    feeBps: bigint,
+    g: Geometry = PRESET
+): {tokensOut: bigint; quoteUsed: bigint; quoteSpent: bigint} {
+    const net = quoteIn - (quoteIn * feeBps) / BPS;
+    const {tokensOut, quoteUsed} = buyExactQuoteIn(vq, r, s, net, g);
+    const charged = mulDivUp(quoteUsed, BPS, BPS - feeBps);
+    return {tokensOut, quoteUsed, quoteSpent: charged < quoteIn ? charged : quoteIn};
+}

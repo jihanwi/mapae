@@ -116,3 +116,23 @@ describe("test/CurveMath.t.sol vectors", () => {
         expect(quoteUsed <= x).toBe(true);
     });
 });
+
+describe("quoteBuyWithFees (CurveSale._quoteBuy port, used for the dev first buy preview)", () => {
+    it("charges at most quoteIn and splits fee = spent − used", async () => {
+        const {quoteBuyWithFees} = await import("./curveMath");
+        const vq = 2_000_000n * E18;
+        const q = quoteBuyWithFees(vq, 0n, 0n, 100_000n * E18, 100n);
+        const direct = buyExactQuoteIn(vq, 0n, 0n, 100_000n * E18 - (100_000n * E18 * 100n) / 10_000n);
+        expect(q.tokensOut).toBe(direct.tokensOut);
+        expect(q.quoteUsed).toBe(direct.quoteUsed);
+        expect(q.quoteSpent <= 100_000n * E18).toBe(true);
+        expect(q.quoteSpent).toBe(ceilDiv(q.quoteUsed * 10_000n, 9_900n));
+    });
+    it("an oversized first buy sells out and charges only the fee-inclusive sell-out cost", async () => {
+        const {quoteBuyWithFees} = await import("./curveMath");
+        const vq = 2n * 10n ** 15n; // testnet WETH registry
+        const q = quoteBuyWithFees(vq, 0n, 0n, 10n ** 18n, 100n);
+        expect(q.tokensOut).toBe(CURVE_SUPPLY);
+        expect(q.quoteSpent).toBe(grossForNet(costToSellOut(vq, 0n, 0n), 100n));
+    });
+});
