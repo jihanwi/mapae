@@ -7,6 +7,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {MembershipToken} from "./MembershipToken.sol";
+import {IDojang} from "./interfaces/IDojang.sol";
 import {IFeeRouter} from "./interfaces/IFeeRouter.sol";
 import {IBurnerRegistry} from "./interfaces/IBurnerRegistry.sol";
 
@@ -45,9 +46,11 @@ contract MapaePool is ERC20, ReentrancyGuard {
     error EmptyBurnBuffer();
     /// @notice swapForBurn caller is not a MapaeFactory-registered burner.
     error NotBurner(address caller);
+    /// @notice Swap caller or recipient is not a Dojang Verified Address (v3 decision B).
+    error NotVerified(address account);
 
     event Swapped(
-        address indexed sender, address indexed to, bool krwIn, uint256 amountIn, uint256 amountOut, uint256 royalty
+        address indexed sender, address indexed to, bool quoteIn, uint256 amountIn, uint256 amountOut, uint256 royalty
     );
     event LiquidityMinted(address indexed to, uint256 tokenAmount, uint256 quoteAmount, uint256 liquidity);
     event LiquidityBurned(address indexed to, uint256 tokenAmount, uint256 quoteAmount, uint256 liquidity);
@@ -78,6 +81,8 @@ contract MapaePool is ERC20, ReentrancyGuard {
     uint16 public immutable royaltyBps;
     /// @notice Per-pool creator burn share (bps), snapshotted at creation (R2).
     uint16 public immutable burnBps;
+    /// @notice Real-name gate for swapQuoteForToken / swapTokenForQuote (all tiers, fail-closed).
+    IDojang public immutable dojang;
 
     uint256 public reserveToken;
     uint256 public reserveQuote;
@@ -93,11 +98,12 @@ contract MapaePool is ERC20, ReentrancyGuard {
         IFeeRouter.UtilityTier tier_,
         address factory_,
         uint16 royaltyBps_,
-        uint16 burnBps_
+        uint16 burnBps_,
+        IDojang dojang_
     ) ERC20("MAPAE LP", "MAPAE-LP") {
         if (
             address(membershipToken_) == address(0) || address(quote_) == address(0) || creator_ == address(0)
-                || address(feeRouter_) == address(0)
+                || address(feeRouter_) == address(0) || address(dojang_) == address(0)
         ) revert ZeroAddress();
         membershipToken = membershipToken_;
         quote = quote_;
@@ -107,6 +113,7 @@ contract MapaePool is ERC20, ReentrancyGuard {
         factory = factory_; // may be address(0) in isolated tests → swapForBurn disabled
         royaltyBps = royaltyBps_;
         burnBps = burnBps_;
+        dojang = dojang_;
     }
 
     // ------------------------------------------------------------------
@@ -167,6 +174,13 @@ contract MapaePool is ERC20, ReentrancyGuard {
         return (f.swapPlatformBps, f.swapLpBps);
     }
 
+    /// @dev Real-name gate (v3 decision B, all tiers). A reverting Dojang reverts the swap
+    ///      (fail-closed, no try/catch). swapForBurn / convertAndBurn / mint / burn are ungated.
+    function _requireVerified(address to) internal view {
+        if (!dojang.isVerified(msg.sender)) revert NotVerified(msg.sender);
+        if (to != msg.sender && !dojang.isVerified(to)) revert NotVerified(to);
+    }
+
     /// @notice Buy membership tokens with quote. Fees are taken from the quote
     ///         input: platform → treasury, royalty → creator, burn → burnBuffer,
     ///         lp stays in reserve (absorbs the split's rounding remainder so the
@@ -177,6 +191,7 @@ contract MapaePool is ERC20, ReentrancyGuard {
         nonReentrant
         returns (uint256 amountOut)
     {
+        _requireVerified(to);
         if (amountIn == 0) revert ZeroAmount();
         quote.safeTransferFrom(msg.sender, address(this), amountIn);
 
@@ -218,6 +233,7 @@ contract MapaePool is ERC20, ReentrancyGuard {
         nonReentrant
         returns (uint256 amountOut)
     {
+        _requireVerified(to);
         if (amountIn == 0) revert ZeroAmount();
         IERC20(address(membershipToken)).safeTransferFrom(msg.sender, address(this), amountIn);
 

@@ -366,7 +366,7 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
 
         if (tokenSeed > 0 && krwSeed > 0) {
             MapaePool pool_ = poolFactory.createPool(
-                token, paymentToken, creator, feeRouter, tier, mapaeFactory, swapRoyaltyBps, swapBurnBps
+                token, paymentToken, creator, feeRouter, tier, mapaeFactory, swapRoyaltyBps, swapBurnBps, dojang
             );
             token.registerPool(address(pool_));
             pool = pool_;

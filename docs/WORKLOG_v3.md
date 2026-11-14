@@ -154,3 +154,49 @@ web/, deployments/, MockKRW·RedeemManager·Sponsorship·BuybackVault 자체 식
 ABI 셀렉터가 바뀌므로 v2.0.1 배포와 호환되지 않으며 v3 는 신규 배포다.
 
 테스트: 개명 전후 **225 그린** 동일.
+
+## T5 — 풀 스왑 실명 게이트 + 토큰 전송 잠금 확장 + Swapped 인자 개명
+
+### 결정 기록 (PM 2026-11-14)
+
+- **결정 A.** 커브 토큰은 졸업 전에는 커브와 주고받는 전송만 허용하고 졸업 시 해제한다.
+- **결정 B.** MapaePool 의 스왑은 실명(Dojang) 지갑만 할 수 있다. L0, L1, L2 전 등급의 풀에 적용
+  (STATUS 결정 4 "실명 1인 1지갑은 전 트랙 공통").
+- **알려진 한계.** 졸업 후 토큰 전송은 자유이므로 외부 DEX 에 제3자가 풀을 만드는 것은 막지 않는다.
+
+### 풀 게이트 대상 / 비대상
+
+| 함수 | 게이트 | 근거 |
+|---|---|---|
+| `swapQuoteForToken` | msg.sender 와 `to`(≠ sender 일 때) 모두 `isVerified` | 결정 B |
+| `swapTokenForQuote` | 동일 | 결정 B |
+| `swapForBurn` | 없음 (기존 burner 레지스트리 제한 유지) | 출력 전량 소각, 호출자 제한 이미 존재 |
+| `convertAndBurn` | 없음 | 출력 전량 소각 |
+| `mint`, `burn`, view | 없음 | 유동성 시딩·LP 경로, 조회 |
+
+- Dojang 조회가 revert 하면 스왑도 revert (fail-closed, try/catch 없음).
+- `MapaePool` 생성자와 `PoolFactory.createPool` 에 `IDojang` 인자 추가(마지막 인자). 0 주소면 각각
+  `ZeroAddress` / `ZeroDojang` revert. `Offering._listAtPar` 는 자기 `dojang` 을 넘긴다.
+- `Swapped` 이벤트 `bool krwIn` → `bool quoteIn` (타입·순서 그대로, T4 잔여분).
+
+### 토큰 변경 2건 (`src/MembershipToken.sol`, 생성자 시그니처 유지)
+
+1. 전송 잠금 예외 추가: 잠금 중이라도 `to == offering` 인 전송 허용 (커브에 되파는 경로).
+2. `endTransferLock()`: offering 만 호출 (`NotOffering`), 잠금 중이면 `transferLockUntil = block.timestamp`
+   + `TransferLockEnded(timestamp)`, 아니면 no-op. CurveSale(다음 티켓)이 졸업 tx 에서 호출 예정.
+
+L1 토큰도 잠금 중 offering 으로의 전송이 허용되는 것이 유일한 동작 변화다.
+
+### 테스트 / 사이즈
+
+- 신규: `test/PoolDojangGate.t.sol` G1~G6 (6), `test/MembershipTokenCurveLock.t.sol` L1~L4 (4).
+- 설정부만 수정: `test/MapaePool.t.sol`, `test/Sponsorship.t.sol` (MockDojang 배포, 스왑 주체 검증,
+  `createPool` 인자 추가). 단언·수치 무변경. 나머지 E2E 는 Offering 경유라 기존 검증 지갑으로 통과.
+- 합계 225 → **235 그린**.
+
+| 컨트랙트 | runtime | initcode | runtime 여유 | initcode 여유 |
+|---|---|---|---|---|
+| MapaePool | 9,646 B | 10,978 B | 14,930 B | 38,174 B |
+| Offering | 10,710 B | 15,359 B | 13,866 B | 33,793 B |
+| OfferingDeployer | 16,605 B | 16,633 B | 7,971 B | 32,519 B |
+| MapaeFactory | 8,817 B | 41,681 B | 15,759 B | 7,471 B |

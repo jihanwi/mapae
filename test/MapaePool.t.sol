@@ -9,6 +9,8 @@ import {MembershipToken} from "../src/MembershipToken.sol";
 import {FeeRouter} from "../src/FeeRouter.sol";
 import {IFeeRouter} from "../src/interfaces/IFeeRouter.sol";
 import {MockKRW} from "../src/mocks/MockKRW.sol";
+import {MockDojang} from "../src/mocks/MockDojang.sol";
+import {IDojang} from "../src/interfaces/IDojang.sol";
 
 /// @notice Pool unit tests. The test contract plays the offering: sole minter,
 ///         pool registrar, and liquidity seeder.
@@ -18,6 +20,7 @@ import {MockKRW} from "../src/mocks/MockKRW.sol";
 ///      platform+royalty off the KRWs output (so royalty/treasury are KRWs).
 contract MapaePoolTest is Test {
     MockKRW internal krw;
+    MockDojang internal dojang;
     MembershipToken internal token;
     PoolFactory internal poolFactory;
     FeeRouter internal feeRouter;
@@ -39,6 +42,10 @@ contract MapaePoolTest is Test {
     function setUp() public {
         vm.warp(1_750_000_000);
         krw = new MockKRW();
+        dojang = new MockDojang();
+        dojang.setVerified(fan, true);
+        dojang.setVerified(lp2, true);
+        dojang.setVerified(address(this), true);
         poolFactory = new PoolFactory();
         feeRouter = new FeeRouter(address(this), treasury);
         token = new MembershipToken("Creator Membership", "CRTM", address(this), 0, 0, new address[](0));
@@ -55,7 +62,15 @@ contract MapaePoolTest is Test {
         // factory == address(0): swapForBurn is disabled here (covered by the
         // swapForBurn invariant suite); convertAndBurn stays permissionless.
         pool = poolFactory.createPool(
-            token, IERC20(address(krw)), creator, feeRouter, TIER, address(0), ROYALTY_BPS, BURN_BPS
+            token,
+            IERC20(address(krw)),
+            creator,
+            feeRouter,
+            TIER,
+            address(0),
+            ROYALTY_BPS,
+            BURN_BPS,
+            IDojang(address(dojang))
         );
         token.registerPool(address(pool));
 
@@ -86,7 +101,17 @@ contract MapaePoolTest is Test {
 
     function test_Factory_OnePoolPerToken() public {
         vm.expectRevert(abi.encodeWithSelector(PoolFactory.PoolExists.selector, address(token), address(pool)));
-        poolFactory.createPool(token, IERC20(address(krw)), creator, feeRouter, TIER, address(0), ROYALTY_BPS, BURN_BPS);
+        poolFactory.createPool(
+            token,
+            IERC20(address(krw)),
+            creator,
+            feeRouter,
+            TIER,
+            address(0),
+            ROYALTY_BPS,
+            BURN_BPS,
+            IDojang(address(dojang))
+        );
     }
 
     function test_Factory_OnlyTokenOffering() public {
@@ -94,7 +119,17 @@ contract MapaePoolTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(PoolFactory.NotTokenOffering.selector, address(this), makeAddr("otherOffering"))
         );
-        poolFactory.createPool(other, IERC20(address(krw)), creator, feeRouter, TIER, address(0), ROYALTY_BPS, BURN_BPS);
+        poolFactory.createPool(
+            other,
+            IERC20(address(krw)),
+            creator,
+            feeRouter,
+            TIER,
+            address(0),
+            ROYALTY_BPS,
+            BURN_BPS,
+            IDojang(address(dojang))
+        );
     }
 
     function test_RegisterPool_OnlyOfferingAndOnce() public {
@@ -189,7 +224,15 @@ contract MapaePoolTest is Test {
         amounts[1] = 100e18;
         locked.mintAllocations(to, amounts);
         MapaePool lockedPool = poolFactory.createPool(
-            locked, IERC20(address(krw)), creator, feeRouter, TIER, address(0), ROYALTY_BPS, BURN_BPS
+            locked,
+            IERC20(address(krw)),
+            creator,
+            feeRouter,
+            TIER,
+            address(0),
+            ROYALTY_BPS,
+            BURN_BPS,
+            IDojang(address(dojang))
         );
         locked.registerPool(address(lockedPool));
         locked.transfer(address(lockedPool), SEED_TOKEN); // this == offering: lock-exempt
