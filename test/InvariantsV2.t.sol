@@ -337,16 +337,16 @@ contract InvariantsV2Test is Test {
         uint256 treBefore = krw.balanceOf(treasury);
         uint256 creBefore = krw.balanceOf(creator);
         uint256 bufBefore = pool.burnBuffer();
-        uint256 reserveBefore = pool.reserveKrw();
+        uint256 reserveBefore = pool.reserveQuote();
         vm.startPrank(fan);
         krw.faucet(amountIn);
         krw.approve(address(pool), amountIn);
-        pool.swapKrwForToken(amountIn, 0, fan);
+        pool.swapQuoteForToken(amountIn, 0, fan);
         vm.stopPrank();
         obs.platform = krw.balanceOf(treasury) - treBefore;
         obs.royalty = krw.balanceOf(creator) - creBefore;
         obs.burn = pool.burnBuffer() - bufBefore;
-        obs.reserveGain = pool.reserveKrw() - reserveBefore;
+        obs.reserveGain = pool.reserveQuote() - reserveBefore;
     }
 
     function testFuzz_Inv10_FeeSplitPrecision(uint256 amountIn) public {
@@ -425,7 +425,7 @@ contract InvariantsV2Test is Test {
         vm.startPrank(fan);
         krw.faucet(200_000e18);
         krw.approve(address(pool), type(uint256).max);
-        pool.swapKrwForToken(200_000e18, 0, fan);
+        pool.swapQuoteForToken(200_000e18, 0, fan);
         t.approve(address(pool), type(uint256).max);
         vm.stopPrank();
         amountIn = bound(amountIn, 1e15, t.balanceOf(fan));
@@ -433,12 +433,12 @@ contract InvariantsV2Test is Test {
         IFeeRouter.TierFees memory f = feeRouter.getFees(IFeeRouter.UtilityTier.L1);
         uint256 treBefore = krw.balanceOf(treasury);
         uint256 creBefore = krw.balanceOf(creator);
-        uint256 reserveKrwBefore = pool.reserveKrw();
+        uint256 reserveQuoteBefore = pool.reserveQuote();
 
         vm.prank(fan);
-        uint256 out = pool.swapTokenForKrw(amountIn, 0, fan);
+        uint256 out = pool.swapTokenForQuote(amountIn, 0, fan);
 
-        uint256 grossOut = reserveKrwBefore - pool.reserveKrw();
+        uint256 grossOut = reserveQuoteBefore - pool.reserveQuote();
         uint256 platform = krw.balanceOf(treasury) - treBefore;
         uint256 royalty = krw.balanceOf(creator) - creBefore;
         // platform/royalty are exact floors of the KRWs OUTPUT (base = grossOut).
@@ -462,10 +462,10 @@ contract InvariantsV2Test is Test {
         krw.faucet(buy1 + buy2);
         krw.approve(address(pool), type(uint256).max);
         t.approve(address(pool), type(uint256).max);
-        pool.swapKrwForToken(buy1, 0, fan);
+        pool.swapQuoteForToken(buy1, 0, fan);
         uint256 sellAmt = bound(sellSeed, 1, t.balanceOf(fan));
-        pool.swapTokenForKrw(sellAmt, 0, fan); // sell routes platform in KRWs
-        pool.swapKrwForToken(buy2, 0, fan);
+        pool.swapTokenForQuote(sellAmt, 0, fan); // sell routes platform in KRWs
+        pool.swapQuoteForToken(buy2, 0, fan);
         vm.stopPrank();
 
         // Treasury accrues KRWs from platform cuts but NEVER creator tokens.

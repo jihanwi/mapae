@@ -128,3 +128,29 @@ CurveMath 테스트 24개, `FOUNDRY_FUZZ_RUNS=10000` 에서도 실패 0.
 MapaeFactory initcode 여유는 8,837 → 7,522 B (−1,315 B). 4 KiB 가드 통과.
 
 테스트: 217 + 8 (QuoteRegistry 7, CurvePresets 1) = **225 그린**.
+
+## T4 — MapaePool / PoolFactory krw → quote 개명 (동작 변경 0)
+
+목적: v3 에서 WETH 호가 커브도 졸업 후 같은 MapaePool 을 쓰므로 풀 외부 인터페이스에서 "krw" 를
+"quote" 로 바꾼다. 로직, 수수료 계산, 라운딩, 이벤트 타입·순서·indexed 는 변경 없음.
+
+| 이전 | 이후 |
+|---|---|
+| `IERC20 public immutable krw` | `quote` |
+| `uint256 public reserveKrw` | `reserveQuote` |
+| `swapKrwForToken(amountIn, minOut, to)` | `swapQuoteForToken` |
+| `swapTokenForKrw(amountIn, minOut, to)` | `swapTokenForQuote` |
+| `getKrwOut(tokenIn)` | `getQuoteOut` |
+| `getTokenOut(krwIn)` 인자명 | `quoteIn` |
+| `burn(to)` 반환값 `amountKrw` | `amountQuote` |
+| `LiquidityMinted` / `LiquidityBurned` 의 `krwAmount` | `quoteAmount` |
+| `ConvertedAndBurned` / `BurnSwapped` 의 `krwIn` | `quoteIn` |
+| 생성자 `krw_`, 내부 변수(`krwBal`, `amountKrw`), NatSpec 의 KRWs 표기 | `quote_`, `quoteBal`, `amountQuote`, quote |
+| `PoolFactory.createPool` 인자 `krw` | `quote` |
+
+호출부: `BuybackExecutor.reserveQuote()`, script/Demo* 3개, test/ 4개 파일(이름만, 단언·수치 무변경).
+web/, deployments/, MockKRW·RedeemManager·Sponsorship·BuybackVault 자체 식별자, FeeRouter 는 무변경.
+
+ABI 셀렉터가 바뀌므로 v2.0.1 배포와 호환되지 않으며 v3 는 신규 배포다.
+
+테스트: 개명 전후 **225 그린** 동일.

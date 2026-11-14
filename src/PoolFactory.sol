@@ -22,7 +22,7 @@ contract PoolFactory {
 
     function createPool(
         MembershipToken token,
-        IERC20 krw,
+        IERC20 quote,
         address creator,
         IFeeRouter feeRouter,
         IFeeRouter.UtilityTier tier,
@@ -35,7 +35,7 @@ contract PoolFactory {
         }
         if (msg.sender != token.offering()) revert NotTokenOffering(msg.sender, token.offering());
 
-        pool = new MapaePool(token, krw, creator, feeRouter, tier, factory, royaltyBps, burnBps);
+        pool = new MapaePool(token, quote, creator, feeRouter, tier, factory, royaltyBps, burnBps);
         poolOf[address(token)] = address(pool);
         _allPools.push(address(pool));
         emit PoolCreated(address(token), address(pool), creator);

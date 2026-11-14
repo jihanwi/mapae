@@ -43,7 +43,7 @@ contract DemoStage2aL0 is Script {
         off.claim(totalSold, 0, new bytes32[](0));
         krw.faucet(50_000e18);
         krw.approve(address(pool), 50_000e18);
-        uint256 out = pool.swapKrwForToken(50_000e18, 0, fanL0);
+        uint256 out = pool.swapQuoteForToken(50_000e18, 0, fanL0);
         vm.stopBroadcast();
         console.log("fanL0 claimed + bought:", out, "spot after:", pool.spotPrice());
     }

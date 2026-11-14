@@ -78,7 +78,7 @@ contract DemoStage2bL1 is Script {
         MapaePool pool = off.pool();
         vm.startBroadcast(fanKey);
         krw.approve(address(pool), 20_000e18);
-        uint256 out = pool.swapKrwForToken(20_000e18, 0, vm.addr(fanKey));
+        uint256 out = pool.swapQuoteForToken(20_000e18, 0, vm.addr(fanKey));
         krw.approve(address(sp), 10_000e18);
         sp.sponsorKRWs(10_000e18, unicode"마패 데모 후원");
         vm.stopBroadcast();

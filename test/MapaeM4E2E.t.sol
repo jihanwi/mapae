@@ -42,14 +42,14 @@ contract MapaeM4E2ETest is MapaeFactoryTestBase {
         vm.startPrank(fanB);
         krw.faucet(50_000e18);
         krw.approve(address(pool), 50_000e18);
-        uint256 bought = pool.swapKrwForToken(50_000e18, 0, fanB);
+        uint256 bought = pool.swapQuoteForToken(50_000e18, 0, fanB);
         // 50k into a 150k-deep pool: ~3.7 tokens after 2% fee + real price impact
         assertGt(bought, 3.5e18);
         vm.stopPrank();
 
         vm.startPrank(fanA);
         token.approve(address(pool), 5e18);
-        uint256 krwOut = pool.swapTokenForKrw(5e18, 0, fanA);
+        uint256 krwOut = pool.swapTokenForQuote(5e18, 0, fanA);
         assertGt(krwOut, 45_000e18);
         vm.stopPrank();
         // sell burned 0.5% of token input immediately

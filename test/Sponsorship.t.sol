@@ -16,7 +16,7 @@ import {MockKRW} from "../src/mocks/MockKRW.sol";
 /// @notice Sponsorship unit tests (D11). The test contract plays BOTH the
 ///         offering (sole minter/registrar) AND the pool's burner registry, so
 ///         it can authorize the Sponsorship for the 0%-fee swapForBurn path.
-/// @dev v5.2: the burn buy moved from swapKrwForToken (fee) to swapForBurn (0%),
+/// @dev v5.2: the burn buy moved from swapQuoteForToken (fee) to swapForBurn (0%),
 ///      so the creator no longer receives a swap royalty on the burn side.
 contract SponsorshipTest is Test, IBurnerRegistry {
     MockKRW internal krw;
