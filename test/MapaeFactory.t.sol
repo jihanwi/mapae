@@ -85,7 +85,7 @@ abstract contract MapaeFactoryTestBase is OfferingTestBase {
         cp.cBps = 2500;
         cp.creatorTokenBps = 500;
         cp.swapRoyaltyBps = 20; // L0 royalty band [0,30]
-        cp.swapBurnBps = 20;
+        cp.swapBurnBps = 0; // v3: L0 burn share must be 0
         cp.vestingDuration = 120 days; // L0 [3mo,6mo]
         cp.vestingCliff = 0; // L0 cliff 0 allowed
     }

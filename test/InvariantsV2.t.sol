@@ -93,7 +93,7 @@ contract InvariantsV2Test is Test {
         cp.cBps = l0 ? 2500 : 1500;
         cp.creatorTokenBps = l0 ? 500 : 2500;
         cp.swapRoyaltyBps = l0 ? 20 : 60; // L0 royalty band [0,30]
-        cp.swapBurnBps = l0 ? 20 : 30;
+        cp.swapBurnBps = l0 ? 0 : 30;
         cp.tier = tier;
         cp.refundMode = IOffering.RefundMode.Partial;
         cp.transferLockDuration = 0;
@@ -491,14 +491,14 @@ contract InvariantsV2Test is Test {
         Offering o1 = offeringDeployer.deploy(p); // 80/50 edge ok
         assertEq(o1.swapRoyaltyBps(), 80);
 
-        // L0: royalty [0,30] (tighter), burn [0,50]
+        // L0: royalty [0,30] (tighter), burn must be 0 (v3: L0 total swap fee ≤ 100 bps)
         IOffering.OfferingParams memory q = _directParams(IFeeRouter.UtilityTier.L0);
         q.swapRoyaltyBps = 31;
         vm.expectRevert(IOffering.InvalidConfig.selector);
         offeringDeployer.deploy(q);
         q.swapRoyaltyBps = 30;
-        q.swapBurnBps = 50;
-        Offering o2 = offeringDeployer.deploy(q); // 30/50 edge ok
+        q.swapBurnBps = 0;
+        Offering o2 = offeringDeployer.deploy(q); // 30/0 edge ok
         assertEq(o2.swapRoyaltyBps(), 30);
     }
 
@@ -544,7 +544,7 @@ contract InvariantsV2Test is Test {
         p.creatorTokenBps = l0 ? 500 : 2500;
         p.platformTokenBps = l0 ? 0 : 500;
         p.swapRoyaltyBps = l0 ? 20 : 60;
-        p.swapBurnBps = l0 ? 20 : 30;
+        p.swapBurnBps = l0 ? 0 : 30;
         p.refundMode = IOffering.RefundMode.Partial;
         p.transferLockDuration = 0;
         p.holdingCapBps = 0;
