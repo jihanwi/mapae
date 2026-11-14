@@ -6,7 +6,7 @@ import {Address, CurveDetail, useCurve, ZERO} from "../hooks/curves";
 import {CurveFactoryAbi, MapaePoolV3Abi} from "../contracts/abisV3";
 import {ADDR_V3} from "../contracts/addressesV3";
 import {costToSellOut, grossForNet, marketCapQuote, progressBps, spotPrice, TOTAL_SUPPLY, WAD} from "../lib/curveMath";
-import {fmt, fmtSig, shortAddr} from "../lib/format";
+import {fmt, fmtRound, fmtSig, shortAddr} from "../lib/format";
 import {explorerAddr, giwaSepolia} from "../config/chain";
 import {Badge, Gauge, Medallion, NetError, PrimaryBtn, Skeleton, Stat} from "../components/ui";
 import {CurveTradePanel} from "../components/CurveTradePanel";
@@ -50,7 +50,7 @@ function PriceStats({c}: {c: CurveDetail}) {
     return (
         <div className="grid grid-cols-2 gap-3">
             <Stat label={tr.curve.spot} value={spot !== undefined ? fmtSig(spot, 4, tr.locale) : poolSpot.isError ? tr.curve.quoteError : "…"} unit={`${unit}${tr.curve.perToken}`} />
-            <Stat label={tr.curve.marketCap} value={mcap !== undefined ? fmt(mcap, unit === "ETH" ? 4 : 0, tr.locale) : "…"} unit={unit} />
+            <Stat label={tr.curve.marketCap} value={mcap !== undefined ? fmtRound(mcap, unit === "ETH" ? 4 : 0, tr.locale) : "…"} unit={unit} />
         </div>
     );
 }

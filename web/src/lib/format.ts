@@ -10,14 +10,24 @@ export function fmt(wei: bigint, dp = 2, locale = "en-US"): string {
     return frac ? `${int}.${frac}` : int;
 }
 
-/** 18-decimals → up to `sig` significant digits (for tiny curve prices such as 0.000000000562 ETH). */
+/** Like fmt, but rounds half-up at `dp` instead of truncating. Display only for prices and market
+ *  cap; amounts the user pays, receives or holds keep fmt (floor) so they never look larger. */
+export function fmtRound(wei: bigint, dp = 2, locale = "en-US"): string {
+    if (dp >= 18) return fmt(wei, 18, locale);
+    const step = 10n ** BigInt(18 - dp);
+    const rounded = ((wei + step / 2n) / step) * step;
+    return fmt(rounded, dp, locale);
+}
+
+/** 18-decimals → up to `sig` significant digits, rounded half-up (for tiny curve prices such as
+ *  0.000000000562 ETH). Prices only; see fmtRound. */
 export function fmtSig(wei: bigint, sig = 4, locale = "en-US"): string {
     if (wei === 0n) return "0";
     const s = formatUnits(wei, 18);
     const [i, f = ""] = s.split(".");
-    if (i !== "0") return fmt(wei, Math.max(0, sig - i.length), locale);
+    if (i !== "0") return fmtRound(wei, Math.max(0, sig - i.length), locale);
     const lead = f.length - f.replace(/^0+/, "").length;
-    return `0.${f.slice(0, lead + sig).replace(/0+$/, "")}`;
+    return fmtRound(wei, Math.min(18, lead + sig), locale);
 }
 
 export const shortAddr = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
