@@ -244,3 +244,74 @@ Dev 0.30 / LP 0.30. `CurvePresets` 의 `CURVE_FEE_*`, `SWAP_FEE_*` 상수와 일
 ### 메모
 
 - 바이백 50% 라우팅(`BUYBACK_BPS`)은 미구현. 플랫폼 토큰과 호가 자산별 Vault 경로가 정해진 뒤 별도 티켓.
+
+## T7 — CurveSale 본체 + L0 풀 요율 상한
+
+### 결정: L0 풀 burn 몫 0 (PM, T6 질문 2 회신)
+
+- `Offering` 생성자 per-pool 밴드: `tier == L0` 이고 `swapBurnBps != 0` 이면 `InvalidConfig`.
+  L0 royalty 상한 30 유지, L1/L2 무변경.
+- 결과: L0 풀 총 스왑 요율 = platform 40 + lp 30 + royalty(0~30) + burn 0 ≤ **100 bps**.
+- 고친 기존 테스트(설정값만, 기대 수치 변화 없음): `MapaeFactory.t.sol` `l0CreateParams` burn 20→0,
+  `InvariantsV2.t.sol` `_cp` / `_directParams` 의 `l0 ? 20 : 30` → `l0 ? 0 : 30`,
+  `test_R2_SwapRoyaltyBurnBands` L0 경계 30/50 ok → 30/0 ok.
+- 신규 `test/L0PoolFeeCap.t.sol`: burn 1~50 이면 revert (fuzz), 상장된 L0 풀 `totalFeeBps() ≤ 100` (fuzz).
+
+### CurveSale 설계 요약 (`src/CurveSale.sol`)
+
+- `IPrimaryMarket` 구현, 논업그레이더블, OZ v5 만, `ReentrancyGuard`.
+- 생성자(`InitParams` struct): 0 주소·`virtualQuote == 0` revert. FeeRouter `getCurveFees()` 를
+  immutable 스냅샷. `MembershipTokenDeployer.deploy(..., CURVE_LOCK_DURATION = 100 × 365 days, 0, [])`,
+  `mintAllocations([this], [TOTAL_SUPPLY])` 로 전량 자기 민트(민트 권한 영구 소각).
+- 기하는 `CurvePresets`, 가격은 `CurveMath` 만 사용(자체 가격식 없음).
+- `buy(quoteIn, minTokensOut)` / `sell(tokenIn, minQuoteOut)`: 실명 게이트(fail-closed), 졸업 후 revert.
+  토큰은 msg.sender 에게만. 첫 매수 주소 `hasBought`, dev 제외 `verifiedBuyerCount` 증가.
+- `s == CURVE_SUPPLY` 가 되는 매수와 같은 tx 에서 `_graduate()`: L0 풀 생성(royalty
+  `SWAP_FEE_DEV_BPS` 30, burn 0, creator = dev), `registerPool`, DEX_SUPPLY + (r + lpSeedAccrued) 시딩,
+  LP 전량 0xdEaD, `endTransferLock()`, `graduationReserve = r`, `r = 0`, `lpSeedAccrued = 0`.
+- `claimDevFees()` dev 전용, `sweepPlatformFees()` 누구나 호출 → `feeRouter.platformTreasury()`.
+  졸업 후에도 동작. 발행 토큰이 수수료로 나가는 경로 없음.
+- view: `quoteBuy`, `quoteSell` (실행과 같은 내부 함수 `_quoteBuy`/`_quoteSell` 을 공유 → wei 단위 일치),
+  `spotPrice`, `token`, `settlementToken`(= quote), `phase`(졸업 전 Open, 후 Settled).
+- 사이즈: runtime 7,922 B (EIP-170 여유 16,654 B), initcode 10,323 B.
+
+### 수수료 청구식
+
+- t = platformBps + devBps + lpSeedBps (스냅샷, 기본 50 + 35 + 15 = 100).
+- 매수: `net = quoteIn − floor(quoteIn·t/1e4)`, `(tokensOut, quoteUsed) = CurveMath.buyExactQuoteIn(net)`,
+  `P = min(quoteIn, ceil(quoteUsed·1e4/(1e4 − t)))`, `fee = P − quoteUsed`,
+  `platform = floor(P·pb/1e4)`, `dev = floor(P·db/1e4)`, `lpSeed = fee − platform − dev`.
+  매수자에게서 정확히 P 만 `transferFrom`.
+- 매도: `gross = CurveMath.sellExactTokenIn`, `fee = floor(gross·t/1e4)`, platform·dev 는 gross 기준 floor,
+  lpSeed = 나머지, 지급 `gross − fee` 는 r 에서만.
+
+### 불변식 대응
+
+| 테스트 | 내용 | 지시서 v3.1 |
+|---|---|---|
+| C1 | 미검증 주소 buy/sell revert, Dojang revert 시 fail-closed | (매핑 대기) |
+| C2 | 졸업 전 quote 잔고 = r + 적립 3종, 토큰 잔고 = TOTAL − s | (매핑 대기) |
+| C3 | 매수자 잔고 감소 = quoteSpent ≤ quoteIn, 과대 마감 매수도 필요분만 | (매핑 대기) |
+| C4 | platform + dev + lpSeed = fee, 식 일치, quoteBuy/quoteSell = 실행 | (매핑 대기) |
+| C5 | treasury 토큰 잔고 0, dev 토큰 = 직접 매수 − 매도 | **17** (treasury 토큰 0) |
+| C6 | 실명 지갑 1개가 1회 매수로 셀프졸업 | (매핑 대기) |
+| C7 | 실명 카운트 주소당 1회, dev 제외, 단조 | (매핑 대기) |
+| C8 | LP 전량 dEaD, 풀 준비금 = DEX / r + lpSeed, 풀 스팟 ≥ 커브 종가 | **23** |
+| C9 | 졸업 전 보유자 간 전송 revert, 제3자 createPool revert, 졸업 후 전송 | (매핑 대기) |
+| C10 | 졸업 후 buy/sell revert, 수수료 인출 정상, 풀 스왑·totalFeeBps 100 | (매핑 대기) |
+| C11 | 전원 전량 매도 시 모두 지급, r = s = 0, 적립금 유지 | (매핑 대기) |
+| C12 | 슬리피지·tokensOut 0 revert | (매핑 대기) |
+| C13 | claimDevFees dev 만, sweep 은 treasury 로만 | (매핑 대기) |
+
+지시서 v3.1 원문이 이 리포·세션에 없어 18~21, 26 의 문구를 확인할 수 없다. 17 은 v2 SPEC 정의,
+23 은 아래 새 문구 기준으로만 매핑했다. 나머지는 PM 매핑을 받아 채운다.
+
+**불변식 23 새 문구:** 준비금 기준으로 풀 스팟가 = 커브 종가, LP 시드 합류분만큼만 위로.
+실측 (호가 3종, 혼합 이력 후 졸업): (풀 − 종가)/종가 = lpSeed/r = 0.16856% (1e-9 이내 일치),
+lpSeedBps 0 커브에서는 상대 오차 0 / 1.7e-13 / 1e-18 (KRWs18 / 6-dec / WETH).
+
+### 테스트
+
+- 신규: `L0PoolFeeCap.t.sol` 2, `CurveSale.t.sol` 15 × 호가 3종(KRWs 18, 6-dec, WETH 18 Vq 0.6e18) = 45.
+- `BytecodeSize.t.sol` 목록에 CurveSale 추가.
+- 합계 241 → **288 그린**.
