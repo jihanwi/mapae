@@ -7,6 +7,7 @@ import {MockKRWAbi, MockDojangAbi} from "./contracts/abis";
 import {useOnboarding} from "./hooks";
 import {useTx, useGlobalTxBusy, useToast} from "./components/tx";
 import {fmt, shortAddr} from "./lib/format";
+import {OnboardingProvider} from "./components/OnboardingModal";
 
 function Nav() {
     const {address, isConnected, chainId} = useAccount();
@@ -153,7 +154,9 @@ export default function App() {
         <div className="min-h-[100dvh] bg-ink-950 text-hanji-100">
             <Nav />
             <OnboardingStrip />
-            <Outlet />
+            <OnboardingProvider>
+                <Outlet />
+            </OnboardingProvider>
         </div>
     );
 }

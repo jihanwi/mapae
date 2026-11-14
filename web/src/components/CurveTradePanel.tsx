@@ -16,7 +16,9 @@ import {CurveFactoryAbi, CurveSaleAbi, MapaePoolV3Abi, MembershipTokenV3Abi} fro
 import {ADDR_V3} from "../contracts/addressesV3";
 import {giwaSepolia} from "../config/chain";
 import {fmt, sanitizeAmountInput} from "../lib/format";
-import {RunFn, TxButton} from "./tx";
+import {RunFn, RunOpts, TxButton} from "./tx";
+import {PrimaryBtn} from "./ui";
+import {opensOnboarding, useOnboardingModal} from "./OnboardingModal";
 
 // Layout note (390px): full-width column, inputs are flex-1 min-w-0, rows wrap (flex-wrap);
 // no element has a fixed pixel width.
@@ -145,16 +147,58 @@ export function CurveTradePanel({c}: {c: CurveDetail}) {
     );
 }
 
-function CtaBlock({state, side, action}: {state: CtaState; side: Side; action: (run: RunFn) => Promise<unknown>}) {
+/** Label for the button that opens the onboarding modal (no transaction is sent from it). */
+export function modalLabel(state: CtaState): string {
+    if (state.kind === "connect") return copy.curve.cta.modalConnect;
+    if (state.kind === "wrongChain") return copy.curve.cta.modalSwitch;
+    if (state.kind === "notVerified") return copy.curve.cta.modalVerify;
+    return copy.curve.cta.modalKrw;
+}
+
+function CtaBlock({
+    state,
+    side,
+    action,
+    payToken,
+    amount,
+    refetch,
+}: {
+    state: CtaState;
+    side: Side;
+    action: (run: RunFn) => Promise<unknown>;
+    payToken: Address | "native";
+    amount: bigint;
+    refetch: () => void;
+}) {
+    const openModal = useOnboardingModal();
+    const krwNeeded = payToken !== "native" && payToken.toLowerCase() === ADDR_V3.mockKRW.toLowerCase() ? amount : 0n;
+    if (opensOnboarding(state, payToken)) {
+        return (
+            <>
+                <PrimaryBtn className="w-full" onClick={() => openModal({krwNeeded, onProgress: refetch})}>
+                    {modalLabel(state)}
+                </PrimaryBtn>
+                {state.kind === "notVerified" && <p className="text-[12px] text-brass-400 mt-2 mb-0">{copy.curve.cta.notVerifiedNote}</p>}
+            </>
+        );
+    }
     const enabled = state.kind === "ready" || state.kind === "approve";
     return (
-        <>
-            <TxButton className="w-full" disabled={!enabled} action={action}>
-                {ctaLabel(state, side)}
-            </TxButton>
-            {state.kind === "notVerified" && <p className="text-[12px] text-brass-400 mt-2 mb-0">{copy.curve.cta.notVerifiedNote}</p>}
-        </>
+        <TxButton className="w-full" disabled={!enabled} action={action}>
+            {ctaLabel(state, side)}
+        </TxButton>
     );
+}
+
+/** v3 run options: v3 error copy, and reopen onboarding when the tx reverts NotVerified. */
+function useRunOpts(refetch: () => void, krwNeeded: bigint): RunOpts {
+    const openModal = useOnboardingModal();
+    return {
+        scope: "v3",
+        onRevert: (name) => {
+            if (name === "NotVerified") openModal({krwNeeded, onProgress: refetch});
+        },
+    };
 }
 
 function Fees({platform, dev, lp, unit}: {platform: bigint; dev: bigint; lp: bigint; unit: string}) {
@@ -180,13 +224,16 @@ function CurveBuy({c, amount, slip}: {c: CurveDetail; amount: bigint; slip: numb
     });
     const quote = q.settled ? q.data : undefined;
     const effective: CtaState = state.kind === "ready" || state.kind === "approve" ? (quote && quote.tokensOut > 0n ? state : {kind: "loading"}) : state;
+    const payToken: Address | "native" = c.isEth ? "native" : c.quote;
+    const opts = useRunOpts(refetch, c.isEth ? 0n : amount);
 
     const action = async (run: RunFn) => {
         if (!quote || !address) return;
         const min = minOut(quote.tokensOut, slip);
         if (state.kind === "approve") {
             const ok = await run("승인", () =>
-                writeContractAsync({address: c.quote, abi: MembershipTokenV3Abi, functionName: "approve", args: [c.address, amount], chainId: giwaSepolia.id})
+                writeContractAsync({address: c.quote, abi: MembershipTokenV3Abi, functionName: "approve", args: [c.address, amount], chainId: giwaSepolia.id}),
+                opts
             );
             if (!ok) return;
         }
@@ -199,10 +246,12 @@ function CurveBuy({c, amount, slip}: {c: CurveDetail; amount: bigint; slip: numb
                       args: [c.address, min],
                       value: amount,
                       chainId: giwaSepolia.id,
-                  })
+                  }),
+                  opts
               )
             : await run(`${c.symbol} 매수`, () =>
-                  writeContractAsync({address: c.address, abi: CurveSaleAbi, functionName: "buy", args: [amount, min], chainId: giwaSepolia.id})
+                  writeContractAsync({address: c.address, abi: CurveSaleAbi, functionName: "buy", args: [amount, min], chainId: giwaSepolia.id}),
+                  opts
               );
         if (ok) refetch();
     };
@@ -222,7 +271,7 @@ function CurveBuy({c, amount, slip}: {c: CurveDetail; amount: bigint; slip: numb
                     </>
                 )}
             </div>
-            <CtaBlock state={effective} side="buy" action={action} />
+            <CtaBlock state={effective} side="buy" action={action} payToken={payToken} amount={amount} refetch={refetch} />
         </>
     );
 }
@@ -236,12 +285,14 @@ function CurveSell({c, amount, slip}: {c: CurveDetail; amount: bigint; slip: num
     const {state, refetch} = useTradeCta({payToken: c.token, amount, spender: c.address});
     const quote = q.settled ? q.data : undefined;
     const effective: CtaState = state.kind === "ready" || state.kind === "approve" ? (quote ? state : {kind: "loading"}) : state;
+    const opts = useRunOpts(refetch, 0n);
 
     const action = async (run: RunFn) => {
         if (!quote || !address) return;
         if (state.kind === "approve") {
             const ok = await run("승인", () =>
-                writeContractAsync({address: c.token, abi: MembershipTokenV3Abi, functionName: "approve", args: [c.address, amount], chainId: giwaSepolia.id})
+                writeContractAsync({address: c.token, abi: MembershipTokenV3Abi, functionName: "approve", args: [c.address, amount], chainId: giwaSepolia.id}),
+                opts
             );
             if (!ok) return;
         }
@@ -252,7 +303,8 @@ function CurveSell({c, amount, slip}: {c: CurveDetail; amount: bigint; slip: num
                 functionName: "sell",
                 args: [amount, minOut(quote.quoteOut, slip)],
                 chainId: giwaSepolia.id,
-            })
+            }),
+            opts
         );
         if (ok) refetch();
     };
@@ -270,7 +322,7 @@ function CurveSell({c, amount, slip}: {c: CurveDetail; amount: bigint; slip: num
                 )}
                 {c.isEth && <p className="text-[12px] text-hanji-400 m-0 mt-2">{copy.curve.wethOut}</p>}
             </div>
-            <CtaBlock state={effective} side="sell" action={action} />
+            <CtaBlock state={effective} side="sell" action={action} payToken={c.token} amount={amount} refetch={refetch} />
         </>
     );
 }
@@ -285,13 +337,15 @@ function PoolSide({c, side, amount, slip}: {c: CurveDetail; side: Side; amount: 
     const quote = q.settled ? q.data : undefined;
     const effective: CtaState = state.kind === "ready" || state.kind === "approve" ? (quote && quote > 0n ? state : {kind: "loading"}) : state;
     const quoteUnitLabel = c.isEth ? "WETH" : "KRWs";
+    const opts = useRunOpts(refetch, side === "buy" && !c.isEth ? amount : 0n);
     const outUnit = side === "buy" ? c.symbol : quoteUnitLabel;
 
     const action = async (run: RunFn) => {
         if (!quote || !address) return;
         if (state.kind === "approve") {
             const ok = await run("승인", () =>
-                writeContractAsync({address: payToken, abi: MembershipTokenV3Abi, functionName: "approve", args: [pool, amount], chainId: giwaSepolia.id})
+                writeContractAsync({address: payToken, abi: MembershipTokenV3Abi, functionName: "approve", args: [pool, amount], chainId: giwaSepolia.id}),
+                opts
             );
             if (!ok) return;
         }
@@ -302,7 +356,8 @@ function PoolSide({c, side, amount, slip}: {c: CurveDetail; side: Side; amount: 
                 functionName: side === "buy" ? "swapQuoteForToken" : "swapTokenForQuote",
                 args: [amount, minOut(quote, slip), address],
                 chainId: giwaSepolia.id,
-            })
+            }),
+            opts
         );
         if (ok) refetch();
     };
@@ -315,7 +370,7 @@ function PoolSide({c, side, amount, slip}: {c: CurveDetail; side: Side; amount: 
                 {amount > 0n && quote === undefined && !q.isError && <p className="text-[13px] text-hanji-400 m-0 mb-2">{copy.curve.quoting}</p>}
                 {quote !== undefined && <Row label={copy.curve.poolReceive} value={`${fmt(quote, side === "buy" ? 4 : c.isEth ? 8 : 2)} ${outUnit}`} strong />}
             </div>
-            <CtaBlock state={effective} side={side} action={action} />
+            <CtaBlock state={effective} side={side} action={action} payToken={payToken} amount={amount} refetch={refetch} />
         </>
     );
 }

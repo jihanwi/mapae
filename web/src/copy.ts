@@ -195,11 +195,33 @@ export const copy = {
             enterAmount: "수량을 입력해 주세요",
             insufficient: "잔고가 부족해요",
             loading: "확인하는 중…",
+            modalConnect: "지갑 연결",
+            modalSwitch: "GIWA Sepolia로 전환",
+            modalVerify: "실명 인증하기",
+            modalKrw: "테스트 KRWs 받기",
             approveBuy: "승인 후 매수",
             approveSell: "승인 후 매도",
             buy: "매수",
             sell: "매도",
         },
+    },
+    // v3 온보딩 모달 (ADDR_V3 의 MockDojang / MockKRW)
+    onboardingV3: {
+        title: "거래 준비",
+        sub: "필요한 단계만 진행하면 바로 돌아가 이어서 할 수 있어요",
+        connectTitle: "지갑 연결 · GIWA Sepolia",
+        verifyTitle: "실명 인증",
+        verifyNote: "테스트넷 체험용 인증이에요. 메인넷에서는 업비트 KYC로 발급되는 Verified Address를 씁니다",
+        verifyCta: "테스트넷 실명 인증",
+        krwTitle: "KRWs 잔고",
+        krwNote: (have: string, need: string) => `보유 ${have} KRWs · 필요 ${need} KRWs`,
+        krwCta: (amt: string) => `테스트 KRWs ${amt} 받기`,
+        krwCapNote: (cap: string) => `한 번에 최대 ${cap} KRWs까지 받을 수 있어요. 부족하면 한 번 더 받아 주세요`,
+        needGas: "테스트넷 ETH가 필요합니다. 가스비로 쓸 GIWA Sepolia ETH를 먼저 지갑에 받아 주세요",
+        readError: "인증·잔고 상태를 불러오지 못했어요. 잠시 후 다시 시도해 주세요",
+        ready: "준비가 끝났어요",
+        close: "닫기",
+        open: "거래 준비하기",
     },
     // 클릭 전 disabled 사유 힌트 (과거형 에러와 구분되는 현재형 안내)
     hints: {
@@ -266,6 +288,11 @@ export const copy = {
         noWallet: "연결할 지갑을 찾지 못했어요 — 메타마스크 같은 지갑 확장을 설치한 뒤 다시 시도해 주세요", // P0 4-a
         userRejected: "지갑에서 요청을 취소했어요",
         default: "트랜잭션이 실패했어요 — 잠시 후 다시 시도해 주세요",
+    },
+    // v3 화면 전용 에러 문구 (v1/v2 화면은 위 errors 를 그대로 쓴다)
+    errorsV3: {
+        NotVerified: "실명 인증이 필요해요",
+        NotVerifiedCreator: "실명 인증이 필요해요",
     },
     creators: {
         // 데모 크리에이터 표시명 (offering 주소 → 이름) — 미등록 주소는 토큰명 사용
