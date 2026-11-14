@@ -3,9 +3,10 @@
 //   2+ wallets → let the user pick (name + icon).
 // - No discovered wallet but window.ethereum present → generic injected connector.
 // - Neither → "noWallet". Connect failures are classified (rejected / pending / unknown).
+// - No chainId is passed to connect: the wallet connects on whatever chain it is on, and a wrong
+//   chain is handled afterwards by useSwitchToGiwa (nav button / onboarding step 1).
 import {useCallback, useState} from "react";
 import {Connector, useConnect, useConnectors} from "wagmi";
-import {giwaSepolia} from "../config/chain";
 import {useCopy} from "../copy";
 import {useToast} from "../components/tx";
 import {classifyConnectError} from "../lib/connectError";
@@ -38,7 +39,7 @@ export function useWalletConnect(opts?: {onSuccess?: () => void}) {
     const connectWith = useCallback(
         (c: Connector) => {
             setChoices(null);
-            connect({connector: c, chainId: giwaSepolia.id}, {onSuccess: () => opts?.onSuccess?.(), onError: fail});
+            connect({connector: c}, {onSuccess: () => opts?.onSuccess?.(), onError: fail});
         },
         [connect, fail, opts]
     );

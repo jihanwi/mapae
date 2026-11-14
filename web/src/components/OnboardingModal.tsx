@@ -5,8 +5,9 @@
 // (max-h + overflow-y-auto) when taller than the viewport.
 import {createContext, ReactNode, useCallback, useContext, useState} from "react";
 import {Abi} from "viem";
-import {useAccount, useBalance, useReadContracts, useSwitchChain, useWriteContract} from "wagmi";
+import {useAccount, useBalance, useReadContracts, useWriteContract} from "wagmi";
 import {useWalletConnect} from "../hooks/useWalletConnect";
+import {useSwitchToGiwa} from "../hooks/useSwitchToGiwa";
 import {WalletPicker} from "./WalletPicker";
 import {useCopy} from "../copy";
 import {ADDR_V3} from "../contracts/addressesV3";
@@ -71,9 +72,6 @@ function OnboardingModal({args, onClose}: {args: OpenArgs; onClose: () => void})
     const tr = useCopy();
     const {address, isConnected, chainId} = useAccount();
 
-    // wagmi's injected connector falls back to wallet_addEthereumChain (giwaSepolia config) when
-    // the wallet does not know the chain yet.
-    const {switchChain, isPending: switching} = useSwitchChain();
     const {writeContractAsync} = useWriteContract();
     const {run, busy} = useTx();
     const owner = address ?? ZERO;
@@ -104,6 +102,7 @@ function OnboardingModal({args, onClose}: {args: OpenArgs; onClose: () => void})
     };
 
     const wc = useWalletConnect({onSuccess: progress});
+    const {switchToGiwa, isPending: switching} = useSwitchToGiwa({onSuccess: progress});
     const allDone = onRightChain && verified === true && krwDone;
 
     return (
@@ -126,7 +125,7 @@ function OnboardingModal({args, onClose}: {args: OpenArgs; onClose: () => void})
                             {tr.connect}
                         </PrimaryBtn>
                     ) : (
-                        <PrimaryBtn className="w-full" disabled={switching} onClick={() => switchChain({chainId: giwaSepolia.id}, {onSuccess: progress})}>
+                        <PrimaryBtn className="w-full" disabled={switching} onClick={switchToGiwa}>
                             {tr.wrongChain}
                         </PrimaryBtn>
                     )}

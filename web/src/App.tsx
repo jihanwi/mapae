@@ -1,6 +1,7 @@
 import {Link, NavLink, Outlet, useLocation} from "react-router-dom";
-import {useAccount, useDisconnect, useReadContract, useSwitchChain, useWriteContract} from "wagmi";
+import {useAccount, useDisconnect, useReadContract, useWriteContract} from "wagmi";
 import {useWalletConnect} from "./hooks/useWalletConnect";
+import {useSwitchToGiwa} from "./hooks/useSwitchToGiwa";
 import {WalletPicker} from "./components/WalletPicker";
 import {giwaSepolia} from "./config/chain";
 import {useCopy, useLang, copy} from "./copy";
@@ -47,7 +48,7 @@ function Nav() {
     const legacy = isOfferingSection(pathname);
     const wc = useWalletConnect();
     const {disconnect} = useDisconnect();
-    const {switchChain} = useSwitchChain();
+    const {switchToGiwa} = useSwitchToGiwa();
     const {krwBalance, ethBalance} = useOnboarding(); // legacy (ADDR) balances
     // v3 screens show the v3 MockKRW balance (ADDR_V3); the two deployments are never mixed.
     const krwV3 = useReadContract({
@@ -99,7 +100,7 @@ function Nav() {
     const shownKrw = legacy ? krwBalance : ((krwV3.data as bigint | undefined) ?? 0n);
 
     const wallet = wrongChain ? (
-        <button onClick={() => switchChain({chainId: giwaSepolia.id})}
+        <button onClick={switchToGiwa}
             className="min-h-[44px] px-5 py-2.5 bg-brass-400 text-ink-950 rounded-input text-[14px] font-bold hover:bg-brass-500 active:bg-brass-600">
             {tr.wrongChain}
         </button>
