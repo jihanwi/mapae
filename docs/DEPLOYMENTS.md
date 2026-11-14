@@ -2,6 +2,25 @@
 
 체인: GIWA Sepolia (chain ID `91342`) · Explorer: https://sepolia-explorer.giwa.io
 
+## v3.1 배포 (실명 우선 구간, 풀 스왑 개방): 배포 후 기입
+
+- 규칙: 커브 개설 후 `priorityWindow`(기본 10분) 동안만 실명 지갑이 매수, 그 뒤 누구나 매수. 매도와 졸업 풀 스왑은 누구나.
+  커브 개설과 L1 공모 응모는 실명 유지. 자세한 내용은 [`docs/WORKLOG_v3.md`](WORKLOG_v3.md)의 v3.1 절.
+- 배포 절차: [`docs/DEPLOY_V3_1.md`](DEPLOY_V3_1.md). 주소 기록: `deployments/giwa-sepolia-v3_1.json` (배포 후 생성)
+- 배포 블록: 배포 후 기입 · 배포자: 배포 후 기입 · 트레저리: 배포 후 기입
+
+| 컨트랙트 | 주소 | 비고 |
+|---|---|---|
+| MockKRW | 배포 후 기입 | `REUSE_MOCK_KRW`로 v3 주소 재사용 예정 |
+| MockDojang | 배포 후 기입 | `REUSE_MOCK_DOJANG`로 v3 주소 재사용 예정 |
+| PoolFactory | 배포 후 기입 | 신규 (MapaePool 바이트코드 변경) |
+| FeeRouter | 배포 후 기입 | 신규 |
+| BuybackVault / BuybackExecutor | 배포 후 기입 | 신규 |
+| DojangEASAdapter | 배포 후 기입 | 신규 |
+| MapaeFactory (mock / EAS) | 배포 후 기입 | 신규 (PoolFactory 참조, Offering 코드 변경) |
+| CurveFactory (mock / EAS) | 배포 후 기입 | 신규 (CurveSale 코드 변경) |
+| MembershipTokenDeployer (라이브러리) | 배포 후 기입 | forge가 broadcast 중 배포 |
+
 ## v3 배포 (실명 본딩커브 런치패드), 2026-11-14 완료
 
 - 배포 블록 `41311959` · 배포자 [`0x67a29AE83f3320C5E9b81D8a1531dE8FcCBED00C`](https://sepolia-explorer.giwa.io/address/0x67a29AE83f3320C5E9b81D8a1531dE8FcCBED00C)
@@ -64,7 +83,8 @@
 
 ### 재현 명령
 
-배포 (트레저리는 배포자와 다른 주소여야 한다):
+v3 당시 명령이다. 지금 `script/DeployV3.s.sol`은 v3.1 스택을 배포하므로, v3 그대로 재현하려면 태그 `v3.0-curve`의
+스크립트를 쓴다. 배포 (트레저리는 배포자와 다른 주소여야 한다):
 
 ```bash
 TREASURY_ADDRESS=0x... forge script script/DeployV3.s.sol --account deployer --rpc-url $GIWA_SEPOLIA_RPC_URL --broadcast --verify --verifier blockscout --verifier-url $BLOCKSCOUT_API_URL

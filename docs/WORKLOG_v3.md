@@ -594,3 +594,82 @@ immutable). FeeRouter 합계 밴드는 라우터 구조체 4필드 합만 검사
 - `verify-children.js` 의 EAS 스택(`factoryDojang`/`curveFactoryDojang`)은 실제 개설 이력이 없으면 이벤트 0건으로 실패한다
   (의도된 hard-fail). EAS 스택은 개설 후에 돌린다.
 - 기존 빌드 경고(컴파일러 2: `InvariantsV2.t.sol` shadowing, `DemoStage2aL0.s.sol` 미사용 변수 / lint 다수)는 T11·T12 신규 코드와 무관.
+
+## T14 — v3.1 실명 우선 구간 (priority window), 풀 스왑 개방
+
+오너 결정(2026-11-15): v3는 매수·매도·풀 스왑 모두 실명이라 사실상 한국 거주자만 거래할 수 있었다. v3.1에서 실명을
+"개설 직후 일정 시간의 우선권"으로 바꾼다.
+
+### 바뀐 규칙
+
+| 경로 | v3 | v3.1 |
+|---|---|---|
+| 커브 개설 (`createCurve`, `createCurveWithETH`) | 실명 | 실명 (변경 없음, 7일 3개 제한 유지) |
+| 커브 매수 (`buy`, `buyFor`, `buyWithETH`) | 실명 | 개설 후 `priorityWindow`(기본 600초) 동안만 실명, 그 뒤 누구나 |
+| 커브 매도 (`sell`) | 실명 | 보유자 누구나 |
+| 졸업 풀 / L1 풀 스왑 | 실명(호출자, 수령자) | 누구나 |
+| L1 정가 공모 응모 (`Offering`) | 실명 | 실명 (변경 없음) |
+| `verifiedBuyerCount` | 지갑의 첫 매수 | 지갑이 실명 상태로 한 첫 매수 (구간 뒤에도 실명 매수만) |
+
+- 기준은 시간이다(판매 물량이 아니다). 경계 `block.timestamp == priorityUntil`은 열린 구간이다.
+- `CurveFactory.priorityWindow`(uint32, 기본 600, 밴드 60~3600, owner 전용 `setPriorityWindow`)는 개설 시점 값이
+  `CurveSale.priorityUntil`(immutable)로 고정된다. 바꿔도 이미 열린 커브는 그대로다.
+- Dev 첫 매수(ERC-20, ETH 경로)는 Dev가 실명이고 구간 안이라 그대로 동작한다. Dev는 집계하지 않는다.
+- 비실명으로 먼저 산 지갑이 나중에 실명이 되어 다시 사면 그때 한 번 센다. `hasBought`는 의미가 바뀌어
+  `countedVerifiedBuyer`로 이름을 바꿨다.
+- 커브 수식, 수수료, 졸업 로직, 수수료 청구·스윕, 졸업 전 토큰 전송 잠금, 풀 요율 하드캡, 소각 경로 권한, LP 영구
+  락업은 바꾸지 않았다.
+
+### 실명 조회 실패 처리
+
+- 구간 안: fail-closed. `dojang.isVerified`가 revert하면 매수도 revert한다(try/catch 없음). 구간 안에서는 실명이 매수
+  조건이라, 조회할 수 없으면 거래를 막는 쪽이 규칙과 맞다.
+- 구간 뒤: `try dojang.isVerified`로 조회하고 revert하면 비실명으로 본다. 이때 실명 여부는 집계와 `Buy.verified`
+  표시에만 쓰이므로, Dojang 장애가 누구나 가능한 매수를 막으면 안 된다. 장애 중 매수는 집계되지 않는 쪽으로만 틀린다.
+- 한계: `try`는 호출 자체의 revert만 잡는다. Dojang 주소에 코드가 없거나 반환값을 디코드할 수 없으면 여전히 revert한다
+  (dojang은 생성자에서 0 주소가 아님을 검사한다).
+
+### ABI 변경 (웹, 인덱서가 맞출 것)
+
+- 이벤트 `CurveSale.Buy(address indexed trader, bool isDev, bool verified, uint256 quoteSpent, uint256 tokensOut,
+  uint256 platformFee, uint256 devFee, uint256 lpSeedFee, uint256 r, uint256 s)`: `verified` 추가로 topic0가 바뀐다.
+- 이벤트 `CurveFactory.CurveCreated(..., string name, string symbol, uint64 priorityUntil)`: 끝에 추가, topic0 변경.
+- 이벤트 `CurveFactory.PriorityWindowSet(uint32 oldWindow, uint32 newWindow)` 신규.
+- `Sell`, `Graduated`, `Swapped` 이벤트는 그대로다.
+- 함수: `CurveSale.priorityUntil()`, `CurveSale.inPriorityWindow()`, `CurveSale.countedVerifiedBuyer(address)` 추가,
+  `CurveSale.hasBought(address)` 삭제. `CurveFactory.priorityWindow()`, `setPriorityWindow(uint32)`,
+  `MIN_PRIORITY_WINDOW()`, `MAX_PRIORITY_WINDOW()` 추가.
+- 에러: `CurveFactory.PriorityWindowOutOfBand(uint32)` 추가. `MapaePool.NotVerified`, `PoolFactory.ZeroDojang` 삭제.
+  `CurveSale.NotVerified`는 구간 안 매수에서만 나온다(매도에서는 더 이상 나오지 않는다).
+- 생성자: `CurveSale.InitParams` 끝에 `uint32 priorityWindow`. `MapaePool` 생성자와 `PoolFactory.createPool`에서
+  마지막 `IDojang dojang` 인자 삭제, `MapaePool.dojang()` 삭제.
+
+### 재배포 대상
+
+- 재사용: MockKRW, MockDojang (`REUSE_MOCK_KRW`, `REUSE_MOCK_DOJANG`). 잔고와 실명 등록이 그대로 이어진다.
+- 반드시 새로: PoolFactory(MapaePool 바이트코드 변경), MapaeFactory 2개(PoolFactory를 immutable로 참조하고, 내장한
+  OfferingDeployer의 Offering 코드가 `createPool` 호출 변경으로 바뀜), CurveFactory 2개(CurveSale 코드 변경, PoolFactory와
+  MapaeFactory를 immutable로 참조).
+- 코드가 바뀌지 않아 기술적으로는 재사용할 수 있지만 새로 배포하는 것: FeeRouter, BuybackVault, BuybackExecutor,
+  DojangEASAdapter, MembershipTokenDeployer(라이브러리, forge가 broadcast 중 배포). v3.1 스택을 v3와 설정(요율, owner
+  배선)까지 분리해 두려는 것이다.
+- 기존 `deployments/giwa-sepolia-v3.json`은 그대로 두고 v3.1은 `deployments/giwa-sepolia-v3_1.json`에 쓴다.
+  `script/verify-children.js`는 `--deployment`(기본: v3_1 json이 있으면 그것)로 라이브러리 주소를 읽고, 새 생성자
+  시그니처(MapaePool 8인자, CurveSale InitParams 10필드, priorityWindow = priorityUntil - 생성 블록 시각)를 쓴다.
+- 배포 절차: `docs/DEPLOY_V3_1.md`.
+
+### 테스트
+
+- 신규 `test/CurvePriority.t.sol` (14, 이름에 priority): 구간 안 실명/비실명, 경계(`priorityUntil - 1` revert,
+  `priorityUntil` 성공), 구간 안 Dojang revert 시 매수 revert, 구간 뒤 Dojang revert에도 매수 성공(verified false, 집계 불변),
+  구간 뒤 실명만 집계, 늦은 실명 1회 집계, 매도 개방(비실명 보유자, 실명 취소 지갑), Dev 첫 매수(ERC-20, ETH),
+  ETH 매수의 구간 적용, `setPriorityWindow` 권한·밴드·이벤트, 열린 커브 불변, `CurveCreated.priorityUntil`, 구간 안 졸업 후
+  풀 개방, 퍼즈 "매수 성공 <=> 구간 뒤 또는 실명".
+- `test/PoolDojangGate.t.sol` → `test/PoolOpenSwap.t.sol` (4): 누구나 양방향 스왑(퍼즈), 다른 수신자, 소각 경로 권한 유지,
+  minOut 유지.
+- `test/DeployV3.t.sol` (+3): v3.1 기본 구간 600, mock 재사용 배선, 코드 없는 재사용 주소 거부.
+- 기존 테스트를 새 규칙에 맞춤(C1을 구간 테스트로, Buy 시그니처, `countedVerifiedBuyer`, createPool 인자).
+- 합계 358 → **373 그린**. `forge fmt --check` 통과, BytecodeSize 통과.
+- RPC 리허설(`forge script ... --rpc-url https://sepolia-rpc.giwa.io`)은 작업 세션의 네트워크 정책으로 GIWA RPC에 연결할
+  수 없어 실행하지 못했다. 같은 `deploy()` 경로를 `DeployV3.t.sol`이 로컬에서 검증한다. 리허설은 `docs/DEPLOY_V3_1.md`
+  1단계에서 오너가 한다.
