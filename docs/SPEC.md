@@ -7,6 +7,130 @@ MAPAE: GIWA 체인(업비트/두나무의 이더리움 L2) 위의 크리에이�
 검증된 크리에이터가 실명 지갑으로 발행하는 고정 공급 양도가능 회원권 ERC-20.
 발행은 정가 공모, 유통은 AMM, 소비(리딤)는 원화 고정가.
 
+## v3 변경 (Phase 1, 실명 본딩커브 레일): 이 절이 하위 절과 상충 시 **우선**
+
+v3에서 바뀐 컨트랙트 구성과 인터페이스. 숫자는 전부 `src/` 상수에서 옮겼다. 작업 기록은 `docs/WORKLOG_v3.md`,
+배포 주소는 `docs/DEPLOYMENTS.md`.
+
+### 컨트랙트 구성
+
+| 컨트랙트 | 역할 |
+|---|---|
+| `src/lib/CurveMath.sol` | 가상 준비금 상수곱 커브의 순수 수학 라이브러리. 저장소·수수료 없음 |
+| `src/CurvePresets.sol` | 커브 기하, 가상 호가 준비금, 수수료 프리셋 상수 |
+| `src/CurveSale.sol` | L0 커브 1차 시장(`IPrimaryMarket` 구현). 매수·매도·수수료 적립·졸업 |
+| `src/CurveFactory.sol` | 커브 개설, Dev 첫 매수, 발행 빈도 제한, ETH 매수·개설 경로 |
+| `src/MapaeFactory.sol` | 정가 공모 팩토리 + 호가 자산 레지스트리(`allowQuote`, `setQuoteEnabled`) |
+| `src/FeeRouter.sol` | 등급별 AMM 요율 + 커브 요율(`getCurveFees`)과 하드 밴드 |
+| `src/MapaePool.sol` | AMM 풀. 스왑 실명 게이트, 풀 몫 상한 |
+| `src/MembershipToken.sol` | 고정 공급 ERC-20. `endTransferLock()` 추가 |
+| `src/interfaces/IWETH.sol` | WETH 최소 인터페이스(`deposit`, `withdraw`) |
+
+### 커브 기하 (`CurvePresets`)
+
+| 상수 | 값 |
+|---|---|
+| `TOTAL_SUPPLY` | 1,000,000,000e18 |
+| `CURVE_SUPPLY` (S, 커브 판매 물량) | 800,000,000e18 |
+| `DEX_SUPPLY` (졸업 풀 시딩 물량) | 200,000,000e18 |
+| `VIRTUAL_TOKEN_RESERVE` (Vt) | 1_066_666_666_666_666_666_666_666_667 (= 3,200,000,000e18 / 3 올림) |
+| `VIRTUAL_QUOTE_KRWS_WHOLE` | 2,000,000 (원 단위, `krwsVirtualQuote(decimals)` = 2,000,000 × 10^decimals) |
+| `VIRTUAL_QUOTE_RESERVE_WETH` | 0.6e18 (메인넷 프리셋. 테스트넷 배포는 레지스트리에 0.002 ETH 등록) |
+
+- Vt 유도: 풀 시딩가 = 커브 종가가 되려면 `DEX_SUPPLY = S × (Vt − S) / Vt`, 즉 `Vt = S² / (S − DEX_SUPPLY)` = 32억/3.
+- 결과(Vq 무관 비율): 졸업 임계(수수료 제외 순모금) = 3 × Vq, 졸업 FDV = 15 × Vq, 졸업가/시작가 = 16배.
+  KRWs 프리셋에서 임계 6,000,000 KRWs, FDV 30,000,000 KRWs.
+
+### CurveMath
+
+- 모델: `(Vq + r) × (Vt − s) ≥ Vq × Vt = k` (Vq 가상 호가 준비금, r 실 준비금, s 누적 판매량).
+- `buyExactQuoteIn(p, r, s, quoteIn) → (tokensOut, quoteUsed)`: tokensOut 내림, quoteUsed는 산 물량의 올림 비용,
+  잔여 물량 `S − s`에서 자른다. 비용이 0으로 계산되는 매수는 `(0, 0)`이고, 잔여분 전량을 가져가는 종결 매수만 예외다.
+- `sellExactTokenIn(p, r, s, tokenIn) → quoteOut`: 내림. `tokenIn > s`면 revert.
+- `costToSellOut(p, r, s)`, `spotPrice(p, r, s)`(분자, 분모), `validate(p)`.
+- 상태 불변식: 라이브러리 결과만 반영하면 `Vq + r == ceil(Vq × Vt / (Vt − s))`가 항상 성립한다.
+
+### CurveSale
+
+- 생성자 `InitParams { quote, dojang, dev, feeRouter, poolFactory, mapaeFactory, tokenName, tokenSymbol, virtualQuote }`.
+  생성 시 FeeRouter 커브 요율을 immutable로 스냅샷하고, 토큰을 전송 잠금 `CURVE_LOCK_DURATION = 100 * 365 days`로
+  만든 뒤 `TOTAL_SUPPLY` 전량을 자신에게 민트한다(민트 권한 소각).
+- 거래: `buy(quoteIn, minTokensOut)`, `sell(tokenIn, minQuoteOut)`, `buyFor(trader, quoteIn, minTokensOut)`(factory 전용).
+  거래자 실명 게이트(fail-closed), 졸업 후 revert.
+- 수수료 청구(t = platform + dev + lpSeed):
+  - 매수: `net = quoteIn − floor(quoteIn·t/1e4)`로 커브 계산, 청구액 `P = min(quoteIn, ceil(quoteUsed·1e4/(1e4 − t)))`,
+    `fee = P − quoteUsed`, platform·dev는 P 기준 floor, lpSeed는 나머지. 매수자에게서 정확히 P만 가져온다.
+  - 매도: `gross = sellExactTokenIn`, `fee = floor(gross·t/1e4)`, 지급 `gross − fee`는 r에서만 나간다.
+- 졸업 조건: 커브 완판(`s == CURVE_SUPPLY`) 하나뿐. 그 매수와 같은 tx에서 L0 풀을 만들고(royalty
+  `SWAP_FEE_DEV_BPS` 30, burn 0, creator = dev) `DEX_SUPPLY`와 `r + lpSeedAccrued`를 넣어 LP를 0xdEaD로 민트한 뒤
+  `endTransferLock()`을 호출한다.
+- 실명 카운트: 주소당 첫 매수에서 `verifiedBuyerCount` 증가, dev는 영구 제외.
+- 인출: `claimDevFees()`(dev 전용), `sweepPlatformFees()`(누구나 호출, treasury로). 졸업 후에도 동작.
+- view: `quoteBuy`, `quoteSell`(실행과 wei 단위 일치), `spotPrice`, `token`, `settlementToken`(= quote),
+  `phase`(졸업 전 Open, 후 Settled), `tier`(항상 L0), `totalFeeBps`.
+
+### CurveFactory
+
+- 생성자: `(dojang, feeRouter, poolFactory, mapaeFactory, weth, owner)`.
+- `createCurve(quote, name, symbol, devBuyQuoteIn, minTokensOut)`: 검사 순서 `curveEnabled` → 개설자 실명 →
+  `mapaeFactory.isQuoteAllowed(quote)` → 발행 빈도 → 이름·심볼 길이. 가상 준비금은 레지스트리 값.
+  `devBuyQuoteIn > 0`이면 같은 tx에서 `buyFor(dev, ...)`로 Dev 첫 매수, 미사용분 환불, allowance 0 복구.
+- `createCurveWithETH(name, symbol, minTokensOut)`(payable): quote = WETH, Dev 첫 매수 금액 = msg.value.
+- `buyWithETH(curve, minTokensOut)`(payable): WETH 커브만, 미사용분은 ETH로 환불. `receive()`는 WETH만 받는다.
+- 발행 빈도: 실명 지갑당 연속 7일(`CURVE_WINDOW`) 안 최대 3개(`MAX_CURVES_PER_WINDOW`).
+- 이름 1~32 bytes(`MAX_NAME_BYTES`), 심볼 1~10 bytes(`MAX_SYMBOL_BYTES`).
+- `setCurveEnabled`(onlyOwner): 새 커브 개설만 막는다.
+- 레지스트리: `allCurves`, `curvesByDev`, `curveOf(token)`, `devOf(token)`, `isCurve(curve)`, `nextAllowedAt(dev)`.
+
+### 호가 자산 레지스트리 (`MapaeFactory`)
+
+- `QuoteConfig { registered, enabled, decimals, curveVirtualQuote }`.
+- `allowQuote(quote, curveVirtualQuote)`(onlyOwner): 한 번만 등록, decimals는 `IERC20Metadata.decimals()`로 저장,
+  등록 후 가상 준비금과 decimals는 바꿀 수 없다.
+- `setQuoteEnabled(quote, enabled)`(onlyOwner): 새 커브 개설 허용 여부만 바꾼다.
+- view: `isQuoteAllowed`, `quoteConfig`, `allQuotes`. 정가 공모는 등급과 무관하게 `paymentToken`(KRWs)만 쓴다.
+
+### 수수료 구조와 밴드 (`FeeRouter`, `MapaePool`, `Offering`)
+
+커브 구간 요율(`getCurveFees`, `setCurveFees`):
+
+| 몫 | 프리셋 | 밴드 |
+|---|---|---|
+| platform | 50 | 40~60 |
+| dev | 35 | 20~40 |
+| lpSeed | 15 | 0~20 |
+| 합 | 100 | 80~100 |
+
+AMM 프리셋 `TierFees(offering, platform, royalty, burn, lp, merch)`: L0 `(500, 40, 30, 0, 30, 0)`,
+L1 `(750, 40, 60, 30, 20, 400)`, L2 `(750, 40, 60, 30, 20, 300)`.
+
+| 밴드 | L0 | L1 / L2 |
+|---|---|---|
+| swapPlatform | 40~70 | 20~60 |
+| 스왑 4필드 합 | 80~100 | 100~150 |
+| 라우터 몫(platform + lp) | ≤ 70 | ≤ 60 |
+| offering | 0~500 | 500~1000 |
+| merch | 0 | 0~500 |
+| 풀 몫(royalty + burn, `MapaePool` 생성자) | royalty ≤ 30, burn 0 | ≤ 90 |
+| 풀 총 요율 | ≤ 100 (1.00%) | ≤ 150 (1.50%) |
+
+- 정가 공모 per-pool 밴드(`Offering`): L1/L2 royalty ≤ 80, burn ≤ 50, 합 ≤ 90. L0 royalty ≤ 30, burn 0.
+- `CurvePresets.BUYBACK_BPS` = 5000 상수는 있으나 플랫폼 수수료의 바이백 라우팅은 구현돼 있지 않다.
+
+### 정가 공모 토크노믹스 (결정 21)
+
+- 플랫폼 토큰 배분 없음(전 등급). 실행가능식은 `fBps + creatorTokenBps + lpTokenBps ≤ 10_000`.
+- 정산 tx에서 잔여 물량(공급 − 판매분 − 크리에이터 몫 − LP 몫)과 LP 시딩 잉여를 소각(`RemainderBurned`).
+- `AllocationRecipients`는 `(creatorVesting, platform)` 2개이고, platform은 공모 대금의 플랫폼 몫만 받는다.
+- 기본 프리셋(공모 60 / 크리에이터 25 / LP 9)에서는 잔여 6%가 소각된다.
+
+### 전송·실명 규칙
+
+- 커브 토큰은 졸업 전 커브와의 왕복 전송만 허용(`MembershipToken`: 잠금 중 `to == offering` 예외), 졸업 시 해제.
+- `MapaePool.swapQuoteForToken` / `swapTokenForQuote`는 전 등급에서 호출자와 수령자 모두 실명이어야 한다.
+  `swapForBurn`(등록 burner), `convertAndBurn`, `mint`, `burn`은 게이트 없음.
+- `MapaePool`, `PoolFactory.createPool`은 dojang 0 주소로 만들 수 없다.
+
 ## v5.2 변경 (Milestone A · 코어) — 이 절이 하위 절과 상충 시 **우선**
 
 수수료 모델 개편 + 유틸리티 등급제를 코어에 반영 (태그 `v2.0-core`, 브랜치 `v2-dev`,
