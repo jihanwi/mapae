@@ -1,6 +1,7 @@
 import {ReactNode, useMemo, useState} from "react";
+import {Abi} from "viem";
 import {formatUnits, parseUnits} from "viem";
-import {useAccount, useBalance, useReadContract, useWriteContract} from "wagmi";
+import {useAccount, useBalance, usePublicClient, useReadContract, useReadContracts, useWriteContract} from "wagmi";
 import {Copy, useCopy} from "../copy";
 import {
     Address,
@@ -20,14 +21,20 @@ import {maxInput} from "../lib/maxInput";
 import {RunFn, RunOpts, TxButton} from "./tx";
 import {PrimaryBtn} from "./ui";
 import {opensOnboarding, useOnboardingModal} from "./OnboardingModal";
+import {GuardPanel, ImpactRows, SlippagePicker, useGuardedSend, useSlippagePref} from "./TradeGuard";
+import {useNow} from "./feed";
+import {useActivity} from "../hooks/activity";
+import {spotPrice} from "../lib/curveMath";
+import {autoSlippageBps, curveBuyAvg, curveSellAvg, minOut, poolImpactBps, priceImpactBps} from "../lib/slippage";
 
 // Layout note (390px): full-width column, inputs are flex-1 min-w-0, rows wrap (flex-wrap);
 // no element has a fixed pixel width.
 
 type Side = "buy" | "sell";
-const SLIPPAGE_BPS = [50, 100, 300] as const;
+const WAD = 10n ** 18n;
 
-const minOut = (q: bigint, slipBps: number) => (q * BigInt(10_000 - slipBps)) / 10_000n;
+/** Slippage props passed to each trade side. */
+type Slip = {bps: number; autoBps: number; isAuto: boolean; toAuto: () => void};
 
 function Row({label, value, strong}: {label: string; value: ReactNode; strong?: boolean}) {
     return (
@@ -75,7 +82,16 @@ export function CurveTradePanel({c}: {c: CurveDetail}) {
     const {address} = useAccount();
     const [side, setSide] = useState<Side>("buy");
     const [raw, setRaw] = useState("");
-    const [slip, setSlip] = useState<number>(100);
+    // Auto tolerance from this curve's (or, after graduation, this pool's) recent fills.
+    const activity = useActivity();
+    const nowSec = useNow();
+    const venue = c.graduated ? "pool" : "curve";
+    const points = activity.trades
+        .filter((t) => t.curve.toLowerCase() === c.address.toLowerCase() && t.venue === venue && t.tokenAmount > 0n)
+        .map((t) => ({ts: activity.tsOf(t.block) ?? 0, priceWad: (t.quoteAmount * WAD) / t.tokenAmount}));
+    const autoBps = autoSlippageBps(points, nowSec);
+    const {pref, setPref, bps} = useSlippagePref(autoBps);
+    const slip: Slip = {bps, autoBps, isAuto: pref.mode === "auto", toAuto: () => setPref({mode: "auto"})};
     const amount = useAmount(raw);
     const unit = c.isEth ? "ETH" : "KRWs";
 
@@ -141,18 +157,7 @@ export function CurveTradePanel({c}: {c: CurveDetail}) {
                     {tr.curve.balance(fmt(balance, 4, tr.locale), balUnit)}
                 </button>
             )}
-            <div className="flex items-center gap-2 mb-4 flex-wrap text-[12px]">
-                <span className="text-hanji-400">{tr.curve.slippage}</span>
-                {SLIPPAGE_BPS.map((b) => (
-                    <button
-                        key={b}
-                        onClick={() => setSlip(b)}
-                        className={`px-3 min-h-[32px] rounded-full border ${slip === b ? "border-brass-400 text-brass-400" : "border-ink-700 text-hanji-400 hover:border-brass-600"}`}
-                    >
-                        {b / 100}%
-                    </button>
-                ))}
-            </div>
+            <SlippagePicker pref={pref} setPref={setPref} autoBps={autoBps} />
             {c.graduated ? (
                 <PoolSide c={c} side={side} amount={amount} slip={slip} onDone={clear} />
             ) : side === "buy" ? (
@@ -230,9 +235,10 @@ function Fees({platform, dev, lp, unit}: {platform: bigint; dev: bigint; lp: big
     );
 }
 
-function CurveBuy({c, amount, slip, onDone}: {c: CurveDetail; amount: bigint; slip: number; onDone: () => void}) {
+function CurveBuy({c, amount, slip, onDone}: {c: CurveDetail; amount: bigint; slip: Slip; onDone: () => void}) {
     const tr = useCopy();
     const {address} = useAccount();
+    const client = usePublicClient({chainId: giwaSepolia.id});
     const {writeContractAsync} = useWriteContract();
     const q = useQuoteBuy(c.address, amount);
     const unit = c.isEth ? "ETH" : "KRWs";
@@ -246,39 +252,40 @@ function CurveBuy({c, amount, slip, onDone}: {c: CurveDetail; amount: bigint; sl
     const effective: CtaState = state.kind === "ready" || state.kind === "approve" ? (quote && quote.tokensOut > 0n ? state : {kind: "loading"}) : state;
     const payToken: Address | "native" = c.isEth ? "native" : c.quote;
     const opts = useRunOpts(refetch, c.isEth ? 0n : amount);
+    const g = useGuardedSend();
 
-    const action = async (run: RunFn) => {
-        if (!quote || !address) return;
-        const min = minOut(quote.tokensOut, slip);
+    const execute = async (run: RunFn, seenOverride?: bigint, bpsOverride?: number) => {
+        if (!quote || !address || !client) return;
         if (state.kind === "approve") {
+            // exact amount only (never an unlimited approval)
             const ok = await run(tr.curve.txApprove, () =>
                 writeContractAsync({address: c.quote, abi: MembershipTokenV3Abi, functionName: "approve", args: [c.address, amount], chainId: giwaSepolia.id}),
                 opts
             );
             if (!ok) return;
         }
-        const ok = c.isEth
-            ? await run(tr.curve.txBuy(c.symbol), () =>
-                  writeContractAsync({
-                      address: ADDR_V3.curveFactory,
-                      abi: CurveFactoryAbi,
-                      functionName: "buyWithETH",
-                      args: [c.address, min],
-                      value: amount,
-                      chainId: giwaSepolia.id,
-                  }),
-                  opts
-              )
-            : await run(tr.curve.txBuy(c.symbol), () =>
-                  writeContractAsync({address: c.address, abi: CurveSaleAbi, functionName: "buy", args: [amount, min], chainId: giwaSepolia.id}),
-                  opts
-              );
+        g.reset();
+        const call = (min: bigint) =>
+            c.isEth
+                ? ({address: ADDR_V3.curveFactory, abi: CurveFactoryAbi, functionName: "buyWithETH", args: [c.address, min], value: amount, chainId: giwaSepolia.id} as const)
+                : ({address: c.address, abi: CurveSaleAbi, functionName: "buy", args: [amount, min], chainId: giwaSepolia.id} as const);
+        const ok = await g.send(run, {
+            seen: seenOverride ?? quote.tokensOut,
+            bps: bpsOverride ?? slip.bps,
+            requote: async () => ((await client.readContract({address: c.address, abi: CurveSaleAbi, functionName: "quoteBuy", args: [amount]})) as {tokensOut: bigint}).tokensOut,
+            simulate: (min) => client.simulateContract({...call(min), account: address} as Parameters<typeof client.simulateContract>[0]),
+            write: (min) => writeContractAsync(call(min) as Parameters<typeof writeContractAsync>[0]),
+            label: tr.curve.txBuy(c.symbol),
+            opts,
+        });
         if (ok) {
             onDone();
             refetch();
         }
     };
 
+    const fees = quote ? quote.platformFee + quote.devFee + quote.lpSeedFee : 0n;
+    const impact = quote ? priceImpactBps("buy", spotPrice(c.virtualQuote, c.r, c.s), curveBuyAvg(quote.quoteSpent, fees, quote.tokensOut)) : undefined;
     return (
         <>
             <div className="mb-4">
@@ -290,18 +297,21 @@ function CurveBuy({c, amount, slip, onDone}: {c: CurveDetail; amount: bigint; sl
                         <Fees platform={quote.platformFee} dev={quote.devFee} lp={quote.lpSeedFee} unit={unit} />
                         <Row label={tr.curve.paid} value={`${fmtCeil(quote.quoteSpent, dp, tr.locale)} ${unit}`} />
                         {quote.refund > 0n && <Row label={tr.curve.refund} value={`${fmt(quote.refund, dp, tr.locale)} ${unit}`} />}
+                        <ImpactRows impactBps={impact} minOut={minOut(quote.tokensOut, slip.bps)} dp={4} unit={c.symbol} />
                         {quote.graduates && <p className="text-[12px] text-brass-400 m-0 mt-2">{tr.curve.graduatesNow}</p>}
                     </>
                 )}
             </div>
-            <CtaBlock state={effective} side="buy" action={action} payToken={payToken} amount={amount} refetch={refetch} />
+            <CtaBlock state={effective} side="buy" action={(run) => execute(run)} payToken={payToken} amount={amount} refetch={refetch} />
+            <GuardPanel guard={g.guard} dp={4} unit={c.symbol} retry={execute} autoAvailable={!slip.isAuto} switchToAuto={slip.toAuto} autoBps={slip.autoBps} />
         </>
     );
 }
 
-function CurveSell({c, amount, slip, onDone}: {c: CurveDetail; amount: bigint; slip: number; onDone: () => void}) {
+function CurveSell({c, amount, slip, onDone}: {c: CurveDetail; amount: bigint; slip: Slip; onDone: () => void}) {
     const tr = useCopy();
     const {address} = useAccount();
+    const client = usePublicClient({chainId: giwaSepolia.id});
     const {writeContractAsync} = useWriteContract();
     const q = useQuoteSell(c.address, amount);
     const unit = c.isEth ? "WETH" : "KRWs";
@@ -310,9 +320,10 @@ function CurveSell({c, amount, slip, onDone}: {c: CurveDetail; amount: bigint; s
     const quote = q.settled ? q.data : undefined;
     const effective: CtaState = state.kind === "ready" || state.kind === "approve" ? (quote ? state : {kind: "loading"}) : state;
     const opts = useRunOpts(refetch, 0n);
+    const g = useGuardedSend();
 
-    const action = async (run: RunFn) => {
-        if (!quote || !address) return;
+    const execute = async (run: RunFn, seenOverride?: bigint, bpsOverride?: number) => {
+        if (!quote || !address || !client) return;
         if (state.kind === "approve") {
             const ok = await run(tr.curve.txApprove, () =>
                 writeContractAsync({address: c.token, abi: MembershipTokenV3Abi, functionName: "approve", args: [c.address, amount], chainId: giwaSepolia.id}),
@@ -320,22 +331,25 @@ function CurveSell({c, amount, slip, onDone}: {c: CurveDetail; amount: bigint; s
             );
             if (!ok) return;
         }
-        const ok = await run(tr.curve.txSell(c.symbol), () =>
-            writeContractAsync({
-                address: c.address,
-                abi: CurveSaleAbi,
-                functionName: "sell",
-                args: [amount, minOut(quote.quoteOut, slip)],
-                chainId: giwaSepolia.id,
-            }),
-            opts
-        );
+        g.reset();
+        const call = (min: bigint) => ({address: c.address, abi: CurveSaleAbi, functionName: "sell", args: [amount, min], chainId: giwaSepolia.id}) as const;
+        const ok = await g.send(run, {
+            seen: seenOverride ?? quote.quoteOut,
+            bps: bpsOverride ?? slip.bps,
+            requote: async () => ((await client.readContract({address: c.address, abi: CurveSaleAbi, functionName: "quoteSell", args: [amount]})) as {quoteOut: bigint}).quoteOut,
+            simulate: (min) => client.simulateContract({...call(min), account: address}),
+            write: (min) => writeContractAsync(call(min)),
+            label: tr.curve.txSell(c.symbol),
+            opts,
+        });
         if (ok) {
             onDone();
             refetch();
         }
     };
 
+    const fees = quote ? quote.platformFee + quote.devFee + quote.lpSeedFee : 0n;
+    const impact = quote && amount > 0n ? priceImpactBps("sell", spotPrice(c.virtualQuote, c.r, c.s), curveSellAvg(quote.quoteOut, fees, amount)) : undefined;
     return (
         <>
             <div className="mb-4">
@@ -345,18 +359,21 @@ function CurveSell({c, amount, slip, onDone}: {c: CurveDetail; amount: bigint; s
                     <>
                         <Row label={tr.curve.receiveQuote(unit)} value={`${fmt(quote.quoteOut, dp, tr.locale)} ${unit}`} strong />
                         <Fees platform={quote.platformFee} dev={quote.devFee} lp={quote.lpSeedFee} unit={unit} />
+                        <ImpactRows impactBps={impact} minOut={minOut(quote.quoteOut, slip.bps)} dp={dp} unit={unit} />
                     </>
                 )}
                 {c.isEth && <p className="text-[12px] text-hanji-400 m-0 mt-2">{tr.curve.wethOut}</p>}
             </div>
-            <CtaBlock state={effective} side="sell" action={action} payToken={c.token} amount={amount} refetch={refetch} />
+            <CtaBlock state={effective} side="sell" action={(run) => execute(run)} payToken={c.token} amount={amount} refetch={refetch} />
+            <GuardPanel guard={g.guard} dp={dp} unit={unit} retry={execute} autoAvailable={!slip.isAuto} switchToAuto={slip.toAuto} autoBps={slip.autoBps} />
         </>
     );
 }
 
-function PoolSide({c, side, amount, slip, onDone}: {c: CurveDetail; side: Side; amount: bigint; slip: number; onDone: () => void}) {
+function PoolSide({c, side, amount, slip, onDone}: {c: CurveDetail; side: Side; amount: bigint; slip: Slip; onDone: () => void}) {
     const tr = useCopy();
     const {address} = useAccount();
+    const client = usePublicClient({chainId: giwaSepolia.id});
     const {writeContractAsync} = useWriteContract();
     const pool = c.pool as Address;
     const q = usePoolQuote(pool, side, amount);
@@ -367,9 +384,19 @@ function PoolSide({c, side, amount, slip, onDone}: {c: CurveDetail; side: Side; 
     const quoteUnitLabel = c.isEth ? "WETH" : "KRWs";
     const opts = useRunOpts(refetch, side === "buy" && !c.isEth ? amount : 0n);
     const outUnit = side === "buy" ? c.symbol : quoteUnitLabel;
+    const outDp = side === "buy" ? 4 : c.isEth ? 8 : 2;
+    const g = useGuardedSend();
+    // Reserves and fee for the price impact (one batched read).
+    const res = useReadContracts({
+        contracts: (["reserveQuote", "reserveToken", "totalFeeBps"] as const).map((fn) => ({address: pool, abi: MapaePoolV3Abi as Abi, functionName: fn, chainId: giwaSepolia.id})),
+        query: {enabled: pool !== ZERO, refetchInterval: 6_000},
+    });
+    const [rq, rt, fee] = res.data?.map((x) => (x.status === "success" ? (x.result as bigint | number) : undefined)) ?? [];
+    const impact =
+        rq !== undefined && rt !== undefined && fee !== undefined && amount > 0n ? poolImpactBps(side, amount, BigInt(rq), BigInt(rt), BigInt(fee)) : undefined;
 
-    const action = async (run: RunFn) => {
-        if (!quote || !address) return;
+    const execute = async (run: RunFn, seenOverride?: bigint, bpsOverride?: number) => {
+        if (!quote || !address || !client) return;
         if (state.kind === "approve") {
             const ok = await run(tr.curve.txApprove, () =>
                 writeContractAsync({address: payToken, abi: MembershipTokenV3Abi, functionName: "approve", args: [pool, amount], chainId: giwaSepolia.id}),
@@ -377,16 +404,18 @@ function PoolSide({c, side, amount, slip, onDone}: {c: CurveDetail; side: Side; 
             );
             if (!ok) return;
         }
-        const ok = await run(side === "buy" ? tr.curve.txBuy(c.symbol) : tr.curve.txSell(c.symbol), () =>
-            writeContractAsync({
-                address: pool,
-                abi: MapaePoolV3Abi,
-                functionName: side === "buy" ? "swapQuoteForToken" : "swapTokenForQuote",
-                args: [amount, minOut(quote, slip), address],
-                chainId: giwaSepolia.id,
-            }),
-            opts
-        );
+        g.reset();
+        const fn = side === "buy" ? "swapQuoteForToken" : "swapTokenForQuote";
+        const call = (min: bigint) => ({address: pool, abi: MapaePoolV3Abi, functionName: fn, args: [amount, min, address], chainId: giwaSepolia.id}) as const;
+        const ok = await g.send(run, {
+            seen: seenOverride ?? quote,
+            bps: bpsOverride ?? slip.bps,
+            requote: async () => (await client.readContract({address: pool, abi: MapaePoolV3Abi, functionName: side === "buy" ? "getTokenOut" : "getQuoteOut", args: [amount]})) as bigint,
+            simulate: (min) => client.simulateContract({...call(min), account: address}),
+            write: (min) => writeContractAsync(call(min)),
+            label: side === "buy" ? tr.curve.txBuy(c.symbol) : tr.curve.txSell(c.symbol),
+            opts,
+        });
         if (ok) {
             onDone();
             refetch();
@@ -399,9 +428,15 @@ function PoolSide({c, side, amount, slip, onDone}: {c: CurveDetail; side: Side; 
             <div className="mb-4">
                 {amount > 0n && q.isError && <p className="text-[13px] text-error m-0 mb-2">{tr.curve.quoteError}</p>}
                 {amount > 0n && quote === undefined && !q.isError && <p className="text-[13px] text-hanji-400 m-0 mb-2">{tr.curve.quoting}</p>}
-                {quote !== undefined && <Row label={tr.curve.poolReceive} value={`${fmt(quote, side === "buy" ? 4 : c.isEth ? 8 : 2, tr.locale)} ${outUnit}`} strong />}
+                {quote !== undefined && (
+                    <>
+                        <Row label={tr.curve.poolReceive} value={`${fmt(quote, outDp, tr.locale)} ${outUnit}`} strong />
+                        <ImpactRows impactBps={impact} minOut={minOut(quote, slip.bps)} dp={outDp} unit={outUnit} />
+                    </>
+                )}
             </div>
-            <CtaBlock state={effective} side={side} action={action} payToken={payToken} amount={amount} refetch={refetch} />
+            <CtaBlock state={effective} side={side} action={(run) => execute(run)} payToken={payToken} amount={amount} refetch={refetch} />
+            <GuardPanel guard={g.guard} dp={outDp} unit={outUnit} retry={execute} autoAvailable={!slip.isAuto} switchToAuto={slip.toAuto} autoBps={slip.autoBps} />
         </>
     );
 }
