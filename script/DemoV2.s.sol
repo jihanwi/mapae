@@ -80,7 +80,7 @@ contract DemoV2 is Script {
             feeRouter,
             vault,
             500_000e18, // minRaise floor
-            MapaeFactory.FeeRecipients({platform: deployer, reserve: deployer}),
+            MapaeFactory.FeeRecipients({platform: deployer}),
             MapaeFactory.Guide({
                 minPrice: 1000e18,
                 maxPrice: 100_000e18,

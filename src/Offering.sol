@@ -48,10 +48,8 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
     uint16 public constant MAX_F_BPS = 7000;
     uint16 public constant MIN_CREATOR_TOKEN_BPS = 1500;
     uint16 public constant MAX_CREATOR_TOKEN_BPS = 3000;
-    /// @notice Platform token cut for premium tiers (fixed 5%, 현행 유지).
-    uint16 public constant PREMIUM_PLATFORM_TOKEN_BPS = 500;
 
-    // Tokenomics bands — L0: f 70–80%, issuer 5–15%, platform token forced 0.
+    // Tokenomics bands — L0: f 70–80%, issuer 5–15%. No platform token share on any tier (decision 21).
     uint16 public constant MIN_F_BPS_L0 = 7000;
     uint16 public constant MAX_F_BPS_L0 = 8000;
     uint16 public constant MIN_CREATOR_TOKEN_BPS_L0 = 500;
@@ -96,8 +94,6 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
     uint16 public immutable creatorTokenBps;
     /// @notice LP token share of S' in bps = cBps × fBps / BPS (invariant 11: l = c × f).
     uint16 public immutable lpTokenBps;
-    /// @notice Platform token cut in bps (L0 = 0, L1/L2 = 500).
-    uint16 public immutable platformTokenBps;
     RefundMode public immutable refundMode;
     /// @inheritdoc IOffering
     uint256 public immutable qSale;
@@ -157,7 +153,6 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
             address(p.paymentToken) == address(0) || address(p.dojang) == address(0) || p.creator == address(0)
                 || address(p.poolFactory) == address(0) || address(p.feeRouter) == address(0)
                 || p.recipients.creatorVesting == address(0) || p.recipients.platform == address(0)
-                || p.recipients.reserve == address(0)
         ) revert InvalidConfig();
         if (p.price == 0 || p.raiseTarget == 0 || p.walletLimit == 0 || p.minCommit == 0) revert InvalidConfig();
         if (p.minCommit > p.walletLimit) revert InvalidConfig();
@@ -165,21 +160,18 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
         // holds even for offerings constructed outside the factory.
         if (p.raiseTarget < p.minRaise) revert InvalidConfig();
 
-        // Tier-dependent tokenomics bands (Step 2). L0: f 70–80%, issuer 5–15%,
-        // platform token forced 0 (invariant 4). L1/L2: f 50–70%, issuer 15–30%,
-        // platform token fixed 5%.
+        // Tier-dependent tokenomics bands (Step 2). L0: f 70–80%, issuer 5–15%.
+        // L1/L2: f 50–70%, issuer 15–30%. No platform token share on any tier (decision 21).
         if (p.tier == IFeeRouter.UtilityTier.L0) {
             if (p.fBps < MIN_F_BPS_L0 || p.fBps > MAX_F_BPS_L0) revert InvalidConfig();
             if (p.creatorTokenBps < MIN_CREATOR_TOKEN_BPS_L0 || p.creatorTokenBps > MAX_CREATOR_TOKEN_BPS_L0) {
                 revert InvalidConfig();
             }
-            if (p.platformTokenBps != 0) revert InvalidConfig();
         } else {
             if (p.fBps < MIN_F_BPS || p.fBps > MAX_F_BPS) revert InvalidConfig();
             if (p.creatorTokenBps < MIN_CREATOR_TOKEN_BPS || p.creatorTokenBps > MAX_CREATOR_TOKEN_BPS) {
                 revert InvalidConfig();
             }
-            if (p.platformTokenBps != PREMIUM_PLATFORM_TOKEN_BPS) revert InvalidConfig();
         }
         if (p.cBps < MIN_C_BPS || p.cBps > MAX_C_BPS) revert InvalidConfig();
 
@@ -202,9 +194,10 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
 
         // Invariant 11: LP token share l = c × f → listing price equals P.
         // Combined feasibility: every share must fit within 100% of S', so
-        // reserve = remainder ≥ 0 always holds and settle can never underflow.
+        // remainder = S' − sold − creator − LP ≥ 0 always holds (burned at settle) and
+        // settle can never underflow. No platform token share (decision 21).
         uint16 lpTokenBps_ = uint16(uint256(p.cBps) * p.fBps / BPS);
-        if (uint256(p.fBps) + p.creatorTokenBps + p.platformTokenBps + lpTokenBps_ > BPS) revert InvalidConfig();
+        if (uint256(p.fBps) + p.creatorTokenBps + lpTokenBps_ > BPS) revert InvalidConfig();
 
         paymentToken = p.paymentToken;
         dojang = p.dojang;
@@ -218,7 +211,6 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
         fBps = p.fBps;
         cBps = p.cBps;
         creatorTokenBps = p.creatorTokenBps;
-        platformTokenBps = p.platformTokenBps;
         lpTokenBps = lpTokenBps_;
         refundMode = p.refundMode;
         qSale = qSale_;
@@ -233,10 +225,9 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
         swapBurnBps = p.swapBurnBps;
         recipients = p.recipients;
 
-        address[] memory capExempt = new address[](3);
+        address[] memory capExempt = new address[](2);
         capExempt[0] = p.recipients.creatorVesting;
         capExempt[1] = p.recipients.platform;
-        capExempt[2] = p.recipients.reserve;
         // Linked library (DELEGATECALL): CREATE runs from this address/nonce,
         // identical to an inline `new` — bytecode lives outside our initcode (C8).
         token = MembershipTokenDeployer.deploy(
@@ -324,33 +315,33 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
         emit Settled(allocationRoot_, totalSold_, totalRaised_, seed_);
     }
 
-    /// @dev D4 ②③: one-shot mint (sold + unsold + LP seed to this contract for
-    ///      claims/burn/seeding, allocations to recipients; enables transfers,
-    ///      revokes mint authority forever), then burn unsold — the Transfer→0x0
-    ///      event is the on-explorer proof the token "was born scarcer" (불변식 10).
+    /// @dev D4 ②③: one-shot mint (sold + unsold + LP seed + remainder to this contract,
+    ///      creator share to vesting; enables transfers, revokes mint authority forever), then
+    ///      burn unsold and the remainder in the same tx — the Transfer→0x0 events are the
+    ///      on-explorer proof the token "was born scarcer" (불변식 10). v3 decision 21: no
+    ///      platform token share and no reserve recipient; the remainder (incl. rounding) burns.
     function _mintAndBurnUnsold(uint256 totalSold_, uint256 supply) internal {
         uint256 unsold = qSale - totalSold_;
         uint256 creatorAmount = supply * creatorTokenBps / BPS;
         uint256 lpAmount = supply * lpTokenBps / BPS;
-        uint256 platformAmount = supply * platformTokenBps / BPS; // 0 for L0
-        // Reserve absorbs all rounding (D4); safe because share bps sum <= 100%.
-        uint256 reserveAmount = supply - totalSold_ - creatorAmount - lpAmount - platformAmount;
+        // Remainder absorbs all rounding (D4); safe because share bps sum <= 100%.
+        uint256 remainder = supply - totalSold_ - creatorAmount - lpAmount;
 
-        address[] memory to = new address[](4);
-        uint256[] memory amounts = new uint256[](4);
+        address[] memory to = new address[](2);
+        uint256[] memory amounts = new uint256[](2);
         to[0] = address(this);
-        amounts[0] = totalSold_ + unsold + lpAmount; // LP share seeds the pool below
+        amounts[0] = totalSold_ + unsold + lpAmount + remainder; // LP share seeds the pool below
         to[1] = recipients.creatorVesting;
         amounts[1] = creatorAmount;
-        to[2] = recipients.platform;
-        amounts[2] = platformAmount;
-        to[3] = recipients.reserve;
-        amounts[3] = reserveAmount;
         token.mintAllocations(to, amounts);
 
         if (unsold > 0) {
             token.burn(unsold);
             emit UnsoldBurned(unsold);
+        }
+        if (remainder > 0) {
+            token.burn(remainder);
+            emit RemainderBurned(remainder);
         }
     }
 
@@ -358,8 +349,8 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
     ///      tokenSeed = lpProceeds / P (capped by the minted LP share — the bps
     ///      double-floor can make lpAmount a hair smaller than the exact c×f
     ///      cut), krwSeed = tokenSeed × P. LP shares go straight to 0xdEaD:
-    ///      permanently unownable (불변식 7). Rounding dust: leftover tokens →
-    ///      reserve, leftover KRWs → creator via _distributeProceeds (D1).
+    ///      permanently unownable (불변식 7). Rounding dust: leftover LP tokens are
+    ///      burned (decision 21), leftover KRWs → creator via _distributeProceeds (D1).
     function _listAtPar(uint256 totalRaised_, uint256 supply) internal returns (uint256 krwSeed) {
         uint256 lpAmount = supply * lpTokenBps / BPS;
         uint256 tokenSeed = totalRaised_ * cBps / BPS * WAD / price;
@@ -378,7 +369,8 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
             emit Listed(address(pool_), tokenSeed, krwSeed, lpShares);
         }
         if (lpAmount > tokenSeed) {
-            IERC20(address(token)).safeTransfer(recipients.reserve, lpAmount - tokenSeed);
+            token.burn(lpAmount - tokenSeed);
+            emit RemainderBurned(lpAmount - tokenSeed);
         }
     }
 

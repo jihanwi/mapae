@@ -46,13 +46,9 @@ contract MapaeFactory is Ownable, IBurnerRegistry {
     error QuoteAlreadyRegistered(address quote);
     error QuoteNotRegistered(address quote);
 
-    /// @notice Platform token cut for premium tiers (L1/L2). L0 is forced to 0.
-    uint16 public constant PREMIUM_PLATFORM_TOKEN_BPS = 500;
-
     /// @notice Platform-side allocation recipients wired into every offering.
     struct FeeRecipients {
         address platform;
-        address reserve;
     }
 
     /// @notice Platform guide bands for creator-chosen parameters (L1/L2 only).
@@ -172,7 +168,6 @@ contract MapaeFactory is Ownable, IBurnerRegistry {
             address(dojang_) == address(0) || address(paymentToken_) == address(0)
                 || address(poolFactory_) == address(0) || address(feeRouter_) == address(0)
                 || address(buybackVault_) == address(0) || feeRecipients_.platform == address(0)
-                || feeRecipients_.reserve == address(0)
         ) revert ZeroAddress();
         if (minRaise_ == 0) revert InvalidGuide();
         dojang = dojang_;
@@ -276,9 +271,8 @@ contract MapaeFactory is Ownable, IBurnerRegistry {
         }
     }
 
-    /// @dev Assemble OfferingParams. platformTokenBps is forced by tier
-    ///      (L0 = 0 → invariant 4; L1/L2 = 5%). Split out to keep createOffering
-    ///      under the stack-depth limit.
+    /// @dev Assemble OfferingParams. Split out to keep createOffering under the
+    ///      stack-depth limit. No platform token share is passed (decision 21).
     function _buildParams(CreateParams calldata cp, address vesting)
         internal
         view
@@ -299,7 +293,6 @@ contract MapaeFactory is Ownable, IBurnerRegistry {
         p.fBps = cp.fBps;
         p.cBps = cp.cBps;
         p.creatorTokenBps = cp.creatorTokenBps;
-        p.platformTokenBps = cp.tier == IFeeRouter.UtilityTier.L0 ? 0 : PREMIUM_PLATFORM_TOKEN_BPS;
         p.swapRoyaltyBps = cp.swapRoyaltyBps;
         p.swapBurnBps = cp.swapBurnBps;
         p.refundMode = cp.refundMode;
@@ -309,9 +302,7 @@ contract MapaeFactory is Ownable, IBurnerRegistry {
         p.feeRouter = feeRouter;
         p.tier = cp.tier;
         p.mapaeFactory = address(this);
-        p.recipients = IOffering.AllocationRecipients({
-            creatorVesting: vesting, platform: feeRecipients.platform, reserve: feeRecipients.reserve
-        });
+        p.recipients = IOffering.AllocationRecipients({creatorVesting: vesting, platform: feeRecipients.platform});
     }
 
     function allOfferings() external view returns (address[] memory) {

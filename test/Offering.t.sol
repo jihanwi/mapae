@@ -261,9 +261,9 @@ contract OfferingUnitTest is OfferingTestBase {
         cBps = uint16(bound(cBps, 1500, 3000));
         uint256 lpBps = uint256(cBps) * fBps / 10_000;
         if (forceBoundary) {
-            int256 exact = int256(10_000) - int256(uint256(fBps)) - 500 - int256(lpBps);
+            int256 exact = int256(10_000) - int256(uint256(fBps)) - int256(lpBps);
             if (exact < 1500 || exact > 3000) {
-                (fBps, cBps, lpBps, exact) = (6000, 2500, 1500, 2000);
+                (fBps, cBps, lpBps, exact) = (6000, 2500, 1500, 2500);
             }
             ctBps = uint16(uint256(exact));
         } else {
@@ -276,7 +276,7 @@ contract OfferingUnitTest is OfferingTestBase {
         p.creatorTokenBps = ctBps;
         p.walletLimit = RAISE;
 
-        if (uint256(fBps) + ctBps + 500 + lpBps > 10_000) {
+        if (uint256(fBps) + ctBps + lpBps > 10_000) {
             vm.expectRevert(IOffering.InvalidConfig.selector);
             new Offering(p);
             return;
@@ -294,12 +294,11 @@ contract OfferingUnitTest is OfferingTestBase {
         uint256 supply = totalSold * 10_000 / fBps;
         address poolAddr = address(o.pool());
         uint256 poolTokens = poolAddr == address(0) ? 0 : token.balanceOf(poolAddr);
-        assertEq(
-            token.balanceOf(address(o)) + token.balanceOf(creatorVesting) + poolTokens + token.balanceOf(platform)
-                + token.balanceOf(reserve),
-            supply
-        );
-        assertEq(token.totalSupply(), supply);
+        // v3 decision 21: remainder + LP-seed surplus burned; platform/reserve hold none.
+        assertEq(token.balanceOf(platform) + token.balanceOf(reserve), 0);
+        assertEq(token.balanceOf(address(o)) + token.balanceOf(creatorVesting) + poolTokens, token.totalSupply());
+        assertEq(token.totalSupply(), totalSold + supply * ctBps / 10_000 + poolTokens);
+        assertLe(token.totalSupply(), supply);
     }
 
     /// Fuzz every (fBps, cBps, creatorTokenBps, totalSold) combination in the
@@ -317,7 +316,7 @@ contract OfferingUnitTest is OfferingTestBase {
         p.walletLimit = RAISE; // let one fan cover any totalSold
         uint256 lpBps = uint256(cBps) * fBps / 10_000;
 
-        if (uint256(fBps) + ctBps + 500 + lpBps > 10_000) {
+        if (uint256(fBps) + ctBps + lpBps > 10_000) {
             vm.expectRevert(IOffering.InvalidConfig.selector);
             new Offering(p);
             return;
@@ -337,12 +336,11 @@ contract OfferingUnitTest is OfferingTestBase {
         address poolAddr = address(o.pool());
         uint256 poolTokens = poolAddr == address(0) ? 0 : token.balanceOf(poolAddr);
         uint256 poolKrw = poolAddr == address(0) ? 0 : krw.balanceOf(poolAddr);
-        assertEq(
-            token.balanceOf(address(o)) + token.balanceOf(creatorVesting) + poolTokens + token.balanceOf(platform)
-                + token.balanceOf(reserve),
-            supply
-        );
-        assertEq(token.totalSupply(), supply);
+        // v3 decision 21: remainder + LP-seed surplus burned; platform/reserve hold none.
+        assertEq(token.balanceOf(platform) + token.balanceOf(reserve), 0);
+        assertEq(token.balanceOf(address(o)) + token.balanceOf(creatorVesting) + poolTokens, token.totalSupply());
+        assertEq(token.totalSupply(), totalSold + supply * ctBps / 10_000 + poolTokens);
+        assertLe(token.totalSupply(), supply);
         // Proceeds fully distributed: creator + platform + pool seed == totalRaised.
         assertEq(krw.balanceOf(creator) + poolKrw + krw.balanceOf(platform), totalRaised);
         // At-par listing: whenever a pool exists, spot ≈ P (1e-6 rel tolerance
@@ -414,12 +412,13 @@ contract OfferingUnitTest is OfferingTestBase {
 
         MembershipToken token = offering.token();
         // S' = 30 / 0.6 = 50 tokens; creator 25% = 12.5, LP 9% = 4.5 (seeded into
-        // the pool), platform 5% = 2.5, reserve = 50 − 30 − 12.5 − 4.5 − 2.5 = 0.5
-        assertEq(token.totalSupply(), 50e18);
+        // the pool). v3 decision 21: remainder = 50 − 30 − 12.5 − 4.5 = 3 is burned
+        // (no platform token, no reserve) → 47 circulate.
+        assertEq(token.totalSupply(), 47e18);
         assertEq(token.balanceOf(address(offering)), 30e18);
         assertEq(token.balanceOf(creatorVesting), 12.5e18);
-        assertEq(token.balanceOf(platform), 2.5e18);
-        assertEq(token.balanceOf(reserve), 0.5e18);
+        assertEq(token.balanceOf(platform), 0);
+        assertEq(token.balanceOf(reserve), 0);
         // mint authority permanently revoked (불변식 5)
         assertEq(token.minter(), address(0));
         assertTrue(token.transfersEnabled());

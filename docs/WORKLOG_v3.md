@@ -421,3 +421,62 @@ lpSeedBps 0 커브에서는 상대 오차 0 / 1.7e-13 / 1e-18 (KRWs18 / 6-dec / 
 |---|---|---|---|---|
 | CurveFactory | 17,626 B | 18,293 B | 6,950 B | 30,859 B |
 | CurveSale | 8,300 B | 10,723 B | 16,276 B | 38,429 B |
+
+## T10 — 결정 21 반영: 플랫폼 토큰 배분 제거 + 잔여 물량 소각
+
+### 결정 기록
+
+- **STATUS 결정 21:** 플랫폼은 어떤 경로로도 크리에이터 토큰을 받지 않는다. 전 트랙.
+- **2026-11-14 추가 결정:** 정가 공모의 잔여 물량(공급 − 판매분 − 크리에이터 몫 − LP 몫)은 리저브 주소로
+  보내지 않고 정산 tx 에서 소각한다.
+
+### 배분 흐름 (이전 → 이후, 정가 공모 settle)
+
+| 몫 | 이전 | 이후 |
+|---|---|---|
+| 판매분 | Offering (클레임 대기) | 동일 |
+| 미판매분 | 민트 후 소각 (`UnsoldBurned`) | 동일 |
+| 크리에이터 | 베스팅 | 동일 |
+| LP | 풀 시딩, 잉여는 **reserve** | 풀 시딩, 잉여는 **소각** (`RemainderBurned`) |
+| 플랫폼 토큰 | L1/L2 5% → `recipients.platform`, L0 0% | **없음** (모든 등급) |
+| 잔여(라운딩 포함) | **reserve** | Offering 에 민트 후 같은 tx 에서 **소각** (`RemainderBurned`) |
+
+- 코드: `PREMIUM_PLATFORM_TOKEN_BPS`(Offering, MapaeFactory), `OfferingParams.platformTokenBps`,
+  `Offering.platformTokenBps`, 관련 밴드 검사 제거. 실행가능성 = `fBps + creatorTokenBps + lpTokenBps ≤ 10_000`.
+- `IOffering.AllocationRecipients` / `MapaeFactory.FeeRecipients` 에서 `reserve` 제거(0 주소 검사·capExempt 포함).
+  `recipients.platform` 은 공모 대금의 플랫폼 몫(호가 자산) 수령처로만 남고 **발행 토큰을 받지 않는다** (NatSpec 명시).
+- 신규 이벤트 `RemainderBurned(uint256)` (잔여 소각, LP 잉여 소각 각각 발행).
+- 민트 1회, 정가 상장, 환불 모드, 공모 대금 분배 로직 무변경.
+- 기본 프리셋(공모 60 / 크리에이터 25 / LP 9)에서는 잔여 **6%** 가 소각된다(이전 플랫폼 5 + 리저브 1).
+  L0 프리셋(70 / 5 / 17.5)은 7.5%.
+
+### 바꾼 기존 테스트 (단언 변경분)
+
+| 테스트 | 이전 단언 | 이후 단언 |
+|---|---|---|
+| `Offering.t.sol` `test_Settle_DistributionAndProceeds` | totalSupply 50, platform 2.5, reserve 0.5 | totalSupply **47**, platform **0**, reserve **0** |
+| `Offering.t.sol` `testFuzz_SettleReserveNeverUnderflows` | Σ(offering, vesting, pool, platform, reserve) = S' = totalSupply, 실행가능성에 +500 | platform+reserve 0, Σ(offering, vesting, pool) = totalSupply = sold + creator + pool ≤ S', 실행가능성 +500 제거, 경계 fallback ct 2000→2500 |
+| `Offering.t.sol` `testFuzz_SettleFeasibleAcrossBands` | 위와 같음 | 위와 같음 |
+| `OfferingE2E.t.sol` `test_E2E_Oversubscribed_ModeA` | totalSupply = S' | totalSupply = sold + creator + pool, platform 0 |
+| `OfferingE2E.t.sol` `test_E2E_Undersubscribed_ModeB` | totalSupply 100, platform 5, reserve 1 | totalSupply **94**, platform **0**, reserve **0** |
+| `InvariantsV2.t.sol` `testFuzz_Inv4_L0PlatformTokenMustBeZero` → `testFuzz_Inv4_NoPlatformTokenAnyTier` | L0 은 platformTokenBps ≠ 0 이면 revert | 필드 삭제로 대체: L0/L1/L2 정산 후 platform·treasury 토큰 잔고 0 |
+| `MapaeFactory.t.sol` `test_Create_WiresFullStack` | `recipients()` 3개 중 reserve == reserve | `recipients()` 2개(reserve 단언 삭제) |
+
+설정부만 수정: `OfferingTestBase`, `OfferingInvariant.t.sol`, `InvariantsV2.t.sol`(`_directParams`, factory 생성),
+`PeripheralsV2.t.sol`, `MapaeFactory.t.sol`(factory 생성). 스크립트: `Deploy.s.sol`, `DemoV2.s.sol` 의
+`FeeRecipients` 리터럴에서 `reserve` 제거(컴파일 수정만).
+
+### 테스트 / 사이즈
+
+- 신규 `test/NoPlatformTokens.t.sol` N1~N5 (5). 합계 339 → **344 그린**.
+
+| 컨트랙트 | runtime | initcode | runtime 여유 | initcode 여유 |
+|---|---|---|---|---|
+| Offering | 10,672 B | 15,129 B | 13,904 B | 34,023 B |
+| OfferingDeployer | 16,322 B | 16,350 B | 8,254 B | 32,802 B |
+| MapaeFactory | 8,650 B | 41,169 B | 15,926 B | 7,983 B |
+
+### 미결
+
+- `script/verify-children.js` 는 `platformTokenBps()` 를 호출하고 생성자 인코딩에 넣는다. JS 라 컴파일 영향이
+  없어 이번엔 두었고, 배포 스크립트 v3 재작성 티켓에서 함께 고친다.

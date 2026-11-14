@@ -31,7 +31,7 @@ abstract contract MapaeFactoryTestBase is OfferingTestBase {
             feeRouter,
             buybackVault,
             MIN_RAISE,
-            MapaeFactory.FeeRecipients({platform: platform, reserve: reserve}),
+            MapaeFactory.FeeRecipients({platform: platform}),
             // Test guide: wide enough for the E2E fixtures (L = 30% of R).
             MapaeFactory.Guide({
                 minPrice: 1000e18,
@@ -107,10 +107,9 @@ contract MapaeFactoryTest is MapaeFactoryTestBase {
         assertEq(o.owner(), address(this));
         // recipients wired from factory config; creatorVesting is the Vesting
         // contract from M4 (D10)
-        (address cv, address pf, address rs) = o.recipients();
+        (address cv, address pf) = o.recipients();
         assertEq(cv, factory.vestingOf(address(o)));
         assertEq(pf, platform);
-        assertEq(rs, reserve);
         // registry
         assertEq(factory.allOfferings().length, 1);
         assertEq(factory.offeringsByCreator(creator)[0], address(o));

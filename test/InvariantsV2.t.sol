@@ -60,7 +60,7 @@ contract InvariantsV2Test is Test {
             feeRouter,
             buybackVault,
             MIN_RAISE,
-            MapaeFactory.FeeRecipients({platform: platform, reserve: reserve}),
+            MapaeFactory.FeeRecipients({platform: platform}),
             MapaeFactory.Guide({
                 minPrice: 1000e18,
                 maxPrice: 100_000e18,
@@ -227,19 +227,14 @@ contract InvariantsV2Test is Test {
     }
 
     // ==================================================================
-    // invariant 4 — L0 cannot be created with platformTokenBps != 0
+    // invariant 4 (v3, decision 21) — no tier gives the platform any issued token
     // ==================================================================
 
-    function testFuzz_Inv4_L0PlatformTokenMustBeZero(uint16 platformTokenBps) public {
-        platformTokenBps = uint16(bound(platformTokenBps, 1, 9000));
-        IOffering.OfferingParams memory p = _directParams(IFeeRouter.UtilityTier.L0);
-        p.platformTokenBps = platformTokenBps; // any non-zero
-        vm.expectRevert(IOffering.InvalidConfig.selector);
-        offeringDeployer.deploy(p);
-        // zero is accepted
-        p.platformTokenBps = 0;
-        Offering o = offeringDeployer.deploy(p);
-        assertEq(o.platformTokenBps(), 0);
+    function testFuzz_Inv4_NoPlatformTokenAnyTier(uint8 tierRaw) public {
+        IFeeRouter.UtilityTier tier = IFeeRouter.UtilityTier(bound(tierRaw, 0, 2));
+        (, MembershipToken t) = _createAndSettle(tier);
+        assertEq(t.balanceOf(platform), 0);
+        assertEq(t.balanceOf(treasury), 0);
     }
 
     // ==================================================================
@@ -542,7 +537,6 @@ contract InvariantsV2Test is Test {
         p.fBps = l0 ? 7000 : 6000;
         p.cBps = l0 ? 2500 : 1500;
         p.creatorTokenBps = l0 ? 500 : 2500;
-        p.platformTokenBps = l0 ? 0 : 500;
         p.swapRoyaltyBps = l0 ? 20 : 60;
         p.swapBurnBps = l0 ? 0 : 30;
         p.refundMode = IOffering.RefundMode.Partial;
@@ -552,7 +546,6 @@ contract InvariantsV2Test is Test {
         p.feeRouter = feeRouter;
         p.tier = tier;
         p.mapaeFactory = address(factory);
-        p.recipients =
-            IOffering.AllocationRecipients({creatorVesting: makeAddr("cv"), platform: platform, reserve: reserve});
+        p.recipients = IOffering.AllocationRecipients({creatorVesting: makeAddr("cv"), platform: platform});
     }
 }
