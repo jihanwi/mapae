@@ -1,6 +1,6 @@
 import {ReactNode, useMemo, useState} from "react";
-import {parseUnits} from "viem";
-import {useAccount, useReadContract, useWriteContract} from "wagmi";
+import {formatUnits, parseUnits} from "viem";
+import {useAccount, useBalance, useReadContract, useWriteContract} from "wagmi";
 import {Copy, useCopy} from "../copy";
 import {
     Address,
@@ -16,6 +16,7 @@ import {CurveFactoryAbi, CurveSaleAbi, MapaePoolV3Abi, MembershipTokenV3Abi} fro
 import {ADDR_V3} from "../contracts/addressesV3";
 import {giwaSepolia} from "../config/chain";
 import {fmt, sanitizeAmountInput} from "../lib/format";
+import {maxInput} from "../lib/maxInput";
 import {RunFn, RunOpts, TxButton} from "./tx";
 import {PrimaryBtn} from "./ui";
 import {opensOnboarding, useOnboardingModal} from "./OnboardingModal";
@@ -78,14 +79,22 @@ export function CurveTradePanel({c}: {c: CurveDetail}) {
     const amount = useAmount(raw);
     const unit = c.isEth ? "ETH" : "KRWs";
 
-    const tokenBal = useReadContract({
-        address: c.token,
+    // Balance shown under the input: the asset being paid on the buy side (KRWs on a KRWs curve,
+    // wallet ETH on an ETH curve, the pool's quote token after graduation), the token on the sell side.
+    const payNative = side === "buy" && c.isEth && !c.graduated;
+    const balToken: Address = side === "sell" ? c.token : c.quote;
+    const balUnit = side === "sell" ? c.symbol : c.graduated && c.isEth ? "WETH" : unit;
+    const erc20Bal = useReadContract({
+        address: balToken,
         abi: MembershipTokenV3Abi,
         functionName: "balanceOf",
         args: [address ?? ZERO],
         chainId: giwaSepolia.id,
-        query: {enabled: !!address, refetchInterval: 6_000},
+        query: {enabled: !!address && !payNative, refetchInterval: 6_000},
     });
+    const ethBal = useBalance({address, chainId: giwaSepolia.id, query: {enabled: !!address && payNative, refetchInterval: 6_000}});
+    const balance: bigint | undefined = payNative ? ethBal.data?.value : (erc20Bal.data as bigint | undefined);
+    const clear = () => setRaw("");
 
     return (
         <div className="bg-ink-800 border border-ink-700 rounded-card p-4 sm:p-7 min-w-0">
@@ -122,8 +131,15 @@ export function CurveTradePanel({c}: {c: CurveDetail}) {
                 />
                 <span className="text-hanji-400 text-[14px] flex-none">{side === "buy" ? (c.graduated && c.isEth ? "WETH" : unit) : c.symbol}</span>
             </div>
-            {address && tokenBal.data !== undefined && (
-                <div className="text-[12px] text-hanji-400 mb-3 tabular-nums">{tr.curve.balance(fmt(tokenBal.data as bigint, 4, tr.locale), c.symbol)}</div>
+            {address && balance !== undefined && (
+                <button
+                    type="button"
+                    title={tr.curve.useMax}
+                    onClick={() => setRaw(formatUnits(maxInput(balance, payNative), 18))}
+                    className="block text-left bg-transparent border-none p-0 text-[12px] text-hanji-400 hover:text-hanji-100 mb-3 tabular-nums cursor-pointer"
+                >
+                    {tr.curve.balance(fmt(balance, 4, tr.locale), balUnit)}
+                </button>
             )}
             <div className="flex items-center gap-2 mb-4 flex-wrap text-[12px]">
                 <span className="text-hanji-400">{tr.curve.slippage}</span>
@@ -138,11 +154,11 @@ export function CurveTradePanel({c}: {c: CurveDetail}) {
                 ))}
             </div>
             {c.graduated ? (
-                <PoolSide c={c} side={side} amount={amount} slip={slip} />
+                <PoolSide c={c} side={side} amount={amount} slip={slip} onDone={clear} />
             ) : side === "buy" ? (
-                <CurveBuy c={c} amount={amount} slip={slip} />
+                <CurveBuy c={c} amount={amount} slip={slip} onDone={clear} />
             ) : (
-                <CurveSell c={c} amount={amount} slip={slip} />
+                <CurveSell c={c} amount={amount} slip={slip} onDone={clear} />
             )}
         </div>
     );
@@ -214,7 +230,7 @@ function Fees({platform, dev, lp, unit}: {platform: bigint; dev: bigint; lp: big
     );
 }
 
-function CurveBuy({c, amount, slip}: {c: CurveDetail; amount: bigint; slip: number}) {
+function CurveBuy({c, amount, slip, onDone}: {c: CurveDetail; amount: bigint; slip: number; onDone: () => void}) {
     const tr = useCopy();
     const {address} = useAccount();
     const {writeContractAsync} = useWriteContract();
@@ -257,7 +273,10 @@ function CurveBuy({c, amount, slip}: {c: CurveDetail; amount: bigint; slip: numb
                   writeContractAsync({address: c.address, abi: CurveSaleAbi, functionName: "buy", args: [amount, min], chainId: giwaSepolia.id}),
                   opts
               );
-        if (ok) refetch();
+        if (ok) {
+            onDone();
+            refetch();
+        }
     };
 
     return (
@@ -280,7 +299,7 @@ function CurveBuy({c, amount, slip}: {c: CurveDetail; amount: bigint; slip: numb
     );
 }
 
-function CurveSell({c, amount, slip}: {c: CurveDetail; amount: bigint; slip: number}) {
+function CurveSell({c, amount, slip, onDone}: {c: CurveDetail; amount: bigint; slip: number; onDone: () => void}) {
     const tr = useCopy();
     const {address} = useAccount();
     const {writeContractAsync} = useWriteContract();
@@ -311,7 +330,10 @@ function CurveSell({c, amount, slip}: {c: CurveDetail; amount: bigint; slip: num
             }),
             opts
         );
-        if (ok) refetch();
+        if (ok) {
+            onDone();
+            refetch();
+        }
     };
 
     return (
@@ -332,7 +354,7 @@ function CurveSell({c, amount, slip}: {c: CurveDetail; amount: bigint; slip: num
     );
 }
 
-function PoolSide({c, side, amount, slip}: {c: CurveDetail; side: Side; amount: bigint; slip: number}) {
+function PoolSide({c, side, amount, slip, onDone}: {c: CurveDetail; side: Side; amount: bigint; slip: number; onDone: () => void}) {
     const tr = useCopy();
     const {address} = useAccount();
     const {writeContractAsync} = useWriteContract();
@@ -365,7 +387,10 @@ function PoolSide({c, side, amount, slip}: {c: CurveDetail; side: Side; amount: 
             }),
             opts
         );
-        if (ok) refetch();
+        if (ok) {
+            onDone();
+            refetch();
+        }
     };
 
     return (
