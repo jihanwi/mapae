@@ -203,7 +203,7 @@ abstract contract CurveFactoryTestBase is MapaeFactoryTestBase {
     // ---------------------------------------------------------------------
 
     bytes32 internal constant BUY_SIG =
-        keccak256("Buy(address,bool,uint256,uint256,uint256,uint256,uint256,uint256,uint256)");
+        keccak256("Buy(address,bool,bool,uint256,uint256,uint256,uint256,uint256,uint256,uint256)");
 
     function test_K5_DevFirstBuy() public {
         uint256 amount = 1000 * 10 ** _decimals();
@@ -222,7 +222,7 @@ abstract contract CurveFactoryTestBase is MapaeFactoryTestBase {
         assertEq(MembershipToken(ta).balanceOf(dev), out, "tokens to dev");
         assertGt(out, 0);
         assertEq(c.verifiedBuyerCount(), 0, "dev not counted");
-        assertTrue(c.hasBought(dev));
+        assertFalse(c.countedVerifiedBuyer(dev), "dev never counted");
         assertEq(quote.balanceOf(address(cf)), 0, "factory holds no quote");
         assertEq(quote.allowance(address(cf), ca), 0, "allowance reset");
     }
@@ -231,7 +231,7 @@ abstract contract CurveFactoryTestBase is MapaeFactoryTestBase {
         (CurveSale c, MembershipToken t) = _create(dev);
         assertEq(c.s(), 0);
         assertEq(t.balanceOf(dev), 0);
-        assertFalse(c.hasBought(dev));
+        assertFalse(c.countedVerifiedBuyer(dev));
     }
 
     function test_K5_DevFirstBuyGraduatesInCreateTx() public {
@@ -260,7 +260,7 @@ abstract contract CurveFactoryTestBase is MapaeFactoryTestBase {
     {
         for (uint256 i; i < logs.length; ++i) {
             if (logs[i].emitter == emitter && logs[i].topics[0] == BUY_SIG) {
-                (isDev, spent, out) = abi.decode(logs[i].data, (bool, uint256, uint256));
+                (isDev,, spent, out) = abi.decode(logs[i].data, (bool, bool, uint256, uint256));
                 return (true, isDev, spent, out);
             }
         }

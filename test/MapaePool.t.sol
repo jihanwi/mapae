@@ -62,15 +62,7 @@ contract MapaePoolTest is Test {
         // factory == address(0): swapForBurn is disabled here (covered by the
         // swapForBurn invariant suite); convertAndBurn stays permissionless.
         pool = poolFactory.createPool(
-            token,
-            IERC20(address(krw)),
-            creator,
-            feeRouter,
-            TIER,
-            address(0),
-            ROYALTY_BPS,
-            BURN_BPS,
-            IDojang(address(dojang))
+            token, IERC20(address(krw)), creator, feeRouter, TIER, address(0), ROYALTY_BPS, BURN_BPS
         );
         token.registerPool(address(pool));
 
@@ -101,17 +93,7 @@ contract MapaePoolTest is Test {
 
     function test_Factory_OnePoolPerToken() public {
         vm.expectRevert(abi.encodeWithSelector(PoolFactory.PoolExists.selector, address(token), address(pool)));
-        poolFactory.createPool(
-            token,
-            IERC20(address(krw)),
-            creator,
-            feeRouter,
-            TIER,
-            address(0),
-            ROYALTY_BPS,
-            BURN_BPS,
-            IDojang(address(dojang))
-        );
+        poolFactory.createPool(token, IERC20(address(krw)), creator, feeRouter, TIER, address(0), ROYALTY_BPS, BURN_BPS);
     }
 
     function test_Factory_OnlyTokenOffering() public {
@@ -119,17 +101,7 @@ contract MapaePoolTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(PoolFactory.NotTokenOffering.selector, address(this), makeAddr("otherOffering"))
         );
-        poolFactory.createPool(
-            other,
-            IERC20(address(krw)),
-            creator,
-            feeRouter,
-            TIER,
-            address(0),
-            ROYALTY_BPS,
-            BURN_BPS,
-            IDojang(address(dojang))
-        );
+        poolFactory.createPool(other, IERC20(address(krw)), creator, feeRouter, TIER, address(0), ROYALTY_BPS, BURN_BPS);
     }
 
     function test_RegisterPool_OnlyOfferingAndOnce() public {
@@ -224,15 +196,7 @@ contract MapaePoolTest is Test {
         amounts[1] = 100e18;
         locked.mintAllocations(to, amounts);
         MapaePool lockedPool = poolFactory.createPool(
-            locked,
-            IERC20(address(krw)),
-            creator,
-            feeRouter,
-            TIER,
-            address(0),
-            ROYALTY_BPS,
-            BURN_BPS,
-            IDojang(address(dojang))
+            locked, IERC20(address(krw)), creator, feeRouter, TIER, address(0), ROYALTY_BPS, BURN_BPS
         );
         locked.registerPool(address(lockedPool));
         locked.transfer(address(lockedPool), SEED_TOKEN); // this == offering: lock-exempt

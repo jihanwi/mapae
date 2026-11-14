@@ -17,14 +17,15 @@ import {CurvePresets} from "./CurvePresets.sol";
 
 /// @title CurveSale
 /// @notice v3 L0 bonding-curve primary market (IPrimaryMarket). One standard curve format
-///         (CurvePresets geometry, CurveMath pricing), Dojang-gated trading, fee accrual and
+///         (CurvePresets geometry, CurveMath pricing), a real-name priority window, fee accrual and
 ///         same-tx graduation into a MapaePool when the curve sells out.
 ///
 ///         Lifecycle
 ///         - Construction: snapshot the FeeRouter curve fee split, deploy the token with a
 ///           100-year transfer lock (holders can only trade with this contract — decision A),
 ///           mint TOTAL_SUPPLY to self (mint authority burned).
-///         - Trading: buy / sell against the curve, real-name wallets only (fail-closed).
+///         - Trading (v3.1): buys are limited to Dojang-verified wallets until priorityUntil
+///           (fail-closed), then open to anyone; sells are open to any holder.
 ///         - Graduation (the buy that reaches CURVE_SUPPLY): create the L0 pool, seed it with
 ///           DEX_SUPPLY tokens and r + lpSeedAccrued quote, LP to 0xdEaD, end the token lock.
 ///
@@ -57,6 +58,8 @@ contract CurveSale is IPrimaryMarket, ReentrancyGuard {
         string tokenName;
         string tokenSymbol;
         uint256 virtualQuote;
+        /// @notice Seconds after creation during which only Dojang-verified wallets may buy (v3.1).
+        uint32 priorityWindow;
     }
 
     struct BuyQuote {
@@ -93,6 +96,7 @@ contract CurveSale is IPrimaryMarket, ReentrancyGuard {
     event Buy(
         address indexed trader,
         bool isDev,
+        bool verified,
         uint256 quoteSpent,
         uint256 tokensOut,
         uint256 platformFee,
@@ -136,6 +140,10 @@ contract CurveSale is IPrimaryMarket, ReentrancyGuard {
     /// @notice Deployer (CurveFactory) — the only caller allowed to use buyFor.
     address public immutable factory;
 
+    /// @notice End of the real-name priority window (creation time + priorityWindow). Before it,
+    ///         only Dojang-verified wallets may buy; from it on (inclusive) anyone may buy.
+    uint64 public immutable priorityUntil;
+
     /// @notice Curve fee split snapshotted from FeeRouter at construction (bps of trade size).
     uint16 public immutable platformBps;
     uint16 public immutable devBps;
@@ -157,8 +165,11 @@ contract CurveSale is IPrimaryMarket, ReentrancyGuard {
     /// @notice r at the moment of graduation (moved into the pool together with lpSeedAccrued).
     uint256 public graduationReserve;
 
-    mapping(address account => bool) public hasBought;
-    /// @notice Distinct real-name buyers, dev excluded. Monotonic.
+    /// @notice True once the wallet has been counted in verifiedBuyerCount, i.e. it made a buy
+    ///         while Dojang-verified. Buys made while unverified do not set it, so a wallet that
+    ///         first bought unverified and later buys verified is counted exactly once then.
+    mapping(address account => bool) public countedVerifiedBuyer;
+    /// @notice Distinct wallets that bought while Dojang-verified, dev excluded. Monotonic.
     uint32 public verifiedBuyerCount;
 
     constructor(InitParams memory p) {
@@ -177,6 +188,7 @@ contract CurveSale is IPrimaryMarket, ReentrancyGuard {
         mapaeFactory = p.mapaeFactory;
         virtualQuote = p.virtualQuote;
         factory = msg.sender;
+        priorityUntil = uint64(block.timestamp + p.priorityWindow);
 
         IFeeRouter.CurveFees memory f = p.feeRouter.getCurveFees();
         if (uint256(f.platformBps) + f.devBps + f.lpSeedBps >= BPS) revert InvalidConfig();
@@ -208,8 +220,8 @@ contract CurveSale is IPrimaryMarket, ReentrancyGuard {
         return _buy(msg.sender, msg.sender, quoteIn, minTokensOut);
     }
 
-    /// @notice Factory-driven buy (dev first buy at creation). Quote is pulled from the factory,
-    ///         tokens go to `trader`; the real-name gate, buyer count and isDev use `trader`.
+    /// @notice Factory-driven buy (dev first buy at creation, native ETH buys). Quote is pulled from
+    ///         the factory, tokens go to `trader`; the priority gate, buyer count and isDev use `trader`.
     function buyFor(address trader, uint256 quoteIn, uint256 minTokensOut)
         external
         nonReentrant
@@ -223,7 +235,8 @@ contract CurveSale is IPrimaryMarket, ReentrancyGuard {
         internal
         returns (uint256 tokensOut, uint256 quoteSpent)
     {
-        _gate(trader);
+        if (graduated) revert AlreadyGraduated();
+        bool verified = _buyerVerified(trader);
         BuyQuote memory q = _quoteBuy(quoteIn);
         if (q.tokensOut == 0) revert ZeroTokensOut();
         if (q.tokensOut < minTokensOut) revert InsufficientOutput(q.tokensOut, minTokensOut);
@@ -236,24 +249,22 @@ contract CurveSale is IPrimaryMarket, ReentrancyGuard {
         lpSeedAccrued += q.lpSeedFee;
 
         bool isDev = trader == dev;
-        if (!hasBought[trader]) {
-            hasBought[trader] = true;
-            if (!isDev) {
-                uint32 c = ++verifiedBuyerCount;
-                emit VerifiedBuyerCounted(trader, c);
-            }
+        if (verified && !isDev && !countedVerifiedBuyer[trader]) {
+            countedVerifiedBuyer[trader] = true;
+            uint32 c = ++verifiedBuyerCount;
+            emit VerifiedBuyerCounted(trader, c);
         }
 
         IERC20(address(_token)).safeTransfer(trader, q.tokensOut);
-        emit Buy(trader, isDev, q.quoteSpent, q.tokensOut, q.platformFee, q.devFee, q.lpSeedFee, r, s);
+        emit Buy(trader, isDev, verified, q.quoteSpent, q.tokensOut, q.platformFee, q.devFee, q.lpSeedFee, r, s);
 
         if (q.graduates) _graduate();
         return (q.tokensOut, q.quoteSpent);
     }
 
-    /// @notice Sell tokens back to the curve. Pays gross − fee out of r.
+    /// @notice Sell tokens back to the curve. Pays gross − fee out of r. Open to any holder (v3.1).
     function sell(uint256 tokenIn, uint256 minQuoteOut) external nonReentrant returns (uint256 quoteOut) {
-        _gate(msg.sender);
+        if (graduated) revert AlreadyGraduated();
         if (tokenIn == 0) revert ZeroAmount();
         SellQuote memory q = _quoteSell(tokenIn);
         if (q.quoteOut < minQuoteOut) revert InsufficientOutput(q.quoteOut, minQuoteOut);
@@ -308,6 +319,11 @@ contract CurveSale is IPrimaryMarket, ReentrancyGuard {
         return _quoteSell(tokenIn);
     }
 
+    /// @notice True while only Dojang-verified wallets may buy (block.timestamp < priorityUntil).
+    function inPriorityWindow() external view returns (bool) {
+        return block.timestamp < priorityUntil;
+    }
+
     /// @notice Curve spot price as (numerator, denominator) in raw quote per raw token.
     function spotPrice() external view returns (uint256 num, uint256 den) {
         return CurveMath.spotPrice(_params(), r, s);
@@ -348,11 +364,21 @@ contract CurveSale is IPrimaryMarket, ReentrancyGuard {
         });
     }
 
-    /// @dev Real-name gate + phase check shared by buy and sell (fail-closed: a reverting
-    ///      Dojang reverts the trade).
-    function _gate(address trader) internal view {
-        if (graduated) revert AlreadyGraduated();
-        if (!dojang.isVerified(trader)) revert NotVerified(trader);
+    /// @dev Real-name status of a buyer, enforcing the priority window.
+    ///      Inside the window the check is fail-closed: an unverified buyer reverts NotVerified and
+    ///      a reverting Dojang reverts the buy (no try/catch). After the window anyone may buy; the
+    ///      status is only looked up for the verified-buyer count and the Buy event, so a reverting
+    ///      Dojang reads as "not verified" instead of blocking the trade.
+    function _buyerVerified(address trader) internal view returns (bool) {
+        if (block.timestamp < priorityUntil) {
+            if (!dojang.isVerified(trader)) revert NotVerified(trader);
+            return true;
+        }
+        try dojang.isVerified(trader) returns (bool v) {
+            return v;
+        } catch {
+            return false;
+        }
     }
 
     function _quoteBuy(uint256 quoteIn) internal view returns (BuyQuote memory q) {
@@ -389,15 +415,7 @@ contract CurveSale is IPrimaryMarket, ReentrancyGuard {
     function _graduate() internal {
         graduated = true;
         MapaePool p = poolFactory.createPool(
-            _token,
-            quote,
-            dev,
-            feeRouter,
-            IFeeRouter.UtilityTier.L0,
-            mapaeFactory,
-            CurvePresets.SWAP_FEE_DEV_BPS,
-            0,
-            dojang
+            _token, quote, dev, feeRouter, IFeeRouter.UtilityTier.L0, mapaeFactory, CurvePresets.SWAP_FEE_DEV_BPS, 0
         );
         pool = p;
         _token.registerPool(address(p));

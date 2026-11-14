@@ -18,9 +18,7 @@ contract PoolFeeCapTest is OfferingTestBase {
     MembershipToken internal tok = MembershipToken(makeAddr("token"));
 
     function _pool(IFeeRouter.UtilityTier tier, uint16 royalty, uint16 burn) internal returns (MapaePool) {
-        return new MapaePool(
-            tok, IERC20(address(krw)), creator, feeRouter, tier, address(0), royalty, burn, IDojang(address(dojang))
-        );
+        return new MapaePool(tok, IERC20(address(krw)), creator, feeRouter, tier, address(0), royalty, burn);
     }
 
     function _f(uint16 off, uint16 plat, uint16 roy, uint16 burn, uint16 lp, uint16 merch)
