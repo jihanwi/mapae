@@ -196,6 +196,8 @@ export function resolve(entries: readonly Entry[], curves: readonly CurveRef[]):
 
 export type CurveStats = {
     lastTradeBlock: bigint;
+    /** Unix seconds of the last trade, when known (server summary merge); sorting prefers it. */
+    lastTradeTs?: number;
     tradeCount: number;
     /** Distinct non-Dev wallets that traded in the window. */
     uniqueTraders: number;
@@ -279,6 +281,9 @@ export function sortCurves<T extends SortCurve>(tab: Tab, curves: readonly T[], 
     switch (tab) {
         case "latest":
             return list.sort((a, b) => {
+                const sa = stats.get(a.address)?.lastTradeTs;
+                const sb = stats.get(b.address)?.lastTradeTs;
+                if (sa !== undefined && sb !== undefined && sa !== sb) return sb - sa;
                 const la = last(a);
                 const lb = last(b);
                 if (la !== undefined && lb !== undefined) return la === lb ? byNewest(a, b) : la > lb ? -1 : 1;
