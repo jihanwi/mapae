@@ -65,7 +65,7 @@ contract PeripheralsV2Test is Test {
             feeRouter,
             vault,
             RAISE,
-            MapaeFactory.FeeRecipients({platform: platform, reserve: reserve}),
+            MapaeFactory.FeeRecipients({platform: platform}),
             MapaeFactory.Guide({
                 minPrice: 1000e18,
                 maxPrice: 100_000e18,

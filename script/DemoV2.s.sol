@@ -80,7 +80,7 @@ contract DemoV2 is Script {
             feeRouter,
             vault,
             500_000e18, // minRaise floor
-            MapaeFactory.FeeRecipients({platform: deployer, reserve: deployer}),
+            MapaeFactory.FeeRecipients({platform: deployer}),
             MapaeFactory.Guide({
                 minPrice: 1000e18,
                 maxPrice: 100_000e18,
@@ -160,7 +160,7 @@ contract DemoV2 is Script {
         vm.startPrank(fanB);
         krw.faucet(50_000e18);
         krw.approve(address(pool), 50_000e18);
-        uint256 out = pool.swapKrwForToken(50_000e18, 0, fanB);
+        uint256 out = pool.swapQuoteForToken(50_000e18, 0, fanB);
         vm.stopPrank();
         console.log("  fanB bought tokens:", out, "| platform swap cut:", krw.balanceOf(deployer) - treBefore);
 

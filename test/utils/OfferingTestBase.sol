@@ -63,7 +63,6 @@ abstract contract OfferingTestBase is Test {
         p.fBps = F_BPS;
         p.cBps = C_BPS;
         p.creatorTokenBps = CREATOR_TOKEN_BPS;
-        p.platformTokenBps = 500; // L1/L2 fixed 5%
         p.swapRoyaltyBps = 60; // L1 default (FeeRouter tier table)
         p.swapBurnBps = 30; // L1 default
         p.refundMode = mode;
@@ -73,8 +72,7 @@ abstract contract OfferingTestBase is Test {
         p.feeRouter = feeRouter;
         p.tier = IFeeRouter.UtilityTier.L1; // default premium tier
         p.mapaeFactory = address(0); // no burner registry in isolated offering tests
-        p.recipients =
-            IOffering.AllocationRecipients({creatorVesting: creatorVesting, platform: platform, reserve: reserve});
+        p.recipients = IOffering.AllocationRecipients({creatorVesting: creatorVesting, platform: platform});
     }
 
     function newOffering(IOffering.RefundMode mode) internal returns (Offering) {

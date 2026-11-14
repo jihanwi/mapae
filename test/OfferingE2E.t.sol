@@ -98,8 +98,10 @@ contract OfferingE2ETest is OfferingTestBase {
         assertEq(poolA.spotPrice(), PRICE); // 상장가 == 공모가
         assertEq(poolA.balanceOf(poolA.DEAD()), poolA.totalSupply()); // LP 영구 락업
 
-        // Supply S' = totalSold / 0.6 with all shares minted (no unsold to burn).
-        assertEq(token.totalSupply(), f.totalSold * 10_000 / F_BPS);
+        // v3 decision 21: S' = totalSold / 0.6, the 6% remainder (and LP-seed rounding surplus)
+        // is burned at settle → circulating = sold + creator + pool seed; platform holds none.
+        assertEq(token.totalSupply(), f.totalSold + token.balanceOf(creatorVesting) + token.balanceOf(address(poolA)));
+        assertEq(token.balanceOf(platform), 0);
     }
 
     /// Undersubscribed mode B: 600k committed vs R=1M — sold portion issued,
@@ -120,12 +122,13 @@ contract OfferingE2ETest is OfferingTestBase {
         emit IOffering.UnsoldBurned(unsold);
         offering.settle(f.root, f.totalSold, f.totalRaised, f.seed);
 
-        // S' = 60/0.6 = 100 tokens; unsold burned so it never circulates.
-        assertEq(token.totalSupply(), 100e18);
+        // S' = 60/0.6 = 100 tokens; unsold burned so it never circulates. v3 decision 21: the
+        // 6% remainder (old platform 5 + reserve 1) is burned too → 94 tokens circulate.
+        assertEq(token.totalSupply(), 94e18);
         assertEq(token.balanceOf(creatorVesting), 25e18);
         assertEq(token.balanceOf(address(offering.pool())), 9e18); // l = c×f = 9%, seeded
-        assertEq(token.balanceOf(platform), 5e18);
-        assertEq(token.balanceOf(reserve), 1e18);
+        assertEq(token.balanceOf(platform), 0);
+        assertEq(token.balanceOf(reserve), 0);
 
         _claimAll(offering, f);
 

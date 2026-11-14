@@ -60,7 +60,7 @@ contract InvariantsV2Test is Test {
             feeRouter,
             buybackVault,
             MIN_RAISE,
-            MapaeFactory.FeeRecipients({platform: platform, reserve: reserve}),
+            MapaeFactory.FeeRecipients({platform: platform}),
             MapaeFactory.Guide({
                 minPrice: 1000e18,
                 maxPrice: 100_000e18,
@@ -93,7 +93,7 @@ contract InvariantsV2Test is Test {
         cp.cBps = l0 ? 2500 : 1500;
         cp.creatorTokenBps = l0 ? 500 : 2500;
         cp.swapRoyaltyBps = l0 ? 20 : 60; // L0 royalty band [0,30]
-        cp.swapBurnBps = l0 ? 20 : 30;
+        cp.swapBurnBps = l0 ? 0 : 30;
         cp.tier = tier;
         cp.refundMode = IOffering.RefundMode.Partial;
         cp.transferLockDuration = 0;
@@ -227,19 +227,14 @@ contract InvariantsV2Test is Test {
     }
 
     // ==================================================================
-    // invariant 4 — L0 cannot be created with platformTokenBps != 0
+    // invariant 4 (v3, decision 21) — no tier gives the platform any issued token
     // ==================================================================
 
-    function testFuzz_Inv4_L0PlatformTokenMustBeZero(uint16 platformTokenBps) public {
-        platformTokenBps = uint16(bound(platformTokenBps, 1, 9000));
-        IOffering.OfferingParams memory p = _directParams(IFeeRouter.UtilityTier.L0);
-        p.platformTokenBps = platformTokenBps; // any non-zero
-        vm.expectRevert(IOffering.InvalidConfig.selector);
-        offeringDeployer.deploy(p);
-        // zero is accepted
-        p.platformTokenBps = 0;
-        Offering o = offeringDeployer.deploy(p);
-        assertEq(o.platformTokenBps(), 0);
+    function testFuzz_Inv4_NoPlatformTokenAnyTier(uint8 tierRaw) public {
+        IFeeRouter.UtilityTier tier = IFeeRouter.UtilityTier(bound(tierRaw, 0, 2));
+        (, MembershipToken t) = _createAndSettle(tier);
+        assertEq(t.balanceOf(platform), 0);
+        assertEq(t.balanceOf(treasury), 0);
     }
 
     // ==================================================================
@@ -337,16 +332,16 @@ contract InvariantsV2Test is Test {
         uint256 treBefore = krw.balanceOf(treasury);
         uint256 creBefore = krw.balanceOf(creator);
         uint256 bufBefore = pool.burnBuffer();
-        uint256 reserveBefore = pool.reserveKrw();
+        uint256 reserveBefore = pool.reserveQuote();
         vm.startPrank(fan);
         krw.faucet(amountIn);
         krw.approve(address(pool), amountIn);
-        pool.swapKrwForToken(amountIn, 0, fan);
+        pool.swapQuoteForToken(amountIn, 0, fan);
         vm.stopPrank();
         obs.platform = krw.balanceOf(treasury) - treBefore;
         obs.royalty = krw.balanceOf(creator) - creBefore;
         obs.burn = pool.burnBuffer() - bufBefore;
-        obs.reserveGain = pool.reserveKrw() - reserveBefore;
+        obs.reserveGain = pool.reserveQuote() - reserveBefore;
     }
 
     function testFuzz_Inv10_FeeSplitPrecision(uint256 amountIn) public {
@@ -425,7 +420,7 @@ contract InvariantsV2Test is Test {
         vm.startPrank(fan);
         krw.faucet(200_000e18);
         krw.approve(address(pool), type(uint256).max);
-        pool.swapKrwForToken(200_000e18, 0, fan);
+        pool.swapQuoteForToken(200_000e18, 0, fan);
         t.approve(address(pool), type(uint256).max);
         vm.stopPrank();
         amountIn = bound(amountIn, 1e15, t.balanceOf(fan));
@@ -433,12 +428,12 @@ contract InvariantsV2Test is Test {
         IFeeRouter.TierFees memory f = feeRouter.getFees(IFeeRouter.UtilityTier.L1);
         uint256 treBefore = krw.balanceOf(treasury);
         uint256 creBefore = krw.balanceOf(creator);
-        uint256 reserveKrwBefore = pool.reserveKrw();
+        uint256 reserveQuoteBefore = pool.reserveQuote();
 
         vm.prank(fan);
-        uint256 out = pool.swapTokenForKrw(amountIn, 0, fan);
+        uint256 out = pool.swapTokenForQuote(amountIn, 0, fan);
 
-        uint256 grossOut = reserveKrwBefore - pool.reserveKrw();
+        uint256 grossOut = reserveQuoteBefore - pool.reserveQuote();
         uint256 platform = krw.balanceOf(treasury) - treBefore;
         uint256 royalty = krw.balanceOf(creator) - creBefore;
         // platform/royalty are exact floors of the KRWs OUTPUT (base = grossOut).
@@ -462,10 +457,10 @@ contract InvariantsV2Test is Test {
         krw.faucet(buy1 + buy2);
         krw.approve(address(pool), type(uint256).max);
         t.approve(address(pool), type(uint256).max);
-        pool.swapKrwForToken(buy1, 0, fan);
+        pool.swapQuoteForToken(buy1, 0, fan);
         uint256 sellAmt = bound(sellSeed, 1, t.balanceOf(fan));
-        pool.swapTokenForKrw(sellAmt, 0, fan); // sell routes platform in KRWs
-        pool.swapKrwForToken(buy2, 0, fan);
+        pool.swapTokenForQuote(sellAmt, 0, fan); // sell routes platform in KRWs
+        pool.swapQuoteForToken(buy2, 0, fan);
         vm.stopPrank();
 
         // Treasury accrues KRWs from platform cuts but NEVER creator tokens.
@@ -487,18 +482,25 @@ contract InvariantsV2Test is Test {
         p.swapBurnBps = 51;
         vm.expectRevert(IOffering.InvalidConfig.selector);
         offeringDeployer.deploy(p);
+        // decision 28: individual edges 80 / 50 still hold, but royalty + burn ≤ 90
         p.swapBurnBps = 50;
-        Offering o1 = offeringDeployer.deploy(p); // 80/50 edge ok
+        vm.expectRevert(IOffering.InvalidConfig.selector);
+        offeringDeployer.deploy(p); // 80/50 = 130 > 90
+        p.swapBurnBps = 10;
+        Offering o1 = offeringDeployer.deploy(p); // 80/10 royalty edge ok (sum 90)
         assertEq(o1.swapRoyaltyBps(), 80);
+        p.swapRoyaltyBps = 40;
+        p.swapBurnBps = 50;
+        assertEq(offeringDeployer.deploy(p).swapBurnBps(), 50); // 40/50 burn edge ok (sum 90)
 
-        // L0: royalty [0,30] (tighter), burn [0,50]
+        // L0: royalty [0,30] (tighter), burn must be 0 (v3: L0 total swap fee ≤ 100 bps)
         IOffering.OfferingParams memory q = _directParams(IFeeRouter.UtilityTier.L0);
         q.swapRoyaltyBps = 31;
         vm.expectRevert(IOffering.InvalidConfig.selector);
         offeringDeployer.deploy(q);
         q.swapRoyaltyBps = 30;
-        q.swapBurnBps = 50;
-        Offering o2 = offeringDeployer.deploy(q); // 30/50 edge ok
+        q.swapBurnBps = 0;
+        Offering o2 = offeringDeployer.deploy(q); // 30/0 edge ok
         assertEq(o2.swapRoyaltyBps(), 30);
     }
 
@@ -542,9 +544,8 @@ contract InvariantsV2Test is Test {
         p.fBps = l0 ? 7000 : 6000;
         p.cBps = l0 ? 2500 : 1500;
         p.creatorTokenBps = l0 ? 500 : 2500;
-        p.platformTokenBps = l0 ? 0 : 500;
         p.swapRoyaltyBps = l0 ? 20 : 60;
-        p.swapBurnBps = l0 ? 20 : 30;
+        p.swapBurnBps = l0 ? 0 : 30;
         p.refundMode = IOffering.RefundMode.Partial;
         p.transferLockDuration = 0;
         p.holdingCapBps = 0;
@@ -552,7 +553,6 @@ contract InvariantsV2Test is Test {
         p.feeRouter = feeRouter;
         p.tier = tier;
         p.mapaeFactory = address(factory);
-        p.recipients =
-            IOffering.AllocationRecipients({creatorVesting: makeAddr("cv"), platform: platform, reserve: reserve});
+        p.recipients = IOffering.AllocationRecipients({creatorVesting: makeAddr("cv"), platform: platform});
     }
 }

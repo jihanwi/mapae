@@ -34,10 +34,12 @@ interface IOffering is IPrimaryMarket {
     ///         creatorVesting is the Vesting contract from M4 on. The LP share
     ///         no longer has a recipient: it is seeded into the AMM pool at
     ///         settle with LP shares minted to 0xdEaD (D8).
+    ///         v3 (decision 21): `platform` receives ONLY the quote-asset platform cut of the
+    ///         proceeds — this address never receives the issued token. There is no reserve
+    ///         recipient: the remainder share is burned at settle.
     struct AllocationRecipients {
         address creatorVesting;
         address platform;
-        address reserve;
     }
 
     /// @notice Full constructor configuration for an Offering.
@@ -61,7 +63,6 @@ interface IOffering is IPrimaryMarket {
         uint16 fBps; // sale fraction of total supply, in bps (tier band)
         uint16 cBps; // LP share of proceeds, in bps; token side l = c × f
         uint16 creatorTokenBps; // creator (issuer) share of S', in bps (tier band)
-        uint16 platformTokenBps; // platform token cut (L0 must be 0; L1/L2 = 500)
         uint16 swapRoyaltyBps; // per-pool creator royalty (tier band; snapshot)
         uint16 swapBurnBps; // per-pool creator burn (tier band; snapshot)
         RefundMode refundMode;
@@ -111,6 +112,10 @@ interface IOffering is IPrimaryMarket {
     /// @notice Emitted when unsold tokens are burned during settlement.
     /// @param amount Membership tokens burned.
     event UnsoldBurned(uint256 amount);
+
+    /// @notice Remainder share (supply − sold − creator − LP) and LP-seed surplus burned at
+    ///         settle (v3 decision 21: no reserve, no platform token).
+    event RemainderBurned(uint256 amount);
 
     /// @notice Emitted when the AMM pool is seeded at settle (D8).
     /// @param pool The MapaePool created for this token.

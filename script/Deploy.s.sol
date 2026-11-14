@@ -59,7 +59,7 @@ contract Deploy is Script {
             maxWalletLimitBps: 3000
         });
         MapaeFactory.FeeRecipients memory recipients =
-            MapaeFactory.FeeRecipients({platform: deployer, reserve: deployer});
+            MapaeFactory.FeeRecipients({platform: deployer});
 
         // Stack 2: main demo (mock verification, fully controllable)
         MapaeFactory factoryMock = new MapaeFactory(

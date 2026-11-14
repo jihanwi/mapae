@@ -38,6 +38,18 @@ interface IFeeRouter {
     /// @notice The current fee schedule for `tier`.
     function getFees(UtilityTier tier) external view returns (TierFees memory);
 
+    /// @notice v3 bonding-curve trade fee split (bps of trade size), consumed by CurveSale.
+    ///         platform → treasury, dev → issuer royalty, lpSeed → accrued in the curve and
+    ///         added to the pool at graduation.
+    struct CurveFees {
+        uint16 platformBps;
+        uint16 devBps;
+        uint16 lpSeedBps;
+    }
+
+    /// @notice Current curve fee split.
+    function getCurveFees() external view returns (CurveFees memory);
+
     /// @notice Destination for all platform-side fee flows.
     function platformTreasury() external view returns (address);
 }

@@ -3,6 +3,7 @@ pragma solidity ^0.8.26;
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {IDojang} from "./interfaces/IDojang.sol";
 import {IOffering} from "./interfaces/IOffering.sol";
 import {IPrimaryMarket} from "./interfaces/IPrimaryMarket.sol";
@@ -41,14 +42,13 @@ contract MapaeFactory is Ownable, IBurnerRegistry {
     error WalletLimitOutOfBand(uint256 walletLimit);
     error InvalidGuide();
     error ZeroAddress();
-
-    /// @notice Platform token cut for premium tiers (L1/L2). L0 is forced to 0.
-    uint16 public constant PREMIUM_PLATFORM_TOKEN_BPS = 500;
+    error ZeroCurveVirtualQuote();
+    error QuoteAlreadyRegistered(address quote);
+    error QuoteNotRegistered(address quote);
 
     /// @notice Platform-side allocation recipients wired into every offering.
     struct FeeRecipients {
         address platform;
-        address reserve;
     }
 
     /// @notice Platform guide bands for creator-chosen parameters (L1/L2 only).
@@ -84,6 +84,19 @@ contract MapaeFactory is Ownable, IBurnerRegistry {
         uint64 vestingDuration; // tier-dependent band
         uint64 vestingCliff; // tier-dependent band
     }
+
+    /// @notice Quote asset entry for CurveSale (C1). `curveVirtualQuote` (raw units of the quote)
+    ///         and `decimals` are written once at registration and are immutable thereafter; only
+    ///         `enabled` (whether NEW curves may open with this quote) can change.
+    struct QuoteConfig {
+        bool registered;
+        bool enabled;
+        uint8 decimals;
+        uint256 curveVirtualQuote;
+    }
+
+    event QuoteAllowed(address indexed quote, uint8 decimals, uint256 curveVirtualQuote);
+    event QuoteEnabledSet(address indexed quote, bool enabled);
 
     event OfferingCreated(
         address indexed creator,
@@ -136,6 +149,10 @@ contract MapaeFactory is Ownable, IBurnerRegistry {
     /// @inheritdoc IBurnerRegistry
     mapping(address account => bool) public isBurner;
 
+    /// @dev Quote registry for CurveSale (C1). Fixed-price offerings always settle in paymentToken.
+    mapping(address quote => QuoteConfig) internal _quoteConfig;
+    address[] internal _allQuotes;
+
     constructor(
         IDojang dojang_,
         IERC20 paymentToken_,
@@ -151,7 +168,6 @@ contract MapaeFactory is Ownable, IBurnerRegistry {
             address(dojang_) == address(0) || address(paymentToken_) == address(0)
                 || address(poolFactory_) == address(0) || address(feeRouter_) == address(0)
                 || address(buybackVault_) == address(0) || feeRecipients_.platform == address(0)
-                || feeRecipients_.reserve == address(0)
         ) revert ZeroAddress();
         if (minRaise_ == 0) revert InvalidGuide();
         dojang = dojang_;
@@ -255,9 +271,8 @@ contract MapaeFactory is Ownable, IBurnerRegistry {
         }
     }
 
-    /// @dev Assemble OfferingParams. platformTokenBps is forced by tier
-    ///      (L0 = 0 → invariant 4; L1/L2 = 5%). Split out to keep createOffering
-    ///      under the stack-depth limit.
+    /// @dev Assemble OfferingParams. Split out to keep createOffering under the
+    ///      stack-depth limit. No platform token share is passed (decision 21).
     function _buildParams(CreateParams calldata cp, address vesting)
         internal
         view
@@ -278,7 +293,6 @@ contract MapaeFactory is Ownable, IBurnerRegistry {
         p.fBps = cp.fBps;
         p.cBps = cp.cBps;
         p.creatorTokenBps = cp.creatorTokenBps;
-        p.platformTokenBps = cp.tier == IFeeRouter.UtilityTier.L0 ? 0 : PREMIUM_PLATFORM_TOKEN_BPS;
         p.swapRoyaltyBps = cp.swapRoyaltyBps;
         p.swapBurnBps = cp.swapBurnBps;
         p.refundMode = cp.refundMode;
@@ -288,9 +302,7 @@ contract MapaeFactory is Ownable, IBurnerRegistry {
         p.feeRouter = feeRouter;
         p.tier = cp.tier;
         p.mapaeFactory = address(this);
-        p.recipients = IOffering.AllocationRecipients({
-            creatorVesting: vesting, platform: feeRecipients.platform, reserve: feeRecipients.reserve
-        });
+        p.recipients = IOffering.AllocationRecipients({creatorVesting: vesting, platform: feeRecipients.platform});
     }
 
     function allOfferings() external view returns (address[] memory) {
@@ -299,5 +311,46 @@ contract MapaeFactory is Ownable, IBurnerRegistry {
 
     function offeringsByCreator(address creator) external view returns (address[] memory) {
         return _offeringsByCreator[creator];
+    }
+
+    // ---------------------------------------------------------------------
+    // Quote registry (C1) — consumed by CurveSale; FixedOffering stays on paymentToken
+    // ---------------------------------------------------------------------
+
+    /// @notice Register a quote asset with its curve virtual quote reserve (raw units).
+    ///         One-shot: a registered quote can never be re-registered, so the price path
+    ///         (curveVirtualQuote) cannot be changed after the fact by anyone.
+    ///         Registered quotes start enabled.
+    function allowQuote(IERC20 quote, uint256 curveVirtualQuote) external onlyOwner {
+        address q = address(quote);
+        if (q == address(0)) revert ZeroAddress();
+        if (curveVirtualQuote == 0) revert ZeroCurveVirtualQuote();
+        if (_quoteConfig[q].registered) revert QuoteAlreadyRegistered(q);
+        uint8 dec = IERC20Metadata(q).decimals();
+        _quoteConfig[q] =
+            QuoteConfig({registered: true, enabled: true, decimals: dec, curveVirtualQuote: curveVirtualQuote});
+        _allQuotes.push(q);
+        emit QuoteAllowed(q, dec, curveVirtualQuote);
+    }
+
+    /// @notice Toggle whether NEW curves may open with `quote`. Existing curves and pools keep
+    ///         their snapshot and are unaffected.
+    function setQuoteEnabled(address quote, bool enabled) external onlyOwner {
+        if (!_quoteConfig[quote].registered) revert QuoteNotRegistered(quote);
+        _quoteConfig[quote].enabled = enabled;
+        emit QuoteEnabledSet(quote, enabled);
+    }
+
+    function isQuoteAllowed(address quote) external view returns (bool) {
+        QuoteConfig storage c = _quoteConfig[quote];
+        return c.registered && c.enabled;
+    }
+
+    function quoteConfig(address quote) external view returns (QuoteConfig memory) {
+        return _quoteConfig[quote];
+    }
+
+    function allQuotes() external view returns (address[] memory) {
+        return _allQuotes;
     }
 }

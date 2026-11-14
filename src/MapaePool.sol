@@ -7,25 +7,26 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {MembershipToken} from "./MembershipToken.sol";
+import {IDojang} from "./interfaces/IDojang.sol";
 import {IFeeRouter} from "./interfaces/IFeeRouter.sol";
 import {IBurnerRegistry} from "./interfaces/IBurnerRegistry.sol";
 
 /// @title MapaePool
-/// @notice Minimal constant-product AMM for a single MembershipToken/KRWs pair
+/// @notice Minimal constant-product AMM for a single MembershipToken/quote pair
 ///         (D7 — deliberately NOT a UniV2 fork: a ~300-line pool is auditable).
 ///
 ///         Swap fee is a tiered 4-way split. platform + LP shares come from the
 ///         FeeRouter live by tier (not overridable); royalty + burn are per-pool
 ///         creator settings snapshotted at creation (R2). The split is
-///         DIRECTIONAL so royalty is always paid in KRWs and the treasury never
+///         DIRECTIONAL so royalty is always paid in quote and the treasury never
 ///         holds creator tokens (R1, invariant 17):
-///         - Buy (KRWs in):  all four taken from the KRWs input — platform →
+///         - Buy (quote in):  all four taken from the quote input — platform →
 ///                           treasury, royalty → creator, burn → burnBuffer, lp
 ///                           stays in reserve (absorbs rounding → invariant 10).
 ///         - Sell (token in): burn burns from the token input, lp stays in
 ///                           reserve (both input-side); platform + royalty are
-///                           carved from the KRWs output (treasury/creator in
-///                           KRWs), and the caller receives the remainder.
+///                           carved from the quote output (treasury/creator in
+///                           quote), and the caller receives the remainder.
 ///
 ///         `swapForBurn` is a 0%-fee buy-and-burn open only to MapaeFactory-
 ///         registered burners (Sponsorship / the BuybackVault). The bought
@@ -45,26 +46,34 @@ contract MapaePool is ERC20, ReentrancyGuard {
     error EmptyBurnBuffer();
     /// @notice swapForBurn caller is not a MapaeFactory-registered burner.
     error NotBurner(address caller);
+    /// @notice Swap caller or recipient is not a Dojang Verified Address (v3 decision B).
+    error NotVerified(address account);
+    /// @notice Per-pool royalty+burn share outside the tier cap (decision 28).
+    error PoolShareOutOfBand();
 
     event Swapped(
-        address indexed sender, address indexed to, bool krwIn, uint256 amountIn, uint256 amountOut, uint256 royalty
+        address indexed sender, address indexed to, bool quoteIn, uint256 amountIn, uint256 amountOut, uint256 royalty
     );
-    event LiquidityMinted(address indexed to, uint256 tokenAmount, uint256 krwAmount, uint256 liquidity);
-    event LiquidityBurned(address indexed to, uint256 tokenAmount, uint256 krwAmount, uint256 liquidity);
+    event LiquidityMinted(address indexed to, uint256 tokenAmount, uint256 quoteAmount, uint256 liquidity);
+    event LiquidityBurned(address indexed to, uint256 tokenAmount, uint256 quoteAmount, uint256 liquidity);
     event TokensBurned(uint256 amount);
     event BurnBufferAccrued(uint256 amount, uint256 total);
-    event ConvertedAndBurned(address indexed caller, uint256 krwIn, uint256 tokensBurned);
+    event ConvertedAndBurned(address indexed caller, uint256 quoteIn, uint256 tokensBurned);
     /// @notice 0%-fee buy-and-burn driven by a registered burner (invariant 2).
-    event BurnSwapped(address indexed caller, uint256 krwIn, uint256 tokensBurned);
-    /// @notice Platform swap cut sent to treasury — ALWAYS in KRWs (invariant 17).
+    event BurnSwapped(address indexed caller, uint256 quoteIn, uint256 tokensBurned);
+    /// @notice Platform swap cut sent to treasury — ALWAYS in quote (invariant 17).
     event PlatformFeePaid(address indexed treasury, uint256 amount);
 
     uint16 public constant BPS = 10_000;
+    /// @notice Pool share (royalty + burn) caps — with the FeeRouter router-share caps (L0 70,
+    ///         L1/L2 60) the pool's total swap fee is ≤ 100 bps on L0 and ≤ 150 bps on L1/L2.
+    uint16 public constant MAX_POOL_SHARE_BPS_L0 = 30;
+    uint16 public constant MAX_POOL_SHARE_BPS_PREMIUM = 90;
     uint256 internal constant WAD = 1e18;
     address public constant DEAD = 0x000000000000000000000000000000000000dEaD;
 
     MembershipToken public immutable membershipToken;
-    IERC20 public immutable krw;
+    IERC20 public immutable quote;
     address public immutable creator;
     /// @notice Tiered fee source — supplies the platform + LP swap shares live
     ///         (not overridable). Royalty/burn are per-pool (below).
@@ -78,35 +87,44 @@ contract MapaePool is ERC20, ReentrancyGuard {
     uint16 public immutable royaltyBps;
     /// @notice Per-pool creator burn share (bps), snapshotted at creation (R2).
     uint16 public immutable burnBps;
+    /// @notice Real-name gate for swapQuoteForToken / swapTokenForQuote (all tiers, fail-closed).
+    IDojang public immutable dojang;
 
     uint256 public reserveToken;
-    uint256 public reserveKrw;
-    /// @notice KRWs accrued from burn fees, spendable ONLY via convertAndBurn
+    uint256 public reserveQuote;
+    /// @notice quote accrued from burn fees, spendable ONLY via convertAndBurn
     ///         (invariant: no other outflow path exists).
     uint256 public burnBuffer;
 
     constructor(
         MembershipToken membershipToken_,
-        IERC20 krw_,
+        IERC20 quote_,
         address creator_,
         IFeeRouter feeRouter_,
         IFeeRouter.UtilityTier tier_,
         address factory_,
         uint16 royaltyBps_,
-        uint16 burnBps_
+        uint16 burnBps_,
+        IDojang dojang_
     ) ERC20("MAPAE LP", "MAPAE-LP") {
         if (
-            address(membershipToken_) == address(0) || address(krw_) == address(0) || creator_ == address(0)
-                || address(feeRouter_) == address(0)
+            address(membershipToken_) == address(0) || address(quote_) == address(0) || creator_ == address(0)
+                || address(feeRouter_) == address(0) || address(dojang_) == address(0)
         ) revert ZeroAddress();
+        if (tier_ == IFeeRouter.UtilityTier.L0) {
+            if (burnBps_ != 0 || royaltyBps_ > MAX_POOL_SHARE_BPS_L0) revert PoolShareOutOfBand();
+        } else if (uint256(royaltyBps_) + burnBps_ > MAX_POOL_SHARE_BPS_PREMIUM) {
+            revert PoolShareOutOfBand();
+        }
         membershipToken = membershipToken_;
-        krw = krw_;
+        quote = quote_;
         creator = creator_;
         feeRouter = feeRouter_;
         tier = tier_;
         factory = factory_; // may be address(0) in isolated tests → swapForBurn disabled
         royaltyBps = royaltyBps_;
         burnBps = burnBps_;
+        dojang = dojang_;
     }
 
     // ------------------------------------------------------------------
@@ -117,46 +135,46 @@ contract MapaePool is ERC20, ReentrancyGuard {
     ///         call mint. The offering calls this with `to = 0xdEaD` at settle.
     function mint(address to) external nonReentrant returns (uint256 liquidity) {
         uint256 tokenBal = membershipToken.balanceOf(address(this));
-        uint256 krwBal = krw.balanceOf(address(this)) - burnBuffer;
+        uint256 quoteBal = quote.balanceOf(address(this)) - burnBuffer;
         uint256 amountToken = tokenBal - reserveToken;
-        uint256 amountKrw = krwBal - reserveKrw;
+        uint256 amountQuote = quoteBal - reserveQuote;
 
         uint256 supply = totalSupply();
         if (supply == 0) {
-            liquidity = Math.sqrt(amountToken * amountKrw);
+            liquidity = Math.sqrt(amountToken * amountQuote);
         } else {
-            liquidity = Math.min(amountToken * supply / reserveToken, amountKrw * supply / reserveKrw);
+            liquidity = Math.min(amountToken * supply / reserveToken, amountQuote * supply / reserveQuote);
         }
         if (liquidity == 0) revert InsufficientLiquidity();
 
         _mint(to, liquidity);
         reserveToken = tokenBal;
-        reserveKrw = krwBal;
-        emit LiquidityMinted(to, amountToken, amountKrw, liquidity);
+        reserveQuote = quoteBal;
+        emit LiquidityMinted(to, amountToken, amountQuote, liquidity);
     }
 
     /// @notice UniV2-style burn: transfer LP shares to the pool first, then call
     ///         burn. (The seed liquidity sits at 0xdEaD forever, so it can never
     ///         reach this function — invariant 7.)
-    function burn(address to) external nonReentrant returns (uint256 amountToken, uint256 amountKrw) {
+    function burn(address to) external nonReentrant returns (uint256 amountToken, uint256 amountQuote) {
         uint256 liquidity = balanceOf(address(this));
         if (liquidity == 0) revert ZeroAmount();
         uint256 supply = totalSupply();
         amountToken = reserveToken * liquidity / supply;
-        amountKrw = reserveKrw * liquidity / supply;
-        if (amountToken == 0 || amountKrw == 0) revert InsufficientLiquidity();
+        amountQuote = reserveQuote * liquidity / supply;
+        if (amountToken == 0 || amountQuote == 0) revert InsufficientLiquidity();
 
         _burn(address(this), liquidity);
         reserveToken -= amountToken;
-        reserveKrw -= amountKrw;
+        reserveQuote -= amountQuote;
         IERC20(address(membershipToken)).safeTransfer(to, amountToken);
-        krw.safeTransfer(to, amountKrw);
-        emit LiquidityBurned(to, amountToken, amountKrw, liquidity);
+        quote.safeTransfer(to, amountQuote);
+        emit LiquidityBurned(to, amountToken, amountQuote, liquidity);
     }
 
     // ------------------------------------------------------------------
-    // Fee math (R1 — directional so royalty is ALWAYS paid in KRWs and the
-    // platform treasury only ever receives KRWs; invariant 17)
+    // Fee math (R1 — directional so royalty is ALWAYS paid in quote and the
+    // platform treasury only ever receives quote; invariant 17)
     // ------------------------------------------------------------------
 
     /// @dev The four swap-fee bps for this pool. platform + lp come from the
@@ -167,18 +185,26 @@ contract MapaePool is ERC20, ReentrancyGuard {
         return (f.swapPlatformBps, f.swapLpBps);
     }
 
-    /// @notice Buy membership tokens with KRWs. Fees are taken from the KRWs
+    /// @dev Real-name gate (v3 decision B, all tiers). A reverting Dojang reverts the swap
+    ///      (fail-closed, no try/catch). swapForBurn / convertAndBurn / mint / burn are ungated.
+    function _requireVerified(address to) internal view {
+        if (!dojang.isVerified(msg.sender)) revert NotVerified(msg.sender);
+        if (to != msg.sender && !dojang.isVerified(to)) revert NotVerified(to);
+    }
+
+    /// @notice Buy membership tokens with quote. Fees are taken from the quote
     ///         input: platform → treasury, royalty → creator, burn → burnBuffer,
     ///         lp stays in reserve (absorbs the split's rounding remainder so the
     ///         four shares sum EXACTLY to the total fee — invariant 10). Works
     ///         during the transfer lock (pool is a lock-exempt sender).
-    function swapKrwForToken(uint256 amountIn, uint256 minOut, address to)
+    function swapQuoteForToken(uint256 amountIn, uint256 minOut, address to)
         external
         nonReentrant
         returns (uint256 amountOut)
     {
+        _requireVerified(to);
         if (amountIn == 0) revert ZeroAmount();
-        krw.safeTransferFrom(msg.sender, address(this), amountIn);
+        quote.safeTransferFrom(msg.sender, address(this), amountIn);
 
         (uint16 platformBps, uint16 lpBps) = _bps();
         uint256 totalBps = uint256(platformBps) + royaltyBps + burnBps + lpBps;
@@ -189,35 +215,36 @@ contract MapaePool is ERC20, ReentrancyGuard {
         // lp = remainder → reserve (dust to LPs/fans); effectiveIn actually swaps.
         uint256 effectiveIn = amountIn - totalFee;
 
-        amountOut = reserveToken * effectiveIn / (reserveKrw + effectiveIn);
+        amountOut = reserveToken * effectiveIn / (reserveQuote + effectiveIn);
         if (amountOut < minOut) revert InsufficientOutput(amountOut, minOut);
         if (amountOut >= reserveToken) revert InsufficientLiquidity();
 
         if (platform > 0) {
-            krw.safeTransfer(feeRouter.platformTreasury(), platform);
+            quote.safeTransfer(feeRouter.platformTreasury(), platform);
             emit PlatformFeePaid(feeRouter.platformTreasury(), platform);
         }
-        if (royalty > 0) krw.safeTransfer(creator, royalty); // royalty in KRWs
+        if (royalty > 0) quote.safeTransfer(creator, royalty); // royalty in quote
         if (burnAmt > 0) {
             burnBuffer += burnAmt;
             emit BurnBufferAccrued(burnAmt, burnBuffer);
         }
-        reserveKrw += amountIn - platform - royalty - burnAmt; // lp + effectiveIn stay in reserve
+        reserveQuote += amountIn - platform - royalty - burnAmt; // lp + effectiveIn stay in reserve
         reserveToken -= amountOut;
         IERC20(address(membershipToken)).safeTransfer(to, amountOut);
         emit Swapped(msg.sender, to, true, amountIn, amountOut, royalty);
     }
 
-    /// @notice Sell membership tokens for KRWs. burn + lp are taken from the
+    /// @notice Sell membership tokens for quote. burn + lp are taken from the
     ///         token INPUT (burn is burned immediately — Transfer → 0x0; lp stays
-    ///         in reserve). platform + royalty are taken from the KRWs OUTPUT, so
-    ///         royalty is paid in KRWs and the treasury never holds tokens
+    ///         in reserve). platform + royalty are taken from the quote OUTPUT, so
+    ///         royalty is paid in quote and the treasury never holds tokens
     ///         (invariant 17). The caller receives the output net of both.
-    function swapTokenForKrw(uint256 amountIn, uint256 minOut, address to)
+    function swapTokenForQuote(uint256 amountIn, uint256 minOut, address to)
         external
         nonReentrant
         returns (uint256 amountOut)
     {
+        _requireVerified(to);
         if (amountIn == 0) revert ZeroAmount();
         IERC20(address(membershipToken)).safeTransferFrom(msg.sender, address(this), amountIn);
 
@@ -227,26 +254,26 @@ contract MapaePool is ERC20, ReentrancyGuard {
         uint256 lpAmt = amountIn * lpBps / BPS;
         uint256 effectiveIn = amountIn - burnAmt - lpAmt;
 
-        // Gross KRWs out of the curve, then carve the output-side fees.
-        uint256 grossOut = reserveKrw * effectiveIn / (reserveToken + effectiveIn);
+        // Gross quote out of the curve, then carve the output-side fees.
+        uint256 grossOut = reserveQuote * effectiveIn / (reserveToken + effectiveIn);
         uint256 platform = grossOut * platformBps / BPS;
         uint256 royalty = grossOut * royaltyBps / BPS;
         amountOut = grossOut - platform - royalty; // caller absorbs rounding dust
         if (amountOut < minOut) revert InsufficientOutput(amountOut, minOut);
-        if (grossOut >= reserveKrw) revert InsufficientLiquidity();
+        if (grossOut >= reserveQuote) revert InsufficientLiquidity();
 
         if (burnAmt > 0) {
             membershipToken.burn(burnAmt);
             emit TokensBurned(burnAmt);
         }
         if (platform > 0) {
-            krw.safeTransfer(feeRouter.platformTreasury(), platform); // KRWs only
+            quote.safeTransfer(feeRouter.platformTreasury(), platform); // quote only
             emit PlatformFeePaid(feeRouter.platformTreasury(), platform);
         }
-        if (royalty > 0) krw.safeTransfer(creator, royalty); // royalty in KRWs
+        if (royalty > 0) quote.safeTransfer(creator, royalty); // royalty in quote
         reserveToken += amountIn - burnAmt; // burn left; lp + effectiveIn stay
-        reserveKrw -= grossOut; // full gross output leaves the reserve
-        krw.safeTransfer(to, amountOut);
+        reserveQuote -= grossOut; // full gross output leaves the reserve
+        quote.safeTransfer(to, amountOut);
         emit Swapped(msg.sender, to, false, amountIn, amountOut, royalty);
     }
 
@@ -254,14 +281,14 @@ contract MapaePool is ERC20, ReentrancyGuard {
     // Burn-only paths (0% fee — the only destination is 0x0)
     // ------------------------------------------------------------------
 
-    /// @dev Shared core of convertAndBurn/swapForBurn: buy tokens with KRWs that
+    /// @dev Shared core of convertAndBurn/swapForBurn: buy tokens with quote that
     ///      are ALREADY in the pool and burn every one. No fee, no output to any
     ///      caller (invariants 1, 2, 10-of-burn-path).
     function _buyAndBurn(uint256 amountIn, uint256 minOut) private returns (uint256 tokensBurned) {
-        tokensBurned = reserveToken * amountIn / (reserveKrw + amountIn);
+        tokensBurned = reserveToken * amountIn / (reserveQuote + amountIn);
         if (tokensBurned < minOut) revert InsufficientOutput(tokensBurned, minOut);
         if (tokensBurned >= reserveToken) revert InsufficientLiquidity();
-        reserveKrw += amountIn;
+        reserveQuote += amountIn;
         reserveToken -= tokensBurned;
         membershipToken.burn(tokensBurned);
     }
@@ -276,7 +303,7 @@ contract MapaePool is ERC20, ReentrancyGuard {
         emit ConvertedAndBurned(msg.sender, amountIn, tokensBurned);
     }
 
-    /// @notice 0%-fee buy-and-burn: the caller supplies KRWs, the pool buys
+    /// @notice 0%-fee buy-and-burn: the caller supplies quote, the pool buys
     ///         membership tokens and burns them atomically. Restricted to
     ///         MapaeFactory-registered burners (Sponsorship / BuybackVault);
     ///         every other caller reverts (invariant 1). The output is never
@@ -285,7 +312,7 @@ contract MapaePool is ERC20, ReentrancyGuard {
         if (amountIn == 0) revert ZeroAmount();
         // Fail-closed: no registry (factory == 0) or unregistered caller → revert.
         if (factory == address(0) || !IBurnerRegistry(factory).isBurner(msg.sender)) revert NotBurner(msg.sender);
-        krw.safeTransferFrom(msg.sender, address(this), amountIn);
+        quote.safeTransferFrom(msg.sender, address(this), amountIn);
         tokensBurned = _buyAndBurn(amountIn, minOut);
         emit BurnSwapped(msg.sender, amountIn, tokensBurned);
     }
@@ -294,10 +321,10 @@ contract MapaePool is ERC20, ReentrancyGuard {
     // Views
     // ------------------------------------------------------------------
 
-    /// @notice Spot price: KRWs wei per 1e18 token wei.
+    /// @notice Spot price: quote wei per 1e18 token wei.
     function spotPrice() external view returns (uint256) {
         if (reserveToken == 0) return 0;
-        return reserveKrw * WAD / reserveToken;
+        return reserveQuote * WAD / reserveToken;
     }
 
     /// @notice Total swap fee in bps (platform+lp from FeeRouter, royalty+burn
@@ -308,19 +335,19 @@ contract MapaePool is ERC20, ReentrancyGuard {
         return platformBps + royaltyBps + burnBps + lpBps;
     }
 
-    /// @notice Quote for a KRWs→token swap: all fees taken from the KRWs input.
-    function getTokenOut(uint256 krwIn) external view returns (uint256) {
-        uint256 effectiveIn = krwIn - (krwIn * totalFeeBps() / BPS);
-        return reserveToken * effectiveIn / (reserveKrw + effectiveIn);
+    /// @notice Quote for a quote→token swap: all fees taken from the quote input.
+    function getTokenOut(uint256 quoteIn) external view returns (uint256) {
+        uint256 effectiveIn = quoteIn - (quoteIn * totalFeeBps() / BPS);
+        return reserveToken * effectiveIn / (reserveQuote + effectiveIn);
     }
 
-    /// @notice Quote for a token→KRWs swap, net of fees the caller actually pays:
-    ///         burn+lp come off the token input, platform+royalty off the KRWs
-    ///         output. Returns the KRWs the caller receives.
-    function getKrwOut(uint256 tokenIn) external view returns (uint256) {
+    /// @notice Quote for a token→quote swap, net of fees the caller actually pays:
+    ///         burn+lp come off the token input, platform+royalty off the quote
+    ///         output. Returns the quote the caller receives.
+    function getQuoteOut(uint256 tokenIn) external view returns (uint256) {
         (uint16 platformBps, uint16 lpBps) = _bps();
         uint256 effectiveIn = tokenIn - (tokenIn * burnBps / BPS) - (tokenIn * lpBps / BPS);
-        uint256 grossOut = reserveKrw * effectiveIn / (reserveToken + effectiveIn);
+        uint256 grossOut = reserveQuote * effectiveIn / (reserveToken + effectiveIn);
         return grossOut - (grossOut * platformBps / BPS) - (grossOut * royaltyBps / BPS);
     }
 }

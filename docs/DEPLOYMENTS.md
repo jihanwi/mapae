@@ -1,3 +1,93 @@
+# GIWA Sepolia 배포
+
+체인: GIWA Sepolia (chain ID `91342`) · Explorer: https://sepolia-explorer.giwa.io
+
+## v3 배포 (실명 본딩커브 런치패드), 2026-11-14 완료
+
+- 배포 블록 `41311959` · 배포자 [`0x67a29AE83f3320C5E9b81D8a1531dE8FcCBED00C`](https://sepolia-explorer.giwa.io/address/0x67a29AE83f3320C5E9b81D8a1531dE8FcCBED00C)
+- 트레저리 (FeeRouter `platformTreasury`, MapaeFactory `feeRecipients.platform`): [`0x3ada0Cb1fbb700AC4B41f5D7A9dbE2BC47b9FAaa`](https://sepolia-explorer.giwa.io/address/0x3ada0Cb1fbb700AC4B41f5D7A9dbE2BC47b9FAaa)
+- 주소 기록: [`deployments/giwa-sepolia-v3.json`](../deployments/giwa-sepolia-v3.json), 데모 결과: [`deployments/demo-curve-state.json`](../deployments/demo-curve-state.json)
+- Blockscout verified **22개**: 아래 컨트랙트 16개 + 커브 데모 자식 6개(CurveSale 2, 토큰 2, 졸업 풀 2)
+
+### 컨트랙트
+
+| 컨트랙트 | 주소 |
+|---|---|
+| MockKRW (KRWs) | [`0x74eC9141afAd51F346BA5B841Ba93D573e8786fD`](https://sepolia-explorer.giwa.io/address/0x74eC9141afAd51F346BA5B841Ba93D573e8786fD) |
+| MockDojang | [`0xaf80C431813EC4d2Cb34B3EC5b064095256871f8`](https://sepolia-explorer.giwa.io/address/0xaf80C431813EC4d2Cb34B3EC5b064095256871f8) |
+| PoolFactory | [`0xf123d8308DE27D0E91B85E0c4A81843Ebff5Ba2f`](https://sepolia-explorer.giwa.io/address/0xf123d8308DE27D0E91B85E0c4A81843Ebff5Ba2f) |
+| FeeRouter | [`0xfC7a9B07a1AA814225db64F7Bb90777Ff7127e86`](https://sepolia-explorer.giwa.io/address/0xfC7a9B07a1AA814225db64F7Bb90777Ff7127e86) |
+| BuybackVault | [`0xc1Db7149c74294B467764F83062A79CB0b2378Ad`](https://sepolia-explorer.giwa.io/address/0xc1Db7149c74294B467764F83062A79CB0b2378Ad) |
+| BuybackExecutor | [`0x1e77b059f4B612f1D3b9B770A0E51F53879Ae718`](https://sepolia-explorer.giwa.io/address/0x1e77b059f4B612f1D3b9B770A0E51F53879Ae718) |
+| DojangEASAdapter | [`0xEFC619C99f7C3325437223bC599296FE52Ef0971`](https://sepolia-explorer.giwa.io/address/0xEFC619C99f7C3325437223bC599296FE52Ef0971) |
+| MapaeFactory (mock) | [`0x67229C8bb4d6847D516A5D0B0ed2c6E07FB0535f`](https://sepolia-explorer.giwa.io/address/0x67229C8bb4d6847D516A5D0B0ed2c6E07FB0535f) |
+| └ OfferingDeployer (mock) | [`0x3f1B77a601fBDe68415C7786e4457ed518e6a531`](https://sepolia-explorer.giwa.io/address/0x3f1B77a601fBDe68415C7786e4457ed518e6a531) |
+| └ StackDeployer (mock) | [`0xdcAFff7e6a5df59f6E7fF71294234954827c81b0`](https://sepolia-explorer.giwa.io/address/0xdcAFff7e6a5df59f6E7fF71294234954827c81b0) |
+| MapaeFactory (EAS) | [`0x025BCc44F70dF0E65391DB3D6774028A4DE36447`](https://sepolia-explorer.giwa.io/address/0x025BCc44F70dF0E65391DB3D6774028A4DE36447) |
+| └ OfferingDeployer (EAS) | [`0x1E7CEeA1158E4e2C4b72aa2dD0A75a28a2eD10be`](https://sepolia-explorer.giwa.io/address/0x1E7CEeA1158E4e2C4b72aa2dD0A75a28a2eD10be) |
+| └ StackDeployer (EAS) | [`0x663D11DA88B7dE12c14e0080946149846C82001a`](https://sepolia-explorer.giwa.io/address/0x663D11DA88B7dE12c14e0080946149846C82001a) |
+| CurveFactory (mock) | [`0x0802B645018bF2Af9C2C940f8cBB437511178f59`](https://sepolia-explorer.giwa.io/address/0x0802B645018bF2Af9C2C940f8cBB437511178f59) |
+| CurveFactory (EAS) | [`0x6c29384B98806e1f9630Af45C0b883532b930F6F`](https://sepolia-explorer.giwa.io/address/0x6c29384B98806e1f9630Af45C0b883532b930F6F) |
+| MembershipTokenDeployer (링크 라이브러리) | [`0x9F011858B85b93a73330B56319Dc76a6f3255279`](https://sepolia-explorer.giwa.io/address/0x9F011858B85b93a73330B56319Dc76a6f3255279) |
+| WETH (predeploy, 배포 대상 아님) | [`0x4200000000000000000000000000000000000006`](https://sepolia-explorer.giwa.io/address/0x4200000000000000000000000000000000000006) |
+
+### 호가 자산 등록 (두 MapaeFactory 공통)
+
+| 호가 자산 | 커브 가상 호가 준비금 | 비고 |
+|---|---|---|
+| MockKRW (KRWs) | 2,000,000 KRWs | 메인넷 프리셋과 같은 값 |
+| WETH | 0.002 ETH | 테스트넷 값 (메인넷 프리셋은 0.6 ETH) |
+
+### 커브 데모 (mock 스택)
+
+| 항목 | 데모 A: KRWs 커브 (DCK) | 데모 B: ETH 커브 (DCE) |
+|---|---|---|
+| CurveSale | [`0x66a31a0B0762f6a1426b968733703f38a918BB56`](https://sepolia-explorer.giwa.io/address/0x66a31a0B0762f6a1426b968733703f38a918BB56) | [`0x83207273A5f99820f734Fc18Fd7D1562C478A8E8`](https://sepolia-explorer.giwa.io/address/0x83207273A5f99820f734Fc18Fd7D1562C478A8E8) |
+| 토큰 | [`0xF96729b2FEda89eE338Ea8FE6484c4BEb4a999EB`](https://sepolia-explorer.giwa.io/address/0xF96729b2FEda89eE338Ea8FE6484c4BEb4a999EB) | [`0x0E2006E80E45d501686499be51552F08EeA25081`](https://sepolia-explorer.giwa.io/address/0x0E2006E80E45d501686499be51552F08EeA25081) |
+| 졸업 풀 | [`0x324dA7BB31152fC25C35D200a1C84037B1291F4f`](https://sepolia-explorer.giwa.io/address/0x324dA7BB31152fC25C35D200a1C84037B1291F4f) | [`0x91a5C62aBB9d81360B916EC605ED0123C3E3f1b0`](https://sepolia-explorer.giwa.io/address/0x91a5C62aBB9d81360B916EC605ED0123C3E3f1b0) |
+| 매수 방식 | 실명 매수자 12명 | 단일 지갑 셀프 졸업 |
+| 졸업 준비금 | 6,000,000 KRWs | 0.006 ETH |
+| 졸업 블록 | `41312432` | `41312454` |
+| 졸업 tx | [`0xce2e395e…`](https://sepolia-explorer.giwa.io/tx/0xce2e395e9e840b284edbd15e5b198bfe9fafe73ea9ebceea148f0023a73a84fb) | [`0x6d2acfeb…`](https://sepolia-explorer.giwa.io/tx/0x6d2acfeb3121eb0d5839cdd33b0840beca34f27c1b8ceff4c95c4ff46aaa0338) |
+
+두 졸업 풀 모두 `totalFeeBps() == 100`, 트레저리의 발행 토큰 잔고 0.
+
+### 가스 실측
+
+| 동작 | 가스 |
+|---|---|
+| `createCurve` | 3,644,355 |
+| 첫 매수 (`buy`) | 147,151 |
+| 졸업 매수 (`buy`) | 2,489,227 |
+| `createCurveWithETH` | 3,408,842 |
+| 졸업 매수 (`buyWithETH`) | 2,575,241 |
+
+### 재현 명령
+
+배포 (트레저리는 배포자와 다른 주소여야 한다):
+
+```bash
+TREASURY_ADDRESS=0x... forge script script/DeployV3.s.sol --account deployer --rpc-url $GIWA_SEPOLIA_RPC_URL --broadcast --verify --verifier blockscout --verifier-url $BLOCKSCOUT_API_URL
+```
+
+팩토리 자식 verify (mock 스택, 라이브러리 주소는 `deployments/giwa-sepolia-v3.json` 에서 읽는다):
+
+```bash
+node script/verify-children.js --rpc $GIWA_SEPOLIA_RPC_URL --verifier-url $BLOCKSCOUT_API_URL --from-block 41311959 --factory 0x67229C8bb4d6847D516A5D0B0ed2c6E07FB0535f --curve-factory 0x0802B645018bF2Af9C2C940f8cBB437511178f59
+```
+
+커브 데모 (시나리오 A, B):
+
+```bash
+forge script script/DemoCurve.s.sol --account deployer --sender 0x67a29AE83f3320C5E9b81D8a1531dE8FcCBED00C --rpc-url $GIWA_SEPOLIA_RPC_URL --broadcast --slow
+```
+
+---
+
+## 이전 배포 (v1.0, v2.0.1)
+
+아래는 v3 이전 배포 기록 원문이다.
+
 # GIWA Sepolia 배포 (GASOK 1기 제출)
 
 체인: GIWA Sepolia (chain ID `91342`) · Explorer: https://sepolia-explorer.giwa.io

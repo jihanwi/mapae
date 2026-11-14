@@ -12,14 +12,17 @@ import {IFeeRouter} from "../src/interfaces/IFeeRouter.sol";
 import {IBurnerRegistry} from "../src/interfaces/IBurnerRegistry.sol";
 import {BuybackVault} from "../src/BuybackVault.sol";
 import {MockKRW} from "../src/mocks/MockKRW.sol";
+import {MockDojang} from "../src/mocks/MockDojang.sol";
+import {IDojang} from "../src/interfaces/IDojang.sol";
 
 /// @notice Sponsorship unit tests (D11). The test contract plays BOTH the
 ///         offering (sole minter/registrar) AND the pool's burner registry, so
 ///         it can authorize the Sponsorship for the 0%-fee swapForBurn path.
-/// @dev v5.2: the burn buy moved from swapKrwForToken (fee) to swapForBurn (0%),
+/// @dev v5.2: the burn buy moved from swapQuoteForToken (fee) to swapForBurn (0%),
 ///      so the creator no longer receives a swap royalty on the burn side.
 contract SponsorshipTest is Test, IBurnerRegistry {
     MockKRW internal krw;
+    MockDojang internal dojang;
     MembershipToken internal token;
     PoolFactory internal poolFactory;
     FeeRouter internal feeRouter;
@@ -45,6 +48,9 @@ contract SponsorshipTest is Test, IBurnerRegistry {
     function setUp() public {
         vm.warp(1_750_000_000);
         krw = new MockKRW();
+        dojang = new MockDojang();
+        dojang.setVerified(fan, true);
+        dojang.setVerified(address(this), true);
         poolFactory = new PoolFactory();
         feeRouter = new FeeRouter(address(this), treasury);
         buybackVault = new BuybackVault(IERC20(address(krw)), address(this));
@@ -63,7 +69,9 @@ contract SponsorshipTest is Test, IBurnerRegistry {
         _burners[address(sponsorship)] = true;
 
         // factory == address(this): this test contract is the burner registry.
-        pool = poolFactory.createPool(token, IERC20(address(krw)), creator, feeRouter, TIER, address(this), 60, 30);
+        pool = poolFactory.createPool(
+            token, IERC20(address(krw)), creator, feeRouter, TIER, address(this), 60, 30, IDojang(address(dojang))
+        );
         token.registerPool(address(pool));
         token.transfer(address(pool), 100e18);
         krw.faucet(1_000_000e18);

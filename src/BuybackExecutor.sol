@@ -61,7 +61,7 @@ contract BuybackExecutor is Ownable {
         if (pool == address(0)) revert PoolNotListed();
 
         uint256 bal = vault.krwBalance(token);
-        uint256 cap = MapaePool(pool).reserveKrw() * dailyCapBps / BPS;
+        uint256 cap = MapaePool(pool).reserveQuote() * dailyCapBps / BPS;
         uint256 amountIn = bal < cap ? bal : cap;
         if (amountIn == 0) revert NothingToBuy();
 
