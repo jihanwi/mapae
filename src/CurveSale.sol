@@ -88,6 +88,7 @@ contract CurveSale is IPrimaryMarket, ReentrancyGuard {
     error ZeroTokensOut();
     error InsufficientOutput(uint256 out, uint256 minOut);
     error NotDev(address caller);
+    error NotFactory(address caller);
 
     event Buy(
         address indexed trader,
@@ -132,6 +133,8 @@ contract CurveSale is IPrimaryMarket, ReentrancyGuard {
     PoolFactory public immutable poolFactory;
     address public immutable mapaeFactory;
     uint256 public immutable virtualQuote;
+    /// @notice Deployer (CurveFactory) — the only caller allowed to use buyFor.
+    address public immutable factory;
 
     /// @notice Curve fee split snapshotted from FeeRouter at construction (bps of trade size).
     uint16 public immutable platformBps;
@@ -173,6 +176,7 @@ contract CurveSale is IPrimaryMarket, ReentrancyGuard {
         poolFactory = p.poolFactory;
         mapaeFactory = p.mapaeFactory;
         virtualQuote = p.virtualQuote;
+        factory = msg.sender;
 
         IFeeRouter.CurveFees memory f = p.feeRouter.getCurveFees();
         if (uint256(f.platformBps) + f.devBps + f.lpSeedBps >= BPS) revert InvalidConfig();
@@ -201,29 +205,47 @@ contract CurveSale is IPrimaryMarket, ReentrancyGuard {
         nonReentrant
         returns (uint256 tokensOut, uint256 quoteSpent)
     {
-        _gate();
+        return _buy(msg.sender, msg.sender, quoteIn, minTokensOut);
+    }
+
+    /// @notice Factory-driven buy (dev first buy at creation). Quote is pulled from the factory,
+    ///         tokens go to `trader`; the real-name gate, buyer count and isDev use `trader`.
+    function buyFor(address trader, uint256 quoteIn, uint256 minTokensOut)
+        external
+        nonReentrant
+        returns (uint256 tokensOut, uint256 quoteSpent)
+    {
+        if (msg.sender != factory) revert NotFactory(msg.sender);
+        return _buy(trader, msg.sender, quoteIn, minTokensOut);
+    }
+
+    function _buy(address trader, address payer, uint256 quoteIn, uint256 minTokensOut)
+        internal
+        returns (uint256 tokensOut, uint256 quoteSpent)
+    {
+        _gate(trader);
         BuyQuote memory q = _quoteBuy(quoteIn);
         if (q.tokensOut == 0) revert ZeroTokensOut();
         if (q.tokensOut < minTokensOut) revert InsufficientOutput(q.tokensOut, minTokensOut);
 
-        if (q.quoteSpent > 0) quote.safeTransferFrom(msg.sender, address(this), q.quoteSpent);
+        if (q.quoteSpent > 0) quote.safeTransferFrom(payer, address(this), q.quoteSpent);
         r = q.nextR;
         s = q.nextS;
         platformAccrued += q.platformFee;
         devAccrued += q.devFee;
         lpSeedAccrued += q.lpSeedFee;
 
-        bool isDev = msg.sender == dev;
-        if (!hasBought[msg.sender]) {
-            hasBought[msg.sender] = true;
+        bool isDev = trader == dev;
+        if (!hasBought[trader]) {
+            hasBought[trader] = true;
             if (!isDev) {
                 uint32 c = ++verifiedBuyerCount;
-                emit VerifiedBuyerCounted(msg.sender, c);
+                emit VerifiedBuyerCounted(trader, c);
             }
         }
 
-        IERC20(address(_token)).safeTransfer(msg.sender, q.tokensOut);
-        emit Buy(msg.sender, isDev, q.quoteSpent, q.tokensOut, q.platformFee, q.devFee, q.lpSeedFee, r, s);
+        IERC20(address(_token)).safeTransfer(trader, q.tokensOut);
+        emit Buy(trader, isDev, q.quoteSpent, q.tokensOut, q.platformFee, q.devFee, q.lpSeedFee, r, s);
 
         if (q.graduates) _graduate();
         return (q.tokensOut, q.quoteSpent);
@@ -231,7 +253,7 @@ contract CurveSale is IPrimaryMarket, ReentrancyGuard {
 
     /// @notice Sell tokens back to the curve. Pays gross − fee out of r.
     function sell(uint256 tokenIn, uint256 minQuoteOut) external nonReentrant returns (uint256 quoteOut) {
-        _gate();
+        _gate(msg.sender);
         if (tokenIn == 0) revert ZeroAmount();
         SellQuote memory q = _quoteSell(tokenIn);
         if (q.quoteOut < minQuoteOut) revert InsufficientOutput(q.quoteOut, minQuoteOut);
@@ -322,9 +344,9 @@ contract CurveSale is IPrimaryMarket, ReentrancyGuard {
 
     /// @dev Real-name gate + phase check shared by buy and sell (fail-closed: a reverting
     ///      Dojang reverts the trade).
-    function _gate() internal view {
+    function _gate(address trader) internal view {
         if (graduated) revert AlreadyGraduated();
-        if (!dojang.isVerified(msg.sender)) revert NotVerified(msg.sender);
+        if (!dojang.isVerified(trader)) revert NotVerified(trader);
     }
 
     function _quoteBuy(uint256 quoteIn) internal view returns (BuyQuote memory q) {
