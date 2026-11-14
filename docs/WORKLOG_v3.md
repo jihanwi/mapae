@@ -530,3 +530,67 @@ immutable). FeeRouter 합계 밴드는 라우터 구조체 4필드 합만 검사
 | OfferingDeployer | 16,356 B | 16,384 B | 8,220 B | 32,768 B |
 | FeeRouter | 3,732 B | 6,215 B | 20,844 B | 42,937 B |
 | MapaeFactory | 8,650 B | 41,203 B | 15,926 B | 7,949 B |
+
+## T12 — v3 배포 도구: DeployV3, verify-children, DemoCurve
+
+이 세션은 GIWA Sepolia RPC 에 접근할 수 없다. 산출물은 오너가 Mac 에서 한 줄로 돌릴 수 있고 로컬
+시뮬레이션 테스트로 검증된 스크립트다. 온체인 tx·broadcast 는 하지 않았다.
+
+### src 변경
+
+- `src/Constants.sol` `GiwaSepolia.WETH = 0x4200…0006` (온체인 확인값 symbol WETH, decimals 18). 그 외 src 무변경.
+
+### script/DeployV3.s.sol (신규, v2 `Deploy.s.sol` 은 기록으로 보존)
+
+- `deploy(deployer, treasury) returns (Deployed)` 로 로직 분리(테스트 호출용), `run()` 은 env `TREASURY_ADDRESS` 를 받아
+  0 이거나 deployer 와 같으면 명확한 메시지로 revert. `.env` 파일은 읽지 않는다.
+- 순서: MockKRW, MockDojang, PoolFactory, FeeRouter(owner = deployer, treasury = TREASURY), BuybackVault + BuybackExecutor
+  (v2 배선), DojangEASAdapter, MapaeFactory ×2 (mock / EAS, `FeeRecipients.platform = treasury`, v2 Guide·MIN_RAISE),
+  호가 등록(두 팩토리 모두 MockKRW `krwsVirtualQuote(decimals)` = 2,000,000e18, WETH `TESTNET_WETH_VIRTUAL_QUOTE` =
+  0.002 ether, 결정 29), CurveFactory ×2 (짝 MapaeFactory + dojang, weth = GiwaSepolia.WETH, owner = deployer).
+- **권한 배선:** CurveFactory/CurveSale 은 MapaeFactory 에 아무 권한도 필요 없다. 졸업 시 `PoolFactory.createPool` 은
+  `msg.sender == token.offering()`(= CurveSale)만 요구하고, MapaeFactory 는 풀의 burner 레지스트리로 *조회*만 된다.
+  CurveFactory 테스트 setUp 에도 `allowQuote` 외 배선은 없다.
+- **라이브러리 주소 기록 방식:** `forge script` 가 MembershipTokenDeployer 를 broadcast 첫 tx 로 자동 배포·링크한다.
+  스크립트는 `type(CurveSale).creationCode` 에서 PUSH20 대상 중 런타임이 `PUSH20 <자기 주소>`(solc 라이브러리 호출
+  가드)로 시작하는 주소를 찾아(`linkedMembershipTokenDeployer()`) json 에 기록한다. 별도 사전 배포·`--libraries` 고정이
+  필요 없고, 테스트(자동 링크)에서도 같은 함수로 확인된다.
+- 산출물 `deployments/giwa-sepolia-v3.json`: chainId, deployBlock, deployer, treasury, 전 주소, weth,
+  membershipTokenDeployer, krwsVirtualQuote, wethVirtualQuote. `giwa-sepolia.json` 은 건드리지 않는다.
+- 시뮬레이션 가스: `deploy()` 단일 호출 기준 약 **30.1M** (실제 broadcast 는 tx 약 20건으로 나뉘며 건당 21k 기본 가스와
+  라이브러리 배포가 더해진다).
+
+### script/DemoCurve.s.sol (신규, mock 스택)
+
+- 시나리오 A (KRWs): dev 가 dev 첫 매수와 함께 `createCurve` → 실명 지갑 12개가 나눠 매수해 졸업 → 졸업 풀에서
+  `swapQuoteForToken`, `swapTokenForQuote` 각 1회 → `claimDevFees` → `sweepPlatformFees`.
+- 시나리오 B (ETH): 지갑 하나가 `createCurveWithETH` 후 `buyWithETH` 로 셀프 졸업 (예산 ≈ 0.00606 ETH).
+- `vm.warp` 없음. 지갑은 기존 DemoStage2a/2b 와 같은 공개 테스트 니모닉 상수 + `DEMO_MNEMONIC` env 오버라이드로
+  파생(출력 없음), MockDojang `selfVerify`, MockKRW `faucet`. 인덱스는 `DEMO_CURVE_BASE_IDX`(기본 20) 부터
+  (A dev = 20, A 매수자 21~32, B = 33). broadcast 송신자(deployer)가 가스(`DEMO_GAS_TOPUP`, 기본 0.0003 ETH)와 B 예산을 보낸다.
+- 자가 검증(require): graduated, 풀 totalFeeBps == 100, 풀 가격 ≥ 커브 종가이고 차이 ≤ 0.2%, treasury 의 발행 토큰
+  잔고 0, dev 수수료 수령 > 0, sweep > 0, A 는 verifiedBuyerCount == 12.
+- 결과 `deployments/demo-curve-state.json` (커브·토큰·풀 주소, 졸업 블록). 시나리오 함수는 public 이라
+  `test/DemoCurveSim.t.sol` 이 복사 없이 그대로 호출한다. 시뮬레이션 가스: 시나리오 A 약 8.7M.
+
+### script/verify-children.js
+
+- 생성자 시그니처를 `forge inspect <Contract> abi` 로 대조해 갱신: Offering 파라미터 25필드(platformTokenBps 제거,
+  recipients 2-튜플), MembershipToken capExempt `[creatorVesting]`, MapaePool 끝에 dojang, CurveSale InitParams 9필드.
+- `--libraries src/MembershipTokenDeployer.sol:MembershipTokenDeployer:<addr>` 를 Offering, OfferingDeployer, CurveSale 에
+  전달. 주소는 `--library` 또는 `deployments/giwa-sepolia-v3.json`.
+- `--curve-factory <addr>`: CurveCreated 로 CurveSale 수집 → CurveSale, 토큰, 졸업한 경우 풀 verify.
+- `--from-block` 필수(없으면 종료 코드 1). `--factory`/`--curve-factory` 중 하나 이상 필요. 요청한 경로의 이벤트가
+  0건이면 hard-fail(기존 동작 유지). `node --check` 통과, 인코딩 4종 `cast abi-encode` 스모크 확인.
+
+### 테스트
+
+- 신규 `test/DeployV3.t.sol` (5: 배선·레지스트리·라이브러리 감지·잘못된 treasury·가스 측정),
+  `test/DemoCurveSim.t.sol` (3: 시나리오 A, B, 연속). 합계 350 → **358 그린**.
+
+### 범위 밖 발견
+
+- `script/DemoOfferingC.s.sol` 은 L1 `swapRoyaltyBps = 100` 을 쓰는데 L1 상한은 80(T11 이후 합 90)이라 지금 실행하면 revert.
+- `verify-children.js` 의 EAS 스택(`factoryDojang`/`curveFactoryDojang`)은 실제 개설 이력이 없으면 이벤트 0건으로 실패한다
+  (의도된 hard-fail). EAS 스택은 개설 후에 돌린다.
+- 기존 빌드 경고(컴파일러 2: `InvariantsV2.t.sol` shadowing, `DemoStage2aL0.s.sol` 미사용 변수 / lint 다수)는 T11·T12 신규 코드와 무관.
