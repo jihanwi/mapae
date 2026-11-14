@@ -192,7 +192,7 @@ contract DemoCurve is Script {
         res.curve = address(curve);
         res.token = address(curve.token());
         res.pool = address(pool);
-        res.graduationBlock = block.number;
+        res.graduationBlock = block.number; // simulation-time block, not the mined block
     }
 
     function _collectFees(Ctx memory c, CurveSale curve, uint256 devKey)
