@@ -37,7 +37,12 @@ contract FeeRouter is Ownable, IFeeRouter {
     // L0: lightweight tier. Absolute platform floor 40 (v3, was 60); swap split
     // total in [80,100]; offering fee in [0,500]; merch disabled (must be 0 — [Q1]).
     uint16 internal constant L0_SWAP_PLATFORM_MIN = 40;
-    uint16 internal constant L0_SWAP_PLATFORM_MAX = 80;
+    uint16 internal constant L0_SWAP_PLATFORM_MAX = 70;
+    /// @dev Router share (platform + lp) caps (decision 28). Pools add their own royalty+burn
+    ///      share (L0 ≤ 30, L1/L2 ≤ 90, enforced by MapaePool), so the pool total stays
+    ///      ≤ 100 bps on L0 and ≤ 150 bps on L1/L2 whatever the owner sets within the bands.
+    uint16 internal constant L0_ROUTER_SHARE_MAX = 70;
+    uint16 internal constant PREMIUM_ROUTER_SHARE_MAX = 60;
     uint16 internal constant L0_SWAP_SUM_MIN = 80;
     uint16 internal constant L0_SWAP_SUM_MAX = 100;
     uint16 internal constant L0_OFFERING_MIN = 0;
@@ -131,10 +136,12 @@ contract FeeRouter is Ownable, IFeeRouter {
                 revert OutOfBand();
             }
             if (swapSum < L0_SWAP_SUM_MIN || swapSum > L0_SWAP_SUM_MAX) revert OutOfBand();
+            if (uint256(f.swapPlatformBps) + f.swapLpBps > L0_ROUTER_SHARE_MAX) revert OutOfBand();
             if (f.offeringFeeBps < L0_OFFERING_MIN || f.offeringFeeBps > L0_OFFERING_MAX) revert OutOfBand();
             if (f.merchFeeBps != 0) revert OutOfBand(); // [Q1] L0 has no merch path
         } else {
             if (swapSum < PREMIUM_SWAP_SUM_MIN || swapSum > PREMIUM_SWAP_SUM_MAX) revert OutOfBand();
+            if (uint256(f.swapPlatformBps) + f.swapLpBps > PREMIUM_ROUTER_SHARE_MAX) revert OutOfBand();
             if (f.swapPlatformBps < PREMIUM_SWAP_PLATFORM_MIN || f.swapPlatformBps > PREMIUM_SWAP_PLATFORM_MAX) {
                 revert OutOfBand();
             }

@@ -48,6 +48,8 @@ contract MapaePool is ERC20, ReentrancyGuard {
     error NotBurner(address caller);
     /// @notice Swap caller or recipient is not a Dojang Verified Address (v3 decision B).
     error NotVerified(address account);
+    /// @notice Per-pool royalty+burn share outside the tier cap (decision 28).
+    error PoolShareOutOfBand();
 
     event Swapped(
         address indexed sender, address indexed to, bool quoteIn, uint256 amountIn, uint256 amountOut, uint256 royalty
@@ -63,6 +65,10 @@ contract MapaePool is ERC20, ReentrancyGuard {
     event PlatformFeePaid(address indexed treasury, uint256 amount);
 
     uint16 public constant BPS = 10_000;
+    /// @notice Pool share (royalty + burn) caps — with the FeeRouter router-share caps (L0 70,
+    ///         L1/L2 60) the pool's total swap fee is ≤ 100 bps on L0 and ≤ 150 bps on L1/L2.
+    uint16 public constant MAX_POOL_SHARE_BPS_L0 = 30;
+    uint16 public constant MAX_POOL_SHARE_BPS_PREMIUM = 90;
     uint256 internal constant WAD = 1e18;
     address public constant DEAD = 0x000000000000000000000000000000000000dEaD;
 
@@ -105,6 +111,11 @@ contract MapaePool is ERC20, ReentrancyGuard {
             address(membershipToken_) == address(0) || address(quote_) == address(0) || creator_ == address(0)
                 || address(feeRouter_) == address(0) || address(dojang_) == address(0)
         ) revert ZeroAddress();
+        if (tier_ == IFeeRouter.UtilityTier.L0) {
+            if (burnBps_ != 0 || royaltyBps_ > MAX_POOL_SHARE_BPS_L0) revert PoolShareOutOfBand();
+        } else if (uint256(royaltyBps_) + burnBps_ > MAX_POOL_SHARE_BPS_PREMIUM) {
+            revert PoolShareOutOfBand();
+        }
         membershipToken = membershipToken_;
         quote = quote_;
         creator = creator_;

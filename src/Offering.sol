@@ -179,6 +179,10 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
         {
             uint16 maxRoyalty = p.tier == IFeeRouter.UtilityTier.L0 ? MAX_SWAP_ROYALTY_BPS_L0 : MAX_SWAP_ROYALTY_BPS;
             if (p.swapRoyaltyBps > maxRoyalty || p.swapBurnBps > MAX_SWAP_BURN_BPS) revert InvalidConfig();
+            // decision 28: L1/L2 pool share (royalty + burn) ≤ 90 bps → pool total ≤ 150 bps.
+            if (p.tier != IFeeRouter.UtilityTier.L0 && uint256(p.swapRoyaltyBps) + p.swapBurnBps > 90) {
+                revert InvalidConfig();
+            }
             // v3: L0 pools cap the total swap fee at 100 bps (platform 40 + lp 30 + royalty ≤ 30) → burn share 0.
             if (p.tier == IFeeRouter.UtilityTier.L0 && p.swapBurnBps != 0) revert InvalidConfig();
         }

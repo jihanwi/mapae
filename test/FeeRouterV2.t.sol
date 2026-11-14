@@ -78,9 +78,9 @@ contract FeeRouterV2Test is Test {
         // swap platform floor 40: 39 reverts, 40 ok (sum stays in [80,100])
         _expectBand(IFeeRouter.UtilityTier.L0, _fees(500, 39, 41, 20, 0, 0));
         router.setFees(IFeeRouter.UtilityTier.L0, _fees(500, 40, 40, 20, 0, 0));
-        // swap platform ceil 80: 81 reverts, 80 ok
-        _expectBand(IFeeRouter.UtilityTier.L0, _fees(500, 81, 10, 9, 0, 0));
-        router.setFees(IFeeRouter.UtilityTier.L0, _fees(500, 80, 10, 10, 0, 0)); // sum 100
+        // swap platform ceil 70 (decision 28, was 80): 71 reverts, 70 ok
+        _expectBand(IFeeRouter.UtilityTier.L0, _fees(500, 71, 10, 9, 0, 0));
+        router.setFees(IFeeRouter.UtilityTier.L0, _fees(500, 70, 15, 15, 0, 0)); // sum 100
         // swap sum band [80,100]: 79 reverts, 101 reverts
         _expectBand(IFeeRouter.UtilityTier.L0, _fees(500, 60, 10, 9, 0, 0)); // sum 79
         _expectBand(IFeeRouter.UtilityTier.L0, _fees(500, 60, 21, 20, 0, 0)); // sum 101
@@ -96,7 +96,7 @@ contract FeeRouterV2Test is Test {
         _expectBand(IFeeRouter.UtilityTier.L1, _fees(750, 40, 30, 29, 0, 400)); // sum 99
         _expectBand(IFeeRouter.UtilityTier.L1, _fees(750, 60, 61, 30, 0, 400)); // sum 151
         router.setFees(IFeeRouter.UtilityTier.L1, _fees(750, 40, 30, 30, 0, 400)); // sum 100
-        router.setFees(IFeeRouter.UtilityTier.L1, _fees(750, 60, 40, 30, 20, 400)); // sum 150
+        router.setFees(IFeeRouter.UtilityTier.L1, _fees(750, 40, 60, 30, 20, 400)); // sum 150 (router share 60)
         // swap platform band [20,60]: 19 reverts, 61 reverts
         _expectBand(IFeeRouter.UtilityTier.L1, _fees(750, 19, 61, 30, 10, 400));
         _expectBand(IFeeRouter.UtilityTier.L1, _fees(750, 61, 40, 30, 19, 400));
@@ -121,7 +121,7 @@ contract FeeRouterV2Test is Test {
         lp = uint16(bound(lp, 0, 200));
         IFeeRouter.TierFees memory f = _fees(500, platform, royalty, burn, lp, 0);
         uint256 sum = uint256(platform) + royalty + burn + lp;
-        bool inBand = platform >= 40 && platform <= 80 && sum >= 80 && sum <= 100;
+        bool inBand = platform >= 40 && platform <= 70 && uint256(platform) + lp <= 70 && sum >= 80 && sum <= 100;
         if (inBand) {
             router.setFees(IFeeRouter.UtilityTier.L0, f);
             // whatever is stored, the platform floor holds

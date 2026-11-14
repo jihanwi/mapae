@@ -482,9 +482,16 @@ contract InvariantsV2Test is Test {
         p.swapBurnBps = 51;
         vm.expectRevert(IOffering.InvalidConfig.selector);
         offeringDeployer.deploy(p);
+        // decision 28: individual edges 80 / 50 still hold, but royalty + burn ≤ 90
         p.swapBurnBps = 50;
-        Offering o1 = offeringDeployer.deploy(p); // 80/50 edge ok
+        vm.expectRevert(IOffering.InvalidConfig.selector);
+        offeringDeployer.deploy(p); // 80/50 = 130 > 90
+        p.swapBurnBps = 10;
+        Offering o1 = offeringDeployer.deploy(p); // 80/10 royalty edge ok (sum 90)
         assertEq(o1.swapRoyaltyBps(), 80);
+        p.swapRoyaltyBps = 40;
+        p.swapBurnBps = 50;
+        assertEq(offeringDeployer.deploy(p).swapBurnBps(), 50); // 40/50 burn edge ok (sum 90)
 
         // L0: royalty [0,30] (tighter), burn must be 0 (v3: L0 total swap fee ≤ 100 bps)
         IOffering.OfferingParams memory q = _directParams(IFeeRouter.UtilityTier.L0);
