@@ -20,6 +20,9 @@ library GiwaSepolia {
     /// @notice Dojang attestation indexer.
     address internal constant ATTESTATION_INDEXER = 0x9C9Bf29880448aB39795a11b669e22A0f1d790ec;
 
+    /// @notice Wrapped ETH predeploy (OP-stack). On-chain: symbol "WETH", decimals 18.
+    address internal constant WETH = 0x4200000000000000000000000000000000000006;
+
     /// @notice Verified Address schema UID (data: `bool isVerified`).
     bytes32 internal constant VERIFIED_ADDRESS_SCHEMA_UID =
         0x072d75e18b2be4f89a13a7147240477481c4b526d5795802acba59046b426e08;
