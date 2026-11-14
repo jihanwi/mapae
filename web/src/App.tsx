@@ -1,28 +1,46 @@
-import {NavLink, Outlet} from "react-router-dom";
-import {useAccount, useConnect, useDisconnect, useSwitchChain, useWriteContract} from "wagmi";
+import {Link, NavLink, Outlet, useLocation} from "react-router-dom";
+import {useAccount, useConnect, useDisconnect, useReadContract, useSwitchChain, useWriteContract} from "wagmi";
 import {giwaSepolia} from "./config/chain";
 import {copy} from "./copy";
 import {ADDR} from "./contracts/addresses";
 import {MockKRWAbi, MockDojangAbi} from "./contracts/abis";
+import {ADDR_V3} from "./contracts/addressesV3";
+import {MockKRWV3Abi} from "./contracts/abisV3";
 import {useOnboarding} from "./hooks";
 import {useTx, useGlobalTxBusy, useToast} from "./components/tx";
 import {fmt, shortAddr} from "./lib/format";
 import {OnboardingProvider} from "./components/OnboardingModal";
 
+/** Fixed-price offering section (v1/v2 contracts): /offerings and the legacy pages under it. */
+export function isOfferingSection(pathname: string): boolean {
+    return ["/offerings", "/offering/", "/membership", "/redeem", "/trade"].some((p) => pathname === p || pathname.startsWith(p.endsWith("/") ? p : `${p}/`));
+}
+
 function Nav() {
     const {address, isConnected, chainId} = useAccount();
+    const {pathname} = useLocation();
+    const legacy = isOfferingSection(pathname);
     const push = useToast();
     const {connect, connectors} = useConnect({mutation: {onError: () => push({kind: "error", text: copy.errors.noWallet})}});
     const {disconnect} = useDisconnect();
     const {switchChain} = useSwitchChain();
-    const {krwBalance, ethBalance} = useOnboarding();
+    const {krwBalance, ethBalance} = useOnboarding(); // legacy (ADDR) balances
+    // v3 screens show the v3 MockKRW balance (ADDR_V3); the two deployments are never mixed.
+    const krwV3 = useReadContract({
+        address: ADDR_V3.mockKRW,
+        abi: MockKRWV3Abi,
+        functionName: "balanceOf",
+        args: [address ?? "0x0000000000000000000000000000000000000000"],
+        chainId: giwaSepolia.id,
+        query: {enabled: !!address && !legacy, refetchInterval: 15_000},
+    });
     const {writeContractAsync} = useWriteContract();
     const {run, busy} = useTx();
     const globalBusy = useGlobalTxBusy();
     const wrongChain = isConnected && chainId !== giwaSepolia.id;
 
-    // 상시 KRWs 재충전 — 온보딩 완료 후에도 잔고가 마르면 다시 받을 수 있게 (동일 금액·동일 tx 경유)
-    const faucetBtn = isConnected && !wrongChain ? (
+    // 상시 KRWs 재충전 (v1/v2 ADDR 기반) — 공모 섹션에서만 노출
+    const faucetBtn = legacy && isConnected && !wrongChain ? (
         <button
             onClick={() => void run(copy.nav.faucetTxLabel, () =>
                 writeContractAsync({address: ADDR.mockKRW, abi: MockKRWAbi, functionName: "faucet", args: [copy.onboarding.faucetAmount], chainId: giwaSepolia.id}))}
@@ -35,18 +53,26 @@ function Nav() {
         </button>
     ) : null;
 
-    // 데스크톱 인라인 탭 / 모바일 4등분 그리드 탭 공용
+    // Top tabs: 커브 / 발행 / 공모. 공모 is active across the whole offering section.
     const tabs = [
-        {to: "/", end: true, label: copy.nav.curves},
-        {to: "/offerings", end: false, label: copy.nav.home},
+        {to: "/", label: copy.nav.curves, active: pathname === "/" || pathname.startsWith("/t/")},
+        {to: "/create", label: copy.nav.create, active: pathname.startsWith("/create")},
+        {to: "/offerings", label: copy.nav.home, active: legacy},
+    ];
+    // Offering-section sub tabs (routes unchanged)
+    const subTabs = [
+        {to: "/offerings", end: false, label: copy.nav.offeringList},
         {to: "/membership", end: false, label: copy.nav.membership},
         {to: "/redeem", end: false, label: copy.nav.redeem},
         {to: "/trade", end: false, label: copy.nav.trade},
     ];
-    const inlineItem = ({isActive}: {isActive: boolean}) =>
-        `px-3.5 min-h-[44px] flex items-center text-[15px] whitespace-nowrap border-b-2 ${isActive ? "font-semibold text-hanji-100 border-brass-400" : "text-hanji-400 border-transparent hover:text-hanji-100"}`;
-    const gridItem = ({isActive}: {isActive: boolean}) =>
-        `flex items-center justify-center min-h-[44px] text-[13px] whitespace-nowrap border-b-2 ${isActive ? "font-semibold text-hanji-100 border-brass-400" : "text-hanji-400 border-transparent"}`;
+    const inlineCls = (active: boolean) =>
+        `px-3.5 min-h-[44px] flex items-center text-[15px] whitespace-nowrap border-b-2 ${active ? "font-semibold text-hanji-100 border-brass-400" : "text-hanji-400 border-transparent hover:text-hanji-100"}`;
+    const gridCls = (active: boolean) =>
+        `flex items-center justify-center min-h-[44px] text-[14px] whitespace-nowrap border-b-2 ${active ? "font-semibold text-hanji-100 border-brass-400" : "text-hanji-400 border-transparent"}`;
+    const subCls = ({isActive}: {isActive: boolean}) =>
+        `flex items-center justify-center sm:justify-start sm:px-3 min-h-[40px] text-[13px] whitespace-nowrap ${isActive ? "font-semibold text-brass-400" : "text-hanji-400 hover:text-hanji-100"}`;
+    const shownKrw = legacy ? krwBalance : ((krwV3.data as bigint | undefined) ?? 0n);
 
     const wallet = wrongChain ? (
         <button onClick={() => switchChain({chainId: giwaSepolia.id})}
@@ -60,7 +86,7 @@ function Nav() {
             <span className="text-hanji-100 tabular-nums">{shortAddr(address)}</span>
             <span className="hidden sm:flex items-center gap-2.5">
                 <span className="text-ink-700">|</span>
-                <span className="text-hanji-400 tabular-nums">{fmt(krwBalance, 0)} KRWs</span>
+                <span className="text-hanji-400 tabular-nums">{fmt(shownKrw, 0)} KRWs</span>
             </span>
         </button>
     ) : (
@@ -84,7 +110,7 @@ function Nav() {
                 </NavLink>
                 <nav className="hidden sm:flex gap-1 items-center flex-1 min-w-0">
                     {tabs.map((t) => (
-                        <NavLink key={t.to} to={t.to} end={t.end} className={inlineItem}>{t.label}</NavLink>
+                        <Link key={t.to} to={t.to} className={inlineCls(t.active)}>{t.label}</Link>
                     ))}
                 </nav>
                 <div className="flex-1 sm:flex-none" />
@@ -93,12 +119,22 @@ function Nav() {
                     {wallet}
                 </div>
             </div>
-            {/* 2줄(모바일 전용): 탭 5등분 풀폭 */}
-            <nav className="grid grid-cols-5 sm:hidden border-t border-ink-700">
+            {/* 2줄(모바일 전용): 상단 탭 3등분 풀폭 */}
+            <nav className="grid grid-cols-3 sm:hidden border-t border-ink-700">
                 {tabs.map((t) => (
-                    <NavLink key={t.to} to={t.to} end={t.end} className={gridItem}>{t.label}</NavLink>
+                    <Link key={t.to} to={t.to} className={gridCls(t.active)}>{t.label}</Link>
                 ))}
             </nav>
+            {/* 공모 섹션 하위 탭 */}
+            {legacy && (
+                <nav className="border-t border-ink-700">
+                    <div className="max-w-page mx-auto px-4 sm:px-8 grid grid-cols-4 sm:flex sm:gap-2">
+                        {subTabs.map((t) => (
+                            <NavLink key={t.to} to={t.to} end={t.end} className={subCls}>{t.label}</NavLink>
+                        ))}
+                    </div>
+                </nav>
+            )}
         </div>
     );
 }
@@ -150,10 +186,12 @@ function OnboardingStrip() {
 }
 
 export default function App() {
+    const {pathname} = useLocation();
     return (
         <div className="min-h-[100dvh] bg-ink-950 text-hanji-100">
             <Nav />
-            <OnboardingStrip />
+            {/* v1/v2 온보딩 스트립 (ADDR 기반) — 공모 섹션에서만 */}
+            {isOfferingSection(pathname) && <OnboardingStrip />}
             <OnboardingProvider>
                 <Outlet />
             </OnboardingProvider>

@@ -5,7 +5,7 @@ export const copy = {
     heroTitle: "사고팔 수 있는 팬 멤버십",
     heroSub: "발행은 공모주처럼 · 유통은 시장처럼 · 소비는 정가처럼",
     nav: {
-        curves: "커브", home: "공모", membership: "내 멤버십", redeem: "리딤 & 후원", trade: "거래",
+        curves: "커브", create: "발행", home: "공모", offeringList: "공모 목록", membership: "내 멤버십", redeem: "리딤 & 후원", trade: "거래",
         faucet: "KRWs 받기", // 상시 재충전 버튼 (데스크톱)
         faucetShort: "+ KRWs", // 모바일 축약
         faucetTitle: "테스트 KRWs 받기 (10만 KRWs)",
