@@ -12,6 +12,8 @@ import {CurvePresets as P} from "../src/CurvePresets.sol";
 import {CurveMath} from "../src/lib/CurveMath.sol";
 import {MapaePool} from "../src/MapaePool.sol";
 import {MembershipToken} from "../src/MembershipToken.sol";
+import {BuybackVault} from "../src/BuybackVault.sol";
+import {IFeeRouter} from "../src/interfaces/IFeeRouter.sol";
 import {MapaeFactoryTestBase} from "./MapaeFactory.t.sol";
 import {TestQuote, RevertingDojangCS} from "./CurveSale.t.sol";
 
@@ -334,10 +336,11 @@ abstract contract CurveFactoryTestBase is MapaeFactoryTestBase {
     // ---------------------------------------------------------------------
 
     function test_K10_BuybackVaultRejectsCurveToken() public {
-        (, MembershipToken t) = _create(dev);
-        vm.expectRevert();
+        (CurveSale c, MembershipToken t) = _create(dev);
+        assertEq(uint8(c.tier()), uint8(IFeeRouter.UtilityTier.L0));
+        vm.expectRevert(BuybackVault.TierNotAllowed.selector);
         buybackVault.route(address(t), 1);
-        vm.expectRevert();
+        vm.expectRevert(BuybackVault.TierNotAllowed.selector);
         buybackVault.topUp(address(t), 1);
     }
 }

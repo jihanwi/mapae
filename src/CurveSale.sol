@@ -328,6 +328,12 @@ contract CurveSale is IPrimaryMarket, ReentrancyGuard {
         return graduated ? Phase.Settled : Phase.Open;
     }
 
+    /// @notice Utility grade of the curve token: always L0 (ITierSource-compatible), so L1+
+    ///         modules such as BuybackVault reject curve tokens explicitly (TierNotAllowed).
+    function tier() external pure returns (IFeeRouter.UtilityTier) {
+        return IFeeRouter.UtilityTier.L0;
+    }
+
     function totalFeeBps() public view returns (uint16) {
         return platformBps + devBps + lpSeedBps;
     }
