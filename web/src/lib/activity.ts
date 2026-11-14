@@ -2,8 +2,8 @@
 // per-curve aggregation, market cap comparison and the six list sort orders. Tested in
 // activity.test.ts. Amounts are raw 18-decimals bigints; nothing is converted to floating point.
 import {decodeEventLog, encodeEventTopics, Hex} from "viem";
-import {CurveSaleAbi, MapaePoolV3Abi} from "../contracts/abisV3";
-import {marketCapQuote, progressBps, TOTAL_SUPPLY, WAD} from "./curveMath";
+import {CurveSaleAbi, MapaePoolV3Abi} from "../contracts/abisV3.js"; // .js: also imported by Vercel Functions (ESM)
+import {marketCapQuote, progressBps, TOTAL_SUPPLY, WAD} from "./curveMath.js";
 
 type Address = `0x${string}`;
 const lc = (a: string) => a.toLowerCase();
@@ -196,6 +196,8 @@ export function resolve(entries: readonly Entry[], curves: readonly CurveRef[]):
 
 export type CurveStats = {
     lastTradeBlock: bigint;
+    /** Unix seconds of the last trade, when known (server summary merge); sorting prefers it. */
+    lastTradeTs?: number;
     tradeCount: number;
     /** Distinct non-Dev wallets that traded in the window. */
     uniqueTraders: number;
@@ -279,6 +281,9 @@ export function sortCurves<T extends SortCurve>(tab: Tab, curves: readonly T[], 
     switch (tab) {
         case "latest":
             return list.sort((a, b) => {
+                const sa = stats.get(a.address)?.lastTradeTs;
+                const sb = stats.get(b.address)?.lastTradeTs;
+                if (sa !== undefined && sb !== undefined && sa !== sb) return sb - sa;
                 const la = last(a);
                 const lb = last(b);
                 if (la !== undefined && lb !== undefined) return la === lb ? byNewest(a, b) : la > lb ? -1 : 1;

@@ -10,6 +10,9 @@ export default {
             success: "#7A9B6D",
             error: "#B0604F",
             placeholder: "#6B5F4E",
+            // Candle chart only (CandleChart.tsx: candles and volume bars). Not for any other UI.
+            up: "#3FB68B",
+            down: "#E5484D",
         },
         fontFamily: {
             sans: ['"Pretendard Variable"', "Pretendard", "sans-serif"],
