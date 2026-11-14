@@ -15,7 +15,7 @@ export function visibleCount(total: number, width: number, minSlot = MIN_SLOT): 
     return Math.max(1, Math.min(total, Math.floor(width / minSlot)));
 }
 
-/** Price range with 5% padding; a flat range is widened by 1% (or 1 wei) so it has height. */
+/** Price range with 8% padding above and below; a flat range is widened by 1% (or 1 wei). */
 export function priceRange(cs: readonly Candle[]): {lo: bigint; hi: bigint} {
     let lo = cs[0].l;
     let hi = cs[0].h;
@@ -23,7 +23,7 @@ export function priceRange(cs: readonly Candle[]): {lo: bigint; hi: bigint} {
         if (c.l < lo) lo = c.l;
         if (c.h > hi) hi = c.h;
     }
-    let pad = (hi - lo) / 20n;
+    let pad = ((hi - lo) * 8n) / 100n;
     if (hi === lo) pad = hi / 100n > 0n ? hi / 100n : 1n;
     return {lo: lo - pad < 0n ? 0n : lo - pad, hi: hi + pad};
 }
@@ -35,7 +35,10 @@ export type Bar = {x: number; w: number; wickTop: number; wickBottom: number; bo
 export type Layout = {bars: Bar[]; ticks: {y: number; price: bigint}[]; priceH: number; lo: bigint; hi: bigint};
 
 /** Lay out the newest candles that fit: top `priceFrac` of the height for candles, the rest for volume. */
-export function layoutCandles(all: readonly Candle[], width: number, height: number, priceFrac = 0.75, gapPx = 4): Layout {
+/** Minimum space between the price area and the volume area (px). */
+export const AREA_GAP = 8;
+
+export function layoutCandles(all: readonly Candle[], width: number, height: number, priceFrac = 0.75, gapPx = AREA_GAP): Layout {
     const n = visibleCount(all.length, width);
     const cs = all.slice(all.length - n);
     const priceH = Math.round(height * priceFrac);
@@ -76,4 +79,48 @@ export function layoutCandles(all: readonly Candle[], width: number, height: num
 export function barIndexAt(x: number, width: number, n: number): number {
     if (n <= 0) return -1;
     return Math.min(n - 1, Math.max(0, Math.floor(x / (width / n))));
+}
+
+// ---------------------------------------------------------------------------------------------
+// Live merge and display adjustments
+// ---------------------------------------------------------------------------------------------
+
+const WAD = 10n ** 18n;
+export const MAX_CANDLES = 300;
+
+/** A browser RPC trade of this curve (Buy, Sell or Swapped), with its interpolated time. */
+export type LiveTrade = {block: bigint; logIndex: number; ts: number | undefined; quoteAmount: bigint; tokenAmount: bigint};
+
+/** Server candles plus browser trades after indexedBlock, bucketed at `interval` seconds with the
+ *  server's price definition (quote * 1e18 / token, bigint). A trade at or below indexedBlock is
+ *  already in the server candles and is skipped; with no server index (null) every trade counts.
+ *  A trade in an existing bucket updates its h, l, c and v; otherwise it opens a new bucket. */
+export function mergeLiveCandles(server: readonly Candle[], live: readonly LiveTrade[], indexedBlock: bigint | null, interval: number): Candle[] {
+    const byT = new Map<number, Candle>(server.map((c) => [c.t, {...c}]));
+    const fresh = live
+        .filter((x) => (indexedBlock === null || x.block > indexedBlock) && x.tokenAmount > 0n && x.ts !== undefined)
+        .sort((a, b) => (a.block === b.block ? a.logIndex - b.logIndex : a.block < b.block ? -1 : 1));
+    for (const x of fresh) {
+        const price = (x.quoteAmount * WAD) / x.tokenAmount;
+        const t = Math.floor((x.ts as number) / interval) * interval;
+        const c = byT.get(t);
+        if (c) {
+            if (price > c.h) c.h = price;
+            if (price < c.l) c.l = price;
+            c.c = price;
+            c.v += x.quoteAmount;
+        } else {
+            byT.set(t, {t, o: price, h: price, l: price, c: price, v: x.quoteAmount});
+        }
+    }
+    return [...byT.values()].sort((a, b) => a.t - b.t).slice(-MAX_CANDLES);
+}
+
+/** Display only: from the second candle on, open = previous close (h and l widened to include it). */
+export function connectOpens(cs: readonly Candle[]): Candle[] {
+    return cs.map((c, i) => {
+        if (i === 0) return c;
+        const o = cs[i - 1].c;
+        return {...c, o, h: c.h > o ? c.h : o, l: c.l < o ? c.l : o};
+    });
 }

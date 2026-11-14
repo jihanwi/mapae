@@ -4,8 +4,9 @@
 // candles don't fit, only the newest ones that fit are drawn. No horizontal scroll.
 import {useEffect, useRef, useState} from "react";
 import {useCopy} from "../copy";
-import {useCandles} from "../hooks/chainData";
-import {barIndexAt, layoutCandles, parseCandles} from "../lib/candles";
+import {useCandles, useChainSummary} from "../hooks/chainData";
+import {useActivity} from "../hooks/activity";
+import {barIndexAt, connectOpens, layoutCandles, LiveTrade, mergeLiveCandles, parseCandles} from "../lib/candles";
 import {fmtRound, fmtSig} from "../lib/format";
 
 const HEIGHT = 240;
@@ -40,7 +41,18 @@ export function CandleChart({curve, unit}: {curve: string; unit: string}) {
     const [boxRef, width] = useWidth<HTMLDivElement>();
     const [hover, setHover] = useState<number | null>(null);
     const plotW = Math.max(0, width - AXIS_W);
-    const candles = q.data ? parseCandles(q.data) : [];
+    const summary = useChainSummary();
+    const activity = useActivity();
+    // Server candles + this curve's browser RPC trades after the server's indexedBlock (all of them
+    // when the candle API is down). Opens are then connected to the previous close (display only).
+    const live: LiveTrade[] = activity.trades
+        .filter((t) => t.curve.toLowerCase() === curve.toLowerCase())
+        .map((t) => ({block: t.block, logIndex: t.logIndex, ts: activity.tsOf(t.block), quoteAmount: t.quoteAmount, tokenAmount: t.tokenAmount}));
+    const server = q.isSuccess ? parseCandles(q.data) : [];
+    const indexed = q.isSuccess ? (summary.isSuccess && summary.data.indexedBlock !== null ? BigInt(summary.data.indexedBlock) : undefined) : null;
+    // undefined: server candles loaded but the indexer position is unknown; don't add live trades
+    // (they could already be counted).
+    const candles = connectOpens(indexed === undefined ? server : mergeLiveCandles(server, live, indexed, interval));
     const L = layoutCandles(candles, plotW, HEIGHT);
     const dp = unit === "ETH" || unit === "WETH" ? 6 : 0;
     const hb = hover !== null ? L.bars[hover] : undefined;
@@ -71,9 +83,9 @@ export function CandleChart({curve, unit}: {curve: string; unit: string}) {
                 </div>
             </div>
             <div ref={boxRef} className="w-full min-w-0">
-                {q.isError ? (
+                {q.isError && L.bars.length === 0 ? (
                     <p className="m-0 text-[13px] text-hanji-400">{tr.chain.unavailable}</p>
-                ) : q.isLoading || width === 0 ? (
+                ) : (q.isLoading && L.bars.length === 0) || width === 0 ? (
                     <div style={{height: HEIGHT}} />
                 ) : L.bars.length === 0 ? (
                     <p className="m-0 text-[13px] text-hanji-400">{tr.chain.chartEmpty}</p>
