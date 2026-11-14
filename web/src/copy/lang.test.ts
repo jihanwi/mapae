@@ -1,14 +1,20 @@
 import {describe, expect, it} from "vitest";
-import {currentSearch, resolveLang} from "./lang";
+import {currentSearch, queryLang, resolveLang} from "./lang";
 
-describe("resolveLang: saved choice → ?lang= → browser language", () => {
-    it("a saved choice wins over the query and the browser", () => {
-        expect(resolveLang({stored: "en", search: "?lang=ko", navigatorLang: "ko-KR"})).toBe("en");
-        expect(resolveLang({stored: "ko", search: "?lang=en", navigatorLang: "en-US"})).toBe("ko");
+describe("resolveLang: ?lang= → saved choice → browser language", () => {
+    it("the query wins over a saved choice and the browser", () => {
+        expect(resolveLang({stored: "en", search: "?lang=ko", navigatorLang: "en-US"})).toBe("ko");
+        expect(resolveLang({stored: "ko", search: "?lang=en", navigatorLang: "ko-KR"})).toBe("en");
+        expect(resolveLang({stored: "ko", search: "lang=en", navigatorLang: "ko-KR"})).toBe("en");
     });
-    it("the query is used when nothing valid is saved", () => {
-        expect(resolveLang({stored: null, search: "?lang=en", navigatorLang: "ko-KR"})).toBe("en");
-        expect(resolveLang({stored: "fr", search: "lang=ko", navigatorLang: "en-US"})).toBe("ko");
+    it("a saved choice is used when the query is missing or invalid", () => {
+        expect(resolveLang({stored: "en", search: "", navigatorLang: "ko-KR"})).toBe("en");
+        expect(resolveLang({stored: "ko", search: "?lang=de", navigatorLang: "en-US"})).toBe("ko");
+    });
+    it("queryLang returns only valid values", () => {
+        expect(queryLang("?x=1&lang=en")).toBe("en");
+        expect(queryLang("?lang=fr")).toBeUndefined();
+        expect(queryLang("")).toBeUndefined();
     });
     it("falls back to the browser language: ko* → ko, anything else → en", () => {
         expect(resolveLang({stored: null, search: "", navigatorLang: "ko-KR"})).toBe("ko");

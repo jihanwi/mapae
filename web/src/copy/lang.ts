@@ -1,13 +1,20 @@
-// Language resolution (pure, testable). Order: saved choice → ?lang= query → browser language.
+// Language resolution (pure, testable). Order: ?lang= query → saved choice → browser language.
+// A language chosen by the query is also saved (see LangProvider), so it sticks after navigation.
 export type Lang = "ko" | "en";
 export const LANG_KEY = "mapae.lang";
 
 const isLang = (v: unknown): v is Lang => v === "ko" || v === "en";
 
+/** Valid ?lang= value in a query string ("?a=b&lang=en" or "lang=en"), else undefined. */
+export function queryLang(search: string): Lang | undefined {
+    const q = new URLSearchParams(search.startsWith("?") ? search : `?${search}`).get("lang");
+    return isLang(q) ? q : undefined;
+}
+
 export function resolveLang(input: {stored: string | null | undefined; search: string; navigatorLang: string | undefined}): Lang {
+    const q = queryLang(input.search);
+    if (q) return q;
     if (isLang(input.stored)) return input.stored;
-    const q = new URLSearchParams(input.search.startsWith("?") ? input.search : `?${input.search}`).get("lang");
-    if (isLang(q)) return q;
     return (input.navigatorLang ?? "").toLowerCase().startsWith("ko") ? "ko" : "en";
 }
 

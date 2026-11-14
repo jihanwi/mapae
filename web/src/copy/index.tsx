@@ -3,7 +3,7 @@
 import {createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState} from "react";
 import {ko, Copy} from "./ko";
 import {en} from "./en";
-import {currentSearch, Lang, readStoredLang, resolveLang, writeStoredLang} from "./lang";
+import {currentSearch, Lang, queryLang, readStoredLang, resolveLang, writeStoredLang} from "./lang";
 
 export type {Copy} from "./ko";
 export type {Lang} from "./lang";
@@ -18,7 +18,10 @@ const LangCtx = createContext<Ctx>({lang: "ko", setLang: () => {}});
 
 function initialLang(): Lang {
     if (typeof window === "undefined") return "ko";
-    return resolveLang({stored: readStoredLang(), search: currentSearch(window.location), navigatorLang: window.navigator?.language});
+    const search = currentSearch(window.location);
+    const fromQuery = queryLang(search);
+    if (fromQuery) writeStoredLang(fromQuery); // a shared ?lang= link also becomes the saved choice
+    return resolveLang({stored: readStoredLang(), search, navigatorLang: window.navigator?.language});
 }
 
 export function LangProvider({children}: {children: ReactNode}) {
