@@ -1,5 +1,5 @@
 import {BaseError, ContractFunctionRevertedError, UserRejectedRequestError} from "viem";
-import {copy} from "../copy";
+import type {Copy} from "../copy";
 
 /** Custom error name of a contract revert, if viem decoded one. */
 export function revertName(e: unknown): string | undefined {
@@ -9,8 +9,8 @@ export function revertName(e: unknown): string | undefined {
     return revert?.data?.errorName;
 }
 
-/** 커스텀 에러 → 한국어 매핑. scope "v3" 는 v3 화면 전용 문구(copy.errorsV3)를 먼저 본다. */
-export function humanError(e: unknown, scope?: "v3"): string {
+/** Custom error → message in the given dictionary. scope "v3" checks copy.errorsV3 first. */
+export function humanError(e: unknown, copy: Copy, scope?: "v3"): string {
     const err = e as BaseError;
     if (err instanceof BaseError) {
         if (err.walk((x) => x instanceof UserRejectedRequestError)) return copy.errors.userRejected;

@@ -5,14 +5,14 @@ import {useMemo, useState} from "react";
 import {Link} from "react-router-dom";
 import {Abi, parseEventLogs, parseUnits} from "viem";
 import {useAccount, usePublicClient, useReadContracts, useWriteContract} from "wagmi";
-import {copy} from "../copy";
+import {useCopy} from "../copy";
 import {ADDR_V3} from "../contracts/addressesV3";
 import {CurveFactoryAbi, FeeRouterAbi, MapaeFactoryV3Abi, MockKRWV3Abi} from "../contracts/abisV3";
 import {explorerAddr, explorerTx, giwaSepolia} from "../config/chain";
 import {Address, CtaState, useTradeCta, ZERO} from "../hooks/curves";
 import {CURVE_SUPPLY, DEX_SUPPLY, TOTAL_SUPPLY, costToSellOut, grossForNet, quoteBuyWithFees, spotPrice} from "../lib/curveMath";
 import {utf8ByteLength, withinByteLimit} from "../lib/bytes";
-import {fmt, fmtSig, sanitizeAmountInput} from "../lib/format";
+import {fmt, fmtDateTime, fmtSig, sanitizeAmountInput} from "../lib/format";
 import {NetError, PrimaryBtn, Skeleton} from "../components/ui";
 import {RunFn, TxButton} from "../components/tx";
 import {opensOnboarding, useOnboardingModal} from "../components/OnboardingModal";
@@ -23,7 +23,7 @@ type QuoteConfig = {registered: boolean; enabled: boolean; decimals: number; cur
 type CurveFees = {platformBps: number; devBps: number; lpSeedBps: number};
 
 const bpsPct = (b: number) => (b / 100).toFixed(2);
-const wholeTokens = (wei: bigint) => (wei / 10n ** 18n).toLocaleString("en-US");
+const wholeTokens = (wei: bigint, locale: string) => (wei / 10n ** 18n).toLocaleString(locale);
 
 function useCreateReads(account: Address | undefined) {
     const reads = useReadContracts({
@@ -71,6 +71,7 @@ const inputCls =
     "w-full min-w-0 bg-ink-900 border border-ink-700 rounded-input px-4 py-3.5 text-[16px] text-hanji-100 outline-none focus:border-brass-400";
 
 export default function Create() {
+    const tr = useCopy();
     const {address} = useAccount();
     const client = usePublicClient({chainId: giwaSepolia.id});
     const {writeContractAsync} = useWriteContract();
@@ -122,7 +123,7 @@ export default function Create() {
         };
         if (cta.kind === "approve") {
             const ok = await run(
-                "승인",
+                tr.curve.txApprove,
                 () => writeContractAsync({address: ADDR_V3.mockKRW, abi: MockKRWV3Abi, functionName: "approve", args: [ADDR_V3.curveFactory, devBuy], chainId: giwaSepolia.id}),
                 opts
             );
@@ -130,7 +131,7 @@ export default function Create() {
         }
         let hash: `0x${string}` | undefined;
         const ok = await run(
-            copy.create.txLabel(symbol),
+            tr.create.txLabel(symbol),
             async () => {
                 hash =
                     kind === "KRWs"
@@ -175,17 +176,17 @@ export default function Create() {
     if (created) {
         return wrap(
             <div className="bg-ink-800 border border-ink-700 rounded-card p-5 sm:p-7 text-center">
-                <h1 className="m-0 mb-2 text-[22px] font-bold">{copy.create.doneTitle}</h1>
-                <p className="m-0 mb-5 text-[14px] text-hanji-400 break-all">{copy.create.doneNote(name, symbol)}</p>
+                <h1 className="m-0 mb-2 text-[22px] font-bold">{tr.create.doneTitle}</h1>
+                <p className="m-0 mb-5 text-[14px] text-hanji-400 break-all">{tr.create.doneNote(name, symbol)}</p>
                 <Link to={`/t/${created.curve}`}>
-                    <PrimaryBtn className="w-full">{copy.create.goToken}</PrimaryBtn>
+                    <PrimaryBtn className="w-full">{tr.create.goToken}</PrimaryBtn>
                 </Link>
                 <div className="mt-4 flex flex-col gap-1.5 text-[13px]">
                     <a href={explorerAddr(created.curve)} target="_blank" rel="noreferrer" className="break-all">
-                        {copy.create.viewCurve}
+                        {tr.create.viewCurve}
                     </a>
                     <a href={explorerTx(created.hash)} target="_blank" rel="noreferrer" className="break-all">
-                        {copy.tx.viewOnChain}
+                        {tr.tx.viewOnChain}
                     </a>
                 </div>
             </div>
@@ -200,33 +201,33 @@ export default function Create() {
     const dp = kind === "ETH" ? 6 : 0;
 
     let reason: string | null = null;
-    if (!r.curveEnabled) reason = copy.create.paused;
-    else if (rateLimited) reason = copy.create.rateLimited(new Date(Number(r.nextAllowedAt) * 1000).toLocaleString("ko-KR"));
-    else if (!quoteOk) reason = copy.create.quoteUnavailable;
+    if (!r.curveEnabled) reason = tr.create.paused;
+    else if (rateLimited) reason = tr.create.rateLimited(fmtDateTime(r.nextAllowedAt, tr.locale));
+    else if (!quoteOk) reason = tr.create.quoteUnavailable;
 
     const openForState = !blocked && opensOnboarding(cta, payToken);
 
     return wrap(
         <>
             <div>
-                <h1 className="m-0 mb-2 text-[24px] sm:text-[28px] font-bold">{copy.create.title}</h1>
-                <p className="m-0 text-[14px] text-hanji-400">{copy.create.sub}</p>
+                <h1 className="m-0 mb-2 text-[24px] sm:text-[28px] font-bold">{tr.create.title}</h1>
+                <p className="m-0 text-[14px] text-hanji-400">{tr.create.sub}</p>
             </div>
 
             <div className="bg-ink-800 border border-ink-700 rounded-card p-4 sm:p-7 flex flex-col gap-5">
                 <Field
-                    label={copy.create.name}
-                    hint={<span className={nameBytes > r.maxName ? "text-error" : "text-hanji-400"}>{copy.create.bytes(nameBytes, r.maxName)}</span>}
+                    label={tr.create.name}
+                    hint={<span className={nameBytes > r.maxName ? "text-error" : "text-hanji-400"}>{tr.create.bytes(nameBytes, r.maxName)}</span>}
                 >
-                    <input value={name} onChange={(e) => setName(e.target.value)} placeholder={copy.create.namePlaceholder} className={inputCls} />
+                    <input value={name} onChange={(e) => setName(e.target.value)} placeholder={tr.create.namePlaceholder} className={inputCls} />
                 </Field>
                 <Field
-                    label={copy.create.symbol}
-                    hint={<span className={symbolBytes > r.maxSymbol ? "text-error" : "text-hanji-400"}>{copy.create.bytes(symbolBytes, r.maxSymbol)}</span>}
+                    label={tr.create.symbol}
+                    hint={<span className={symbolBytes > r.maxSymbol ? "text-error" : "text-hanji-400"}>{tr.create.bytes(symbolBytes, r.maxSymbol)}</span>}
                 >
-                    <input value={symbol} onChange={(e) => setSymbol(e.target.value)} placeholder={copy.create.symbolPlaceholder} className={inputCls} />
+                    <input value={symbol} onChange={(e) => setSymbol(e.target.value)} placeholder={tr.create.symbolPlaceholder} className={inputCls} />
                 </Field>
-                <Field label={copy.create.quote}>
+                <Field label={tr.create.quote}>
                     <div className="flex rounded-input overflow-hidden border border-ink-700">
                         {(["KRWs", "ETH"] as const).map((k) => (
                             <button
@@ -244,19 +245,19 @@ export default function Create() {
                 </Field>
                 <div className="grid grid-cols-2 gap-3 text-[13px]">
                     <div className="bg-ink-900 rounded-stat px-3.5 py-3 min-w-0">
-                        <div className="text-[12px] text-hanji-400 mb-1">{copy.create.startPrice}</div>
+                        <div className="text-[12px] text-hanji-400 mb-1">{tr.create.startPrice}</div>
                         <div className="font-semibold tabular-nums break-all">
-                            {fmtSig(spotPrice(vq, 0n, 0n), 4)} <span className="text-hanji-400 font-normal">{unit}</span>
+                            {fmtSig(spotPrice(vq, 0n, 0n), 4, tr.locale)} <span className="text-hanji-400 font-normal">{unit}</span>
                         </div>
                     </div>
                     <div className="bg-ink-900 rounded-stat px-3.5 py-3 min-w-0">
-                        <div className="text-[12px] text-hanji-400 mb-1">{copy.create.sellOut}</div>
+                        <div className="text-[12px] text-hanji-400 mb-1">{tr.create.sellOut}</div>
                         <div className="font-semibold tabular-nums break-all">
-                            {fmt(sellOut, dp)} <span className="text-hanji-400 font-normal">{unit}</span>
+                            {fmt(sellOut, dp, tr.locale)} <span className="text-hanji-400 font-normal">{unit}</span>
                         </div>
                     </div>
                 </div>
-                <Field label={copy.create.devBuy(unit)}>
+                <Field label={tr.create.devBuy(unit)}>
                     <div className="flex items-center bg-ink-900 border border-ink-700 rounded-input px-4 focus-within:border-brass-400">
                         <input
                             value={rawBuy}
@@ -267,30 +268,30 @@ export default function Create() {
                         />
                         <span className="text-hanji-400 text-[14px] flex-none">{unit}</span>
                     </div>
-                    <p className="m-0 mt-2 text-[12px] text-hanji-400">{copy.create.devBuyNote}</p>
+                    <p className="m-0 mt-2 text-[12px] text-hanji-400">{tr.create.devBuyNote}</p>
                     {preview && (
                         <div className="mt-2 text-[13px] tabular-nums flex justify-between gap-3 flex-wrap">
-                            <span className="text-hanji-400">{copy.create.devBuyReceive}</span>
+                            <span className="text-hanji-400">{tr.create.devBuyReceive}</span>
                             <span>
-                                {fmt(preview.tokensOut, 2)} {symbol || copy.curve.tokenUnit} · {copy.curve.paid} {fmt(preview.quoteSpent, kind === "ETH" ? 8 : 2)} {unit}
+                                {fmt(preview.tokensOut, 2, tr.locale)} {symbol || tr.curve.tokenUnit} · {tr.curve.paid} {fmt(preview.quoteSpent, kind === "ETH" ? 8 : 2, tr.locale)} {unit}
                             </span>
                         </div>
                     )}
-                    {preview && preview.tokensOut === CURVE_SUPPLY && <p className="m-0 mt-2 text-[12px] text-brass-400">{copy.create.devBuyGraduates}</p>}
+                    {preview && preview.tokensOut === CURVE_SUPPLY && <p className="m-0 mt-2 text-[12px] text-brass-400">{tr.create.devBuyGraduates}</p>}
                 </Field>
             </div>
 
-            <div className="rounded-input px-4 py-3.5 text-[13px] text-hanji-100 border border-ink-700 bg-ink-900 text-center">{copy.curve.fixedPanel}</div>
+            <div className="rounded-input px-4 py-3.5 text-[13px] text-hanji-100 border border-ink-700 bg-ink-900 text-center">{tr.curve.fixedPanel}</div>
             <div className="bg-ink-900 border border-ink-700 rounded-card p-4 sm:p-6 text-[13px]">
                 {(
                     [
-                        [copy.create.totalSupply, `${wholeTokens(TOTAL_SUPPLY)}${copy.curve.tokenUnit}`],
-                        [copy.create.curveSupply, `${wholeTokens(CURVE_SUPPLY)}${copy.curve.tokenUnit}`],
-                        [copy.create.poolSupply, `${wholeTokens(DEX_SUPPLY)}${copy.curve.tokenUnit}`],
+                        [tr.create.totalSupply, `${wholeTokens(TOTAL_SUPPLY, tr.locale)}${tr.curve.tokenUnit}`],
+                        [tr.create.curveSupply, `${wholeTokens(CURVE_SUPPLY, tr.locale)}${tr.curve.tokenUnit}`],
+                        [tr.create.poolSupply, `${wholeTokens(DEX_SUPPLY, tr.locale)}${tr.curve.tokenUnit}`],
                         [
-                            copy.create.curveFee,
+                            tr.create.curveFee,
                             r.fees
-                                ? copy.create.feeBreakdown(bpsPct(Number(feeBps)), bpsPct(r.fees.platformBps), bpsPct(r.fees.devBps), bpsPct(r.fees.lpSeedBps))
+                                ? tr.create.feeBreakdown(bpsPct(Number(feeBps)), bpsPct(r.fees.platformBps), bpsPct(r.fees.devBps), bpsPct(r.fees.lpSeedBps))
                                 : "…",
                         ],
                     ] as const
@@ -305,20 +306,20 @@ export default function Create() {
             <div>
                 {openForState ? (
                     <PrimaryBtn className="w-full" onClick={() => openModal({krwNeeded: kind === "KRWs" ? devBuy : 0n, onProgress: refetch})}>
-                        {modalLabel(cta)}
+                        {modalLabel(tr, cta)}
                     </PrimaryBtn>
                 ) : (
                     <TxButton className="w-full" disabled={blocked || !(cta.kind === "ready" || cta.kind === "approve")} action={action}>
-                        {cta.kind === "approve" ? copy.create.approveCta : cta.kind === "insufficient" ? copy.curve.cta.insufficient : copy.create.cta}
+                        {cta.kind === "approve" ? tr.create.approveCta : cta.kind === "insufficient" ? tr.curve.cta.insufficient : tr.create.cta}
                     </TxButton>
                 )}
                 {reason && <p className="text-[12px] text-brass-400 mt-2 mb-0">{reason}</p>}
-                <p className="text-[12px] text-hanji-400 mt-2 mb-0">{copy.create.rateRule}</p>
+                <p className="text-[12px] text-hanji-400 mt-2 mb-0">{tr.create.rateRule}</p>
                 {decodeFailed && (
                     <p className="text-[12px] text-error mt-2 mb-0">
-                        {copy.create.decodeFailed}{" "}
+                        {tr.create.decodeFailed}{" "}
                         <a href={explorerTx(decodeFailed)} target="_blank" rel="noreferrer">
-                            {copy.tx.viewOnChain}
+                            {tr.tx.viewOnChain}
                         </a>
                     </p>
                 )}

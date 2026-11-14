@@ -6,7 +6,7 @@
 import {createContext, ReactNode, useCallback, useContext, useState} from "react";
 import {Abi} from "viem";
 import {useAccount, useBalance, useConnect, useReadContracts, useSwitchChain, useWriteContract} from "wagmi";
-import {copy} from "../copy";
+import {useCopy} from "../copy";
 import {ADDR_V3} from "../contracts/addressesV3";
 import {MockDojangV3Abi, MockKRWV3Abi} from "../contracts/abisV3";
 import {giwaSepolia} from "../config/chain";
@@ -66,10 +66,11 @@ function Step({n, title, done, children}: {n: number; title: string; done: boole
 }
 
 function OnboardingModal({args, onClose}: {args: OpenArgs; onClose: () => void}) {
+    const tr = useCopy();
     const {address, isConnected, chainId} = useAccount();
     const push = useToast();
     const {connect, connectors, isPending: connecting} = useConnect({
-        mutation: {onError: () => push({kind: "error", text: copy.errors.noWallet})},
+        mutation: {onError: () => push({kind: "error", text: tr.errors.noWallet})},
     });
     // wagmi's injected connector falls back to wallet_addEthereumChain (giwaSepolia config) when
     // the wallet does not know the chain yet.
@@ -112,14 +113,14 @@ function OnboardingModal({args, onClose}: {args: OpenArgs; onClose: () => void})
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="flex items-start justify-between gap-3 mb-1">
-                    <h2 className="m-0 text-[19px] font-bold">{copy.onboardingV3.title}</h2>
-                    <button onClick={onClose} aria-label={copy.onboardingV3.close} className="text-hanji-400 hover:text-hanji-100 text-[18px] leading-none min-h-[32px] px-1">
+                    <h2 className="m-0 text-[19px] font-bold">{tr.onboardingV3.title}</h2>
+                    <button onClick={onClose} aria-label={tr.onboardingV3.close} className="text-hanji-400 hover:text-hanji-100 text-[18px] leading-none min-h-[32px] px-1">
                         ✕
                     </button>
                 </div>
-                <p className="m-0 mb-3 text-[13px] text-hanji-400">{copy.onboardingV3.sub}</p>
+                <p className="m-0 mb-3 text-[13px] text-hanji-400">{tr.onboardingV3.sub}</p>
 
-                <Step n={1} title={copy.onboardingV3.connectTitle} done={onRightChain}>
+                <Step n={1} title={tr.onboardingV3.connectTitle} done={onRightChain}>
                     {!isConnected ? (
                         <PrimaryBtn
                             className="w-full"
@@ -127,58 +128,58 @@ function OnboardingModal({args, onClose}: {args: OpenArgs; onClose: () => void})
                             onClick={() => {
                                 const c = connectors[0];
                                 if (!c) {
-                                    push({kind: "error", text: copy.errors.noWallet});
+                                    push({kind: "error", text: tr.errors.noWallet});
                                     return;
                                 }
                                 connect({connector: c, chainId: giwaSepolia.id}, {onSuccess: progress});
                             }}
                         >
-                            {copy.connect}
+                            {tr.connect}
                         </PrimaryBtn>
                     ) : (
                         <PrimaryBtn className="w-full" disabled={switching} onClick={() => switchChain({chainId: giwaSepolia.id}, {onSuccess: progress})}>
-                            {copy.wrongChain}
+                            {tr.wrongChain}
                         </PrimaryBtn>
                     )}
                 </Step>
 
-                <Step n={2} title={copy.onboardingV3.verifyTitle} done={verified === true}>
-                    <p className="m-0 mb-3 text-[13px] text-hanji-400">{copy.onboardingV3.verifyNote}</p>
+                <Step n={2} title={tr.onboardingV3.verifyTitle} done={verified === true}>
+                    <p className="m-0 mb-3 text-[13px] text-hanji-400">{tr.onboardingV3.verifyNote}</p>
                     <SecondaryBtn
                         className="w-full"
                         disabled={!onRightChain || verified === undefined || busy || noGas}
                         onClick={async () => {
-                            const ok = await run(copy.onboardingV3.verifyCta, () =>
+                            const ok = await run(tr.onboardingV3.verifyCta, () =>
                                 writeContractAsync({address: ADDR_V3.mockDojang, abi: MockDojangV3Abi, functionName: "selfVerify", chainId: giwaSepolia.id})
                             );
                             if (ok) progress();
                         }}
                     >
-                        {copy.onboardingV3.verifyCta}
+                        {tr.onboardingV3.verifyCta}
                     </SecondaryBtn>
                 </Step>
 
                 {need > 0n && (
-                    <Step n={3} title={copy.onboardingV3.krwTitle} done={krwDone}>
+                    <Step n={3} title={tr.onboardingV3.krwTitle} done={krwDone}>
                         {krw !== undefined && cap !== undefined && (
                             <>
                                 <p className="m-0 mb-3 text-[13px] text-hanji-400 tabular-nums">
-                                    {copy.onboardingV3.krwNote(fmt(krw, 0), fmt(need, 0))}
+                                    {tr.onboardingV3.krwNote(fmt(krw, 0, tr.locale), fmt(need, 0, tr.locale))}
                                 </p>
                                 <SecondaryBtn
                                     className="w-full"
                                     disabled={!onRightChain || busy || noGas}
                                     onClick={async () => {
                                         const amount = faucetAmount(need - krw, cap);
-                                        const ok = await run(copy.onboardingV3.krwCta(fmt(amount, 0)), () =>
+                                        const ok = await run(tr.onboardingV3.krwCta(fmt(amount, 0, tr.locale)), () =>
                                             writeContractAsync({address: ADDR_V3.mockKRW, abi: MockKRWV3Abi, functionName: "faucet", args: [amount], chainId: giwaSepolia.id})
                                         );
                                         if (ok) progress();
                                     }}
                                 >
-                                    {copy.onboardingV3.krwCta(fmt(faucetAmount(need - krw, cap), 0))}
+                                    {tr.onboardingV3.krwCta(fmt(faucetAmount(need - krw, cap), 0, tr.locale))}
                                 </SecondaryBtn>
-                                {need - krw > cap && <p className="m-0 mt-2 text-[12px] text-hanji-400">{copy.onboardingV3.krwCapNote(fmt(cap, 0))}</p>}
+                                {need - krw > cap && <p className="m-0 mt-2 text-[12px] text-hanji-400">{tr.onboardingV3.krwCapNote(fmt(cap, 0, tr.locale))}</p>}
                             </>
                         )}
                     </Step>
@@ -186,16 +187,16 @@ function OnboardingModal({args, onClose}: {args: OpenArgs; onClose: () => void})
 
                 {isConnected && noGas && (
                     <div className="mt-2 rounded-input px-4 py-3 text-[13px] text-brass-400" style={{background: "rgba(195,154,59,.08)", border: "1px solid rgba(195,154,59,.3)"}}>
-                        {copy.onboardingV3.needGas}
+                        {tr.onboardingV3.needGas}
                     </div>
                 )}
-                {isConnected && readFailed && <p className="m-0 mt-2 text-[13px] text-error">{copy.onboardingV3.readError}</p>}
+                {isConnected && readFailed && <p className="m-0 mt-2 text-[13px] text-error">{tr.onboardingV3.readError}</p>}
 
                 {allDone && (
                     <div className="border-t border-ink-700 pt-4">
-                        <p className="m-0 mb-3 text-[14px] text-success">{copy.onboardingV3.ready}</p>
+                        <p className="m-0 mb-3 text-[14px] text-success">{tr.onboardingV3.ready}</p>
                         <SecondaryBtn className="w-full" onClick={onClose}>
-                            {copy.onboardingV3.close}
+                            {tr.onboardingV3.close}
                         </SecondaryBtn>
                     </div>
                 )}

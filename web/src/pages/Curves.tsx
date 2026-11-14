@@ -1,5 +1,5 @@
 import {Link} from "react-router-dom";
-import {copy} from "../copy";
+import {useCopy} from "../copy";
 import {CurveInfo, useCurves} from "../hooks/curves";
 import {progressBps} from "../lib/curveMath";
 import {Badge, Card, CardSkeleton, Gauge, Medallion, NetError} from "../components/ui";
@@ -16,6 +16,7 @@ export function pctLabel(bps: bigint): string {
 }
 
 function CurveCard({c}: {c: CurveInfo}) {
+    const tr = useCopy();
     const bps = c.graduated ? 10_000n : progressBps(c.virtualQuote, c.r);
     return (
         <Link to={`/t/${c.address}`} className="block min-w-0 no-underline text-hanji-100">
@@ -28,24 +29,25 @@ function CurveCard({c}: {c: CurveInfo}) {
                             {c.symbol} · {quoteUnit(c)}
                         </div>
                     </div>
-                    <Badge kind={c.graduated ? "neutral" : "open"}>{c.graduated ? copy.curve.graduated : copy.curve.live}</Badge>
+                    <Badge kind={c.graduated ? "neutral" : "open"}>{c.graduated ? tr.curve.graduated : tr.curve.live}</Badge>
                 </div>
                 <div className="text-[13px] text-hanji-400 mb-3 tabular-nums">
-                    {copy.curve.verifiedTraders(c.verifiedBuyerCount)}
+                    {tr.curve.verifiedTraders(c.verifiedBuyerCount)}
                 </div>
                 <Gauge committed={bps} target={10_000n} />
-                <div className="mt-2 text-[12px] text-hanji-400 tabular-nums">{copy.curve.progress(pctLabel(bps))}</div>
+                <div className="mt-2 text-[12px] text-hanji-400 tabular-nums">{tr.curve.progress(pctLabel(bps))}</div>
             </Card>
         </Link>
     );
 }
 
 export default function Curves() {
+    const tr = useCopy();
     const {curves, isLoading, isError, refetch} = useCurves();
     return (
         <div className="max-w-page mx-auto px-4 sm:px-8 pt-8 sm:pt-12 pb-16 sm:pb-20">
-            <h1 className="m-0 mb-2 text-[24px] sm:text-[28px] font-bold">{copy.curve.listTitle}</h1>
-            <p className="m-0 mb-6 sm:mb-8 text-[14px] text-hanji-400">{copy.curve.listSub}</p>
+            <h1 className="m-0 mb-2 text-[24px] sm:text-[28px] font-bold">{tr.curve.listTitle}</h1>
+            <p className="m-0 mb-6 sm:mb-8 text-[14px] text-hanji-400">{tr.curve.listSub}</p>
             {isError ? (
                 <NetError onRetry={refetch} />
             ) : isLoading ? (
@@ -54,7 +56,7 @@ export default function Curves() {
                     <CardSkeleton />
                 </div>
             ) : curves.length === 0 ? (
-                <p className="text-[14px] text-hanji-400">{copy.curve.empty}</p>
+                <p className="text-[14px] text-hanji-400">{tr.curve.empty}</p>
             ) : (
                 <div className="grid gap-5" style={{gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 300px), 1fr))"}}>
                     {curves.map((c) => (

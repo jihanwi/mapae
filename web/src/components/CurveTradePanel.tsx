@@ -1,7 +1,7 @@
 import {ReactNode, useMemo, useState} from "react";
 import {parseUnits} from "viem";
 import {useAccount, useReadContract, useWriteContract} from "wagmi";
-import {copy} from "../copy";
+import {Copy, useCopy} from "../copy";
 import {
     Address,
     CtaState,
@@ -37,24 +37,24 @@ function Row({label, value, strong}: {label: string; value: ReactNode; strong?: 
     );
 }
 
-function ctaLabel(state: CtaState, side: Side): string {
+function ctaLabel(tr: Copy, state: CtaState, side: Side): string {
     switch (state.kind) {
         case "connect":
-            return copy.curve.cta.connect;
+            return tr.curve.cta.connect;
         case "wrongChain":
-            return copy.curve.cta.wrongChain;
+            return tr.curve.cta.wrongChain;
         case "notVerified":
-            return copy.curve.cta.notVerified;
+            return tr.curve.cta.notVerified;
         case "enterAmount":
-            return copy.curve.cta.enterAmount;
+            return tr.curve.cta.enterAmount;
         case "insufficient":
-            return copy.curve.cta.insufficient;
+            return tr.curve.cta.insufficient;
         case "loading":
-            return copy.curve.cta.loading;
+            return tr.curve.cta.loading;
         case "approve":
-            return side === "buy" ? copy.curve.cta.approveBuy : copy.curve.cta.approveSell;
+            return side === "buy" ? tr.curve.cta.approveBuy : tr.curve.cta.approveSell;
         case "ready":
-            return side === "buy" ? copy.curve.cta.buy : copy.curve.cta.sell;
+            return side === "buy" ? tr.curve.cta.buy : tr.curve.cta.sell;
     }
 }
 
@@ -70,6 +70,7 @@ function useAmount(raw: string) {
 
 /** Buy/sell panel: curve trades before graduation, pool swaps after. */
 export function CurveTradePanel({c}: {c: CurveDetail}) {
+    const tr = useCopy();
     const {address} = useAccount();
     const [side, setSide] = useState<Side>("buy");
     const [raw, setRaw] = useState("");
@@ -90,8 +91,8 @@ export function CurveTradePanel({c}: {c: CurveDetail}) {
         <div className="bg-ink-800 border border-ink-700 rounded-card p-4 sm:p-7 min-w-0">
             {c.graduated && (
                 <div className="mb-4">
-                    <h3 className="m-0 mb-1 text-[17px] font-bold">{copy.curve.poolTitle}</h3>
-                    <p className="m-0 text-[12px] text-hanji-400">{copy.curve.poolNote}</p>
+                    <h3 className="m-0 mb-1 text-[17px] font-bold">{tr.curve.poolTitle}</h3>
+                    <p className="m-0 text-[12px] text-hanji-400">{tr.curve.poolNote}</p>
                 </div>
             )}
             <div className="flex rounded-input overflow-hidden border border-ink-700 mb-5">
@@ -104,12 +105,12 @@ export function CurveTradePanel({c}: {c: CurveDetail}) {
                         }}
                         className={`flex-1 py-3 text-[14px] font-semibold ${side === d ? "bg-ink-700 text-hanji-100" : "bg-transparent text-hanji-400 hover:text-hanji-100"}`}
                     >
-                        {d === "buy" ? copy.curve.buy : copy.curve.sell}
+                        {d === "buy" ? tr.curve.buy : tr.curve.sell}
                     </button>
                 ))}
             </div>
             <label className="block text-[13px] text-hanji-400 mb-2">
-                {side === "buy" ? copy.curve.payLabel(c.graduated && c.isEth ? "WETH" : unit) : copy.curve.sellLabel}
+                {side === "buy" ? tr.curve.payLabel(c.graduated && c.isEth ? "WETH" : unit) : tr.curve.sellLabel}
             </label>
             <div className="flex items-center bg-ink-900 border border-ink-700 rounded-input px-4 focus-within:border-brass-400 mb-2">
                 <input
@@ -122,10 +123,10 @@ export function CurveTradePanel({c}: {c: CurveDetail}) {
                 <span className="text-hanji-400 text-[14px] flex-none">{side === "buy" ? (c.graduated && c.isEth ? "WETH" : unit) : c.symbol}</span>
             </div>
             {address && tokenBal.data !== undefined && (
-                <div className="text-[12px] text-hanji-400 mb-3 tabular-nums">{copy.curve.balance(fmt(tokenBal.data as bigint, 4), c.symbol)}</div>
+                <div className="text-[12px] text-hanji-400 mb-3 tabular-nums">{tr.curve.balance(fmt(tokenBal.data as bigint, 4, tr.locale), c.symbol)}</div>
             )}
             <div className="flex items-center gap-2 mb-4 flex-wrap text-[12px]">
-                <span className="text-hanji-400">{copy.curve.slippage}</span>
+                <span className="text-hanji-400">{tr.curve.slippage}</span>
                 {SLIPPAGE_BPS.map((b) => (
                     <button
                         key={b}
@@ -148,11 +149,11 @@ export function CurveTradePanel({c}: {c: CurveDetail}) {
 }
 
 /** Label for the button that opens the onboarding modal (no transaction is sent from it). */
-export function modalLabel(state: CtaState): string {
-    if (state.kind === "connect") return copy.curve.cta.modalConnect;
-    if (state.kind === "wrongChain") return copy.curve.cta.modalSwitch;
-    if (state.kind === "notVerified") return copy.curve.cta.modalVerify;
-    return copy.curve.cta.modalKrw;
+export function modalLabel(tr: Copy, state: CtaState): string {
+    if (state.kind === "connect") return tr.curve.cta.modalConnect;
+    if (state.kind === "wrongChain") return tr.curve.cta.modalSwitch;
+    if (state.kind === "notVerified") return tr.curve.cta.modalVerify;
+    return tr.curve.cta.modalKrw;
 }
 
 function CtaBlock({
@@ -170,22 +171,23 @@ function CtaBlock({
     amount: bigint;
     refetch: () => void;
 }) {
+    const tr = useCopy();
     const openModal = useOnboardingModal();
     const krwNeeded = payToken !== "native" && payToken.toLowerCase() === ADDR_V3.mockKRW.toLowerCase() ? amount : 0n;
     if (opensOnboarding(state, payToken)) {
         return (
             <>
                 <PrimaryBtn className="w-full" onClick={() => openModal({krwNeeded, onProgress: refetch})}>
-                    {modalLabel(state)}
+                    {modalLabel(tr, state)}
                 </PrimaryBtn>
-                {state.kind === "notVerified" && <p className="text-[12px] text-brass-400 mt-2 mb-0">{copy.curve.cta.notVerifiedNote}</p>}
+                {state.kind === "notVerified" && <p className="text-[12px] text-brass-400 mt-2 mb-0">{tr.curve.cta.notVerifiedNote}</p>}
             </>
         );
     }
     const enabled = state.kind === "ready" || state.kind === "approve";
     return (
         <TxButton className="w-full" disabled={!enabled} action={action}>
-            {ctaLabel(state, side)}
+            {ctaLabel(tr, state, side)}
         </TxButton>
     );
 }
@@ -202,16 +204,18 @@ function useRunOpts(refetch: () => void, krwNeeded: bigint): RunOpts {
 }
 
 function Fees({platform, dev, lp, unit}: {platform: bigint; dev: bigint; lp: bigint; unit: string}) {
+    const tr = useCopy();
     const dp = unit === "KRWs" ? 2 : 8;
     return (
         <Row
-            label={copy.curve.feeTotal}
-            value={`${fmt(platform + dev + lp, dp)} ${unit} (${copy.curve.feePlatform} ${fmt(platform, dp)} · ${copy.curve.feeDev} ${fmt(dev, dp)} · ${copy.curve.feeLp} ${fmt(lp, dp)})`}
+            label={tr.curve.feeTotal}
+            value={`${fmt(platform + dev + lp, dp, tr.locale)} ${unit} (${tr.curve.feePlatform} ${fmt(platform, dp, tr.locale)} · ${tr.curve.feeDev} ${fmt(dev, dp, tr.locale)} · ${tr.curve.feeLp} ${fmt(lp, dp, tr.locale)})`}
         />
     );
 }
 
 function CurveBuy({c, amount, slip}: {c: CurveDetail; amount: bigint; slip: number}) {
+    const tr = useCopy();
     const {address} = useAccount();
     const {writeContractAsync} = useWriteContract();
     const q = useQuoteBuy(c.address, amount);
@@ -231,14 +235,14 @@ function CurveBuy({c, amount, slip}: {c: CurveDetail; amount: bigint; slip: numb
         if (!quote || !address) return;
         const min = minOut(quote.tokensOut, slip);
         if (state.kind === "approve") {
-            const ok = await run("승인", () =>
+            const ok = await run(tr.curve.txApprove, () =>
                 writeContractAsync({address: c.quote, abi: MembershipTokenV3Abi, functionName: "approve", args: [c.address, amount], chainId: giwaSepolia.id}),
                 opts
             );
             if (!ok) return;
         }
         const ok = c.isEth
-            ? await run(`${c.symbol} 매수`, () =>
+            ? await run(tr.curve.txBuy(c.symbol), () =>
                   writeContractAsync({
                       address: ADDR_V3.curveFactory,
                       abi: CurveFactoryAbi,
@@ -249,7 +253,7 @@ function CurveBuy({c, amount, slip}: {c: CurveDetail; amount: bigint; slip: numb
                   }),
                   opts
               )
-            : await run(`${c.symbol} 매수`, () =>
+            : await run(tr.curve.txBuy(c.symbol), () =>
                   writeContractAsync({address: c.address, abi: CurveSaleAbi, functionName: "buy", args: [amount, min], chainId: giwaSepolia.id}),
                   opts
               );
@@ -259,15 +263,15 @@ function CurveBuy({c, amount, slip}: {c: CurveDetail; amount: bigint; slip: numb
     return (
         <>
             <div className="mb-4">
-                {amount > 0n && q.isError && <p className="text-[13px] text-error m-0 mb-2">{copy.curve.quoteError}</p>}
-                {amount > 0n && !quote && !q.isError && <p className="text-[13px] text-hanji-400 m-0 mb-2">{copy.curve.quoting}</p>}
+                {amount > 0n && q.isError && <p className="text-[13px] text-error m-0 mb-2">{tr.curve.quoteError}</p>}
+                {amount > 0n && !quote && !q.isError && <p className="text-[13px] text-hanji-400 m-0 mb-2">{tr.curve.quoting}</p>}
                 {quote && (
                     <>
-                        <Row label={copy.curve.receive} value={`${fmt(quote.tokensOut, 4)} ${c.symbol}`} strong />
+                        <Row label={tr.curve.receive} value={`${fmt(quote.tokensOut, 4, tr.locale)} ${c.symbol}`} strong />
                         <Fees platform={quote.platformFee} dev={quote.devFee} lp={quote.lpSeedFee} unit={unit} />
-                        <Row label={copy.curve.paid} value={`${fmt(quote.quoteSpent, dp)} ${unit}`} />
-                        {quote.refund > 0n && <Row label={copy.curve.refund} value={`${fmt(quote.refund, dp)} ${unit}`} />}
-                        {quote.graduates && <p className="text-[12px] text-brass-400 m-0 mt-2">{copy.curve.graduatesNow}</p>}
+                        <Row label={tr.curve.paid} value={`${fmt(quote.quoteSpent, dp, tr.locale)} ${unit}`} />
+                        {quote.refund > 0n && <Row label={tr.curve.refund} value={`${fmt(quote.refund, dp, tr.locale)} ${unit}`} />}
+                        {quote.graduates && <p className="text-[12px] text-brass-400 m-0 mt-2">{tr.curve.graduatesNow}</p>}
                     </>
                 )}
             </div>
@@ -277,6 +281,7 @@ function CurveBuy({c, amount, slip}: {c: CurveDetail; amount: bigint; slip: numb
 }
 
 function CurveSell({c, amount, slip}: {c: CurveDetail; amount: bigint; slip: number}) {
+    const tr = useCopy();
     const {address} = useAccount();
     const {writeContractAsync} = useWriteContract();
     const q = useQuoteSell(c.address, amount);
@@ -290,13 +295,13 @@ function CurveSell({c, amount, slip}: {c: CurveDetail; amount: bigint; slip: num
     const action = async (run: RunFn) => {
         if (!quote || !address) return;
         if (state.kind === "approve") {
-            const ok = await run("승인", () =>
+            const ok = await run(tr.curve.txApprove, () =>
                 writeContractAsync({address: c.token, abi: MembershipTokenV3Abi, functionName: "approve", args: [c.address, amount], chainId: giwaSepolia.id}),
                 opts
             );
             if (!ok) return;
         }
-        const ok = await run(`${c.symbol} 매도`, () =>
+        const ok = await run(tr.curve.txSell(c.symbol), () =>
             writeContractAsync({
                 address: c.address,
                 abi: CurveSaleAbi,
@@ -312,15 +317,15 @@ function CurveSell({c, amount, slip}: {c: CurveDetail; amount: bigint; slip: num
     return (
         <>
             <div className="mb-4">
-                {amount > 0n && q.isError && <p className="text-[13px] text-error m-0 mb-2">{copy.curve.quoteError}</p>}
-                {amount > 0n && !quote && !q.isError && <p className="text-[13px] text-hanji-400 m-0 mb-2">{copy.curve.quoting}</p>}
+                {amount > 0n && q.isError && <p className="text-[13px] text-error m-0 mb-2">{tr.curve.quoteError}</p>}
+                {amount > 0n && !quote && !q.isError && <p className="text-[13px] text-hanji-400 m-0 mb-2">{tr.curve.quoting}</p>}
                 {quote && (
                     <>
-                        <Row label={copy.curve.receiveQuote(unit)} value={`${fmt(quote.quoteOut, dp)} ${unit}`} strong />
+                        <Row label={tr.curve.receiveQuote(unit)} value={`${fmt(quote.quoteOut, dp, tr.locale)} ${unit}`} strong />
                         <Fees platform={quote.platformFee} dev={quote.devFee} lp={quote.lpSeedFee} unit={unit} />
                     </>
                 )}
-                {c.isEth && <p className="text-[12px] text-hanji-400 m-0 mt-2">{copy.curve.wethOut}</p>}
+                {c.isEth && <p className="text-[12px] text-hanji-400 m-0 mt-2">{tr.curve.wethOut}</p>}
             </div>
             <CtaBlock state={effective} side="sell" action={action} payToken={c.token} amount={amount} refetch={refetch} />
         </>
@@ -328,6 +333,7 @@ function CurveSell({c, amount, slip}: {c: CurveDetail; amount: bigint; slip: num
 }
 
 function PoolSide({c, side, amount, slip}: {c: CurveDetail; side: Side; amount: bigint; slip: number}) {
+    const tr = useCopy();
     const {address} = useAccount();
     const {writeContractAsync} = useWriteContract();
     const pool = c.pool as Address;
@@ -343,13 +349,13 @@ function PoolSide({c, side, amount, slip}: {c: CurveDetail; side: Side; amount: 
     const action = async (run: RunFn) => {
         if (!quote || !address) return;
         if (state.kind === "approve") {
-            const ok = await run("승인", () =>
+            const ok = await run(tr.curve.txApprove, () =>
                 writeContractAsync({address: payToken, abi: MembershipTokenV3Abi, functionName: "approve", args: [pool, amount], chainId: giwaSepolia.id}),
                 opts
             );
             if (!ok) return;
         }
-        const ok = await run(`${c.symbol} ${side === "buy" ? "매수" : "매도"}`, () =>
+        const ok = await run(side === "buy" ? tr.curve.txBuy(c.symbol) : tr.curve.txSell(c.symbol), () =>
             writeContractAsync({
                 address: pool,
                 abi: MapaePoolV3Abi,
@@ -364,11 +370,11 @@ function PoolSide({c, side, amount, slip}: {c: CurveDetail; side: Side; amount: 
 
     return (
         <>
-            {side === "buy" && c.isEth && <p className="text-[12px] text-brass-400 m-0 mb-3">{copy.curve.poolWethOnly}</p>}
+            {side === "buy" && c.isEth && <p className="text-[12px] text-brass-400 m-0 mb-3">{tr.curve.poolWethOnly}</p>}
             <div className="mb-4">
-                {amount > 0n && q.isError && <p className="text-[13px] text-error m-0 mb-2">{copy.curve.quoteError}</p>}
-                {amount > 0n && quote === undefined && !q.isError && <p className="text-[13px] text-hanji-400 m-0 mb-2">{copy.curve.quoting}</p>}
-                {quote !== undefined && <Row label={copy.curve.poolReceive} value={`${fmt(quote, side === "buy" ? 4 : c.isEth ? 8 : 2)} ${outUnit}`} strong />}
+                {amount > 0n && q.isError && <p className="text-[13px] text-error m-0 mb-2">{tr.curve.quoteError}</p>}
+                {amount > 0n && quote === undefined && !q.isError && <p className="text-[13px] text-hanji-400 m-0 mb-2">{tr.curve.quoting}</p>}
+                {quote !== undefined && <Row label={tr.curve.poolReceive} value={`${fmt(quote, side === "buy" ? 4 : c.isEth ? 8 : 2, tr.locale)} ${outUnit}`} strong />}
             </div>
             <CtaBlock state={effective} side={side} action={action} payToken={payToken} amount={amount} refetch={refetch} />
         </>

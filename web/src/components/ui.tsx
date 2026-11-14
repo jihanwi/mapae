@@ -1,5 +1,5 @@
 import {ReactNode} from "react";
-import {copy} from "../copy";
+import {useCopy} from "../copy";
 
 /** 메달리온 — 유일 모티프. 이중 원 + 중앙 serif 글자 */
 export function Medallion({
@@ -144,10 +144,11 @@ export function TextSkeleton({w = 80, h = 14}: {w?: number; h?: number}) {
 
 /** RPC 완전 장애 시 빈 화면 대신 안내 + 재시도 (1-5, 전 페이지 공용) */
 export function NetError({onRetry}: {onRetry: () => void}) {
+    const tr = useCopy();
     return (
         <div className="bg-ink-800 border border-ink-700 rounded-card p-6 text-center">
-            <p className="m-0 mb-4 text-[14px] text-hanji-400">{copy.home.netError}</p>
-            <SecondaryBtn onClick={onRetry}>{copy.home.retry}</SecondaryBtn>
+            <p className="m-0 mb-4 text-[14px] text-hanji-400">{tr.common.netError}</p>
+            <SecondaryBtn onClick={onRetry}>{tr.common.retry}</SecondaryBtn>
         </div>
     );
 }

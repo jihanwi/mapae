@@ -5,6 +5,7 @@ import {WagmiProvider} from "wagmi";
 import {QueryClient, QueryClientProvider} from "@tanstack/react-query";
 import {wagmiConfig} from "./config/wagmi";
 import {ToastProvider} from "./components/tx";
+import {LangProvider} from "./copy";
 import App from "./App";
 import Home from "./pages/Home";
 import Curves from "./pages/Curves";
@@ -42,9 +43,11 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
         <WagmiProvider config={wagmiConfig}>
             <QueryClientProvider client={qc}>
-                <ToastProvider>
-                    <RouterProvider router={router} />
-                </ToastProvider>
+                <LangProvider>
+                    <ToastProvider>
+                        <RouterProvider router={router} />
+                    </ToastProvider>
+                </LangProvider>
             </QueryClientProvider>
         </WagmiProvider>
     </React.StrictMode>

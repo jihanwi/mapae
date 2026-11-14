@@ -1,10 +1,22 @@
+// Korean dictionary: the reference. `type Copy = typeof ko`; en.ts must satisfy it.
 // 모든 사용자 노출 문구 단일 파일 (C7) — 오너는 이 파일만 검수하면 된다.
 // 금지: "수익 · 오른다 · 투자" 계열 표현.
-export const copy = {
+export const ko = {
+    /** BCP 47 locale for numbers and dates */
+    locale: "ko-KR",
+    lang: {label: "언어", ko: "KO", en: "EN"},
+    /** Shown above the legacy v2 section when the UI is not Korean (empty in Korean). */
+    legacyNotice: "",
+    common: {
+        netError: "네트워크 응답이 없어요 — 잠시 후 다시 시도해 주세요",
+        retry: "다시 시도",
+    },
     appTitle: "MAPAE",
     heroTitle: "사고팔 수 있는 팬 멤버십",
     heroSub: "발행은 공모주처럼 · 유통은 시장처럼 · 소비는 정가처럼",
     nav: {
+        disconnect: "연결 해제",
+        logoAlt: "MAPAE 로고",
         curves: "커브", create: "발행", home: "공모", offeringList: "공모 목록", membership: "내 멤버십", redeem: "리딤 & 후원", trade: "거래",
         faucet: "KRWs 받기", // 상시 재충전 버튼 (데스크톱)
         faucetShort: "+ KRWs", // 모바일 축약
@@ -166,6 +178,9 @@ export const copy = {
         backToList: "커브 목록으로",
         buy: "매수",
         sell: "매도",
+        txApprove: "승인",
+        txBuy: (sym: string) => `${sym} 매수`,
+        txSell: (sym: string) => `${sym} 매도`,
         payLabel: (unit: string) => `지불할 ${unit}`,
         sellLabel: "팔 토큰 수량",
         tokenUnit: "개",
@@ -332,4 +347,6 @@ export const copy = {
         // 데모 크리에이터 표시명 (offering 주소 → 이름) — 미등록 주소는 토큰명 사용
         byOffering: {} as Record<string, {name: string; en: string}>,
     },
-} as const;
+};
+
+export type Copy = typeof ko;
