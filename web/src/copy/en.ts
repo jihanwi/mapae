@@ -89,7 +89,7 @@ export const en = {
         quoting: "Getting a quote…",
         quoteError: "Couldn't get a quote",
         balance: (amt: string, unit: string) => `Balance ${amt} ${unit}`,
-        useMax: "Tap to use the max",
+        useMax: "Use max",
         poolTitle: "Trade on the graduated pool",
         poolNote: "This curve has graduated, so trading now happens on the pool. Only verified wallets can trade on the pool too.",
         poolWethOnly: "The graduated pool only accepts WETH. Wrap your ETH into WETH, then come back.",

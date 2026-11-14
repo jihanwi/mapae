@@ -6,6 +6,7 @@ import {useSwitchChain} from "wagmi";
 import {giwaSepolia} from "../config/chain";
 import {useCopy} from "../copy";
 import {useToast} from "../components/tx";
+import {classifyConnectError} from "../lib/connectError";
 
 export function useSwitchToGiwa(opts?: {onSuccess?: () => void}) {
     const tr = useCopy();
@@ -14,7 +15,13 @@ export function useSwitchToGiwa(opts?: {onSuccess?: () => void}) {
     const switchToGiwa = useCallback(() => {
         switchChain(
             {chainId: giwaSepolia.id},
-            {onSuccess: () => opts?.onSuccess?.(), onError: () => push({kind: "error", text: tr.wallet.switchFailed})}
+            {
+                onSuccess: () => opts?.onSuccess?.(),
+                // User rejected (4001): no toast, the switch button simply stays.
+                onError: (err) => {
+                    if (classifyConnectError(err) !== "rejected") push({kind: "error", text: tr.wallet.switchFailed});
+                },
+            }
         );
     }, [switchChain, push, tr, opts]);
     return {switchToGiwa, isPending};

@@ -198,7 +198,7 @@ export const ko = {
         quoting: "견적을 불러오는 중…",
         quoteError: "견적을 불러오지 못했어요",
         balance: (amt: string, unit: string) => `보유 ${amt} ${unit}`,
-        useMax: "누르면 최대치를 넣어요",
+        useMax: "최대로 넣기",
         poolTitle: "졸업 풀에서 거래",
         poolNote: "졸업한 커브라 이제 풀에서 거래해요. 풀에서도 실명 지갑만 거래할 수 있어요",
         poolWethOnly: "졸업 풀에서는 WETH로만 살 수 있어요. ETH를 WETH로 바꾼 뒤 다시 와 주세요",
