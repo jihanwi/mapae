@@ -13,6 +13,7 @@ import {useActivity} from "../hooks/activity";
 import {useChainSummary, useHolders, useTradeHistory} from "../hooks/chainData";
 import {mergeHistory, sharePct} from "../lib/chainMerge";
 import {CandleChart} from "../components/CandleChart";
+import {Comments} from "../components/Comments";
 import {agoLabel, tradeAmount, tradeUnit, useNow} from "../components/feed";
 import {Badge, Gauge, NetError, PrimaryBtn, SecondaryBtn, Skeleton, Stat} from "../components/ui";
 import {CurveAvatar, draftValid, linkDomain, MetaFields, SaveStatus} from "../components/MetaForm";
@@ -333,6 +334,8 @@ export default function Token() {
             {/* 6) trade panel */}
             <CurveTradePanel c={c} />
             {/* 7) trade history (server index + browser RPC), holders */}
+            {/* 6b) comments (verified wallets, nicknames only) */}
+            <Comments curve={c.address} />
             <TradeHistory c={c} />
             <Holders c={c} />
             {/* 8) contract links */}
