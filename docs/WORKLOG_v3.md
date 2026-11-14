@@ -382,3 +382,42 @@ lpSeedBps 0 커브에서는 상대 오차 0 / 1.7e-13 / 1e-18 (KRWs18 / 6-dec / 
 - 배포 스크립트: CurveFactory 배포, `allowQuote` 등록, MembershipTokenDeployer 라이브러리 링크
   (`Deploy.s.sol`, `verify-children.js`).
 - DemoCurve 스크립트 (개설 → 매수 → 졸업 → 풀 스왑 시연).
+
+## T9 — ETH 로 커브 매수 (CurveFactory) + CurveSale.tier()
+
+### CurveSale.tier() (커밋 1)
+
+- `tier()` external pure → 항상 `UtilityTier.L0` (ITierSource 호환). T8 이탈 1 처리: BuybackVault `route`/`topUp` 이
+  커브 토큰에 대해 `TierNotAllowed` 로 **명시적으로** revert 한다. K10 을 이 selector 단언으로 수정.
+
+### ETH 경로 (커밋 2, `src/CurveFactory.sol`, `src/interfaces/IWETH.sol`)
+
+- **factory 에 둔 이유:** `CurveSale.buyFor` 를 부를 수 있는 유일한 주소가 CurveFactory 다. ETH 래핑을
+  factory 에 두면 새 권한·새 컨트랙트 없이 실명 게이트(`buyFor` 안의 trader 검사)를 그대로 재사용한다.
+  별도 라우터를 두려면 CurveSale 에 두 번째 권한 주소가 필요했다.
+- 생성자에 `IWETH weth` 추가(0 주소 revert, immutable). IWETH = IERC20 + `deposit()` payable + `withdraw(uint256)`.
+- `buyWithETH(curve, minTokensOut)`: `isCurve` 아니면 `NotCurve`, quote ≠ weth 면 `NotWethCurve`, `msg.value == 0`
+  이면 `ZeroValue`. deposit → approve → `buyFor(msg.sender, msg.value, min)` → approve 0 → 미사용분 withdraw 후 ETH 환불
+  (실패 시 `EthRefundFailed`, tx 전체 revert).
+- `createCurveWithETH(name, symbol, minTokensOut)`: createCurve 와 같은 검사 함수(`_open`)와 같은 발행 빈도 슬롯.
+  quote = weth 고정(레지스트리에 weth 가 허용돼 있어야 함). `msg.value` 가 Dev 첫 매수 금액, 0 이면 개설만.
+- `receive()`: `msg.sender == weth` (withdraw 환불 경로)만 허용, 그 외 `DirectEthRejected`.
+- 모든 함수 종료 후 factory 의 ETH 잔고·WETH 잔고·curve allowance 는 0 (W1~W10 에서 단언).
+- 재진입: `buyWithETH`/`createCurveWithETH` 모두 `nonReentrant`. 환불 수신 중 재호출은 안쪽 revert → 환불 실패 →
+  바깥 tx 전체 revert (W6).
+
+### 한계
+
+- 매도(`CurveSale.sell`)와 졸업 후 풀 스왑에는 ETH 경로가 없다. 매도 대금과 풀 스왑 출력은 **WETH** 로 나간다.
+  사용자가 직접 unwrap 해야 한다 (이 티켓 범위 밖).
+
+### 테스트 / 사이즈
+
+- 기존: `test/CurveFactory.t.sol` 생성자 인자 추가(설정부)와 K10 단언 강화만.
+- 신규 `test/CurveFactoryETH.t.sol` W1~W10 (11, WETH9 방식 테스트 래퍼 포함). 합계 328 → **339 그린**.
+- 가스 (첫 매수, 신규 커브라 저장 슬롯이 콜드): buyWithETH 일반 356,233 / 마감(졸업 포함) 2,704,068.
+
+| 컨트랙트 | runtime | initcode | runtime 여유 | initcode 여유 |
+|---|---|---|---|---|
+| CurveFactory | 17,626 B | 18,293 B | 6,950 B | 30,859 B |
+| CurveSale | 8,300 B | 10,723 B | 16,276 B | 38,429 B |

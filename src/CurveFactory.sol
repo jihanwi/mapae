@@ -7,6 +7,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IDojang} from "./interfaces/IDojang.sol";
 import {IFeeRouter} from "./interfaces/IFeeRouter.sol";
+import {IWETH} from "./interfaces/IWETH.sol";
 import {PoolFactory} from "./PoolFactory.sol";
 import {MapaeFactory} from "./MapaeFactory.sol";
 import {CurveSale} from "./CurveSale.sol";
@@ -39,6 +40,11 @@ contract CurveFactory is Ownable, ReentrancyGuard {
     error CurveRateLimited(uint256 nextAllowedAt);
     error InvalidName();
     error InvalidSymbol();
+    error NotCurve(address curve);
+    error NotWethCurve(address curve);
+    error ZeroValue();
+    error EthRefundFailed();
+    error DirectEthRejected();
 
     event CurveEnabledSet(bool enabled);
     event CurveCreated(
@@ -55,6 +61,8 @@ contract CurveFactory is Ownable, ReentrancyGuard {
     IFeeRouter public immutable feeRouter;
     PoolFactory public immutable poolFactory;
     MapaeFactory public immutable mapaeFactory;
+    /// @notice Wrapped ETH used by the native-ETH entry points (must also be an allowed quote).
+    IWETH public immutable weth;
 
     /// @notice New-curve kill switch. Existing curves keep trading and graduating.
     bool public curveEnabled = true;
@@ -74,16 +82,23 @@ contract CurveFactory is Ownable, ReentrancyGuard {
         IFeeRouter feeRouter_,
         PoolFactory poolFactory_,
         MapaeFactory mapaeFactory_,
+        IWETH weth_,
         address owner_
     ) Ownable(owner_) {
         if (
             address(dojang_) == address(0) || address(feeRouter_) == address(0) || address(poolFactory_) == address(0)
-                || address(mapaeFactory_) == address(0)
+                || address(mapaeFactory_) == address(0) || address(weth_) == address(0)
         ) revert ZeroAddress();
         dojang = dojang_;
         feeRouter = feeRouter_;
         poolFactory = poolFactory_;
         mapaeFactory = mapaeFactory_;
+        weth = weth_;
+    }
+
+    /// @notice Only WETH unwraps may send ETH here (refund path). Anything else reverts.
+    receive() external payable {
+        if (msg.sender != address(weth)) revert DirectEthRejected();
     }
 
     function setCurveEnabled(bool enabled) external onlyOwner {
@@ -100,14 +115,62 @@ contract CurveFactory is Ownable, ReentrancyGuard {
         uint256 devBuyQuoteIn,
         uint256 minTokensOut
     ) external nonReentrant returns (address curve, address token) {
+        (curve, token) = _open(quote, name, symbol);
+        if (devBuyQuoteIn > 0) _devFirstBuy(quote, CurveSale(curve), devBuyQuoteIn, minTokensOut);
+    }
+
+    /// @notice createCurve with quote = WETH and the dev first buy paid in native ETH
+    ///         (msg.value; 0 = open only). Unspent ETH is refunded.
+    function createCurveWithETH(string calldata name, string calldata symbol, uint256 minTokensOut)
+        external
+        payable
+        nonReentrant
+        returns (address curve, address token)
+    {
+        (curve, token) = _open(weth, name, symbol);
+        if (msg.value > 0) _ethBuy(CurveSale(curve), minTokensOut);
+    }
+
+    /// @notice Buy on a WETH-quoted curve with native ETH. The real-name gate is enforced by
+    ///         CurveSale.buyFor on msg.sender (fail-closed). Unspent ETH is refunded.
+    function buyWithETH(CurveSale curve, uint256 minTokensOut)
+        external
+        payable
+        nonReentrant
+        returns (uint256 tokensOut, uint256 ethSpent)
+    {
+        if (!isCurve[address(curve)]) revert NotCurve(address(curve));
+        if (address(curve.quote()) != address(weth)) revert NotWethCurve(address(curve));
+        if (msg.value == 0) revert ZeroValue();
+        return _ethBuy(curve, minTokensOut);
+    }
+
+    /// @dev Shared gates of createCurve / createCurveWithETH, then deploy + register.
+    function _open(IERC20 quote, string calldata name, string calldata symbol)
+        internal
+        returns (address curve, address token)
+    {
         if (!curveEnabled) revert CurvesDisabled();
         if (!dojang.isVerified(msg.sender)) revert NotVerified(msg.sender);
         if (!mapaeFactory.isQuoteAllowed(address(quote))) revert QuoteNotAllowed(address(quote));
         _consumeRateLimit(msg.sender);
         _checkNames(name, symbol);
+        return _deploy(quote, name, symbol);
+    }
 
-        (curve, token) = _deploy(quote, name, symbol);
-        if (devBuyQuoteIn > 0) _devFirstBuy(quote, CurveSale(curve), devBuyQuoteIn, minTokensOut);
+    /// @dev wrap msg.value → approve → buyFor(msg.sender) → unwrap + refund unspent ETH → reset
+    ///      allowance. Ends with zero ETH, zero WETH and zero allowance on this factory.
+    function _ethBuy(CurveSale c, uint256 minTokensOut) internal returns (uint256 tokensOut, uint256 spent) {
+        weth.deposit{value: msg.value}();
+        IERC20(address(weth)).forceApprove(address(c), msg.value);
+        (tokensOut, spent) = c.buyFor(msg.sender, msg.value, minTokensOut);
+        IERC20(address(weth)).forceApprove(address(c), 0);
+        uint256 refund = msg.value - spent;
+        if (refund > 0) {
+            weth.withdraw(refund);
+            (bool ok,) = msg.sender.call{value: refund}("");
+            if (!ok) revert EthRefundFailed();
+        }
     }
 
     function _checkNames(string calldata name, string calldata symbol) internal pure {

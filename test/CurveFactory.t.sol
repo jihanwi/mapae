@@ -7,6 +7,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IDojang} from "../src/interfaces/IDojang.sol";
 import {CurveFactory} from "../src/CurveFactory.sol";
+import {IWETH} from "../src/interfaces/IWETH.sol";
 import {CurveSale} from "../src/CurveSale.sol";
 import {CurvePresets as P} from "../src/CurvePresets.sol";
 import {CurveMath} from "../src/lib/CurveMath.sol";
@@ -32,7 +33,9 @@ abstract contract CurveFactoryTestBase is MapaeFactoryTestBase {
 
     function setUp() public virtual override {
         super.setUp();
-        cf = new CurveFactory(IDojang(address(dojang)), feeRouter, poolFactory, factory, address(this));
+        cf = new CurveFactory(
+            IDojang(address(dojang)), feeRouter, poolFactory, factory, IWETH(address(0xEeeE)), address(this)
+        );
         (IERC20 q, uint256 vq) = _quote();
         quote = q;
         factory.allowQuote(quote, vq);
@@ -75,8 +78,14 @@ abstract contract CurveFactoryTestBase is MapaeFactoryTestBase {
     }
 
     function test_K1_RevertingDojangFailsClosed() public {
-        CurveFactory bad =
-            new CurveFactory(IDojang(address(new RevertingDojangCS())), feeRouter, poolFactory, factory, address(this));
+        CurveFactory bad = new CurveFactory(
+            IDojang(address(new RevertingDojangCS())),
+            feeRouter,
+            poolFactory,
+            factory,
+            IWETH(address(0xEeeE)),
+            address(this)
+        );
         vm.prank(dev);
         vm.expectRevert(bytes("dojang down"));
         bad.createCurve(quote, "Curve Coin", "CC", 0, 0);
