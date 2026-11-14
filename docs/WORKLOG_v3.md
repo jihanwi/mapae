@@ -480,3 +480,53 @@ lpSeedBps 0 커브에서는 상대 오차 0 / 1.7e-13 / 1e-18 (KRWs18 / 6-dec / 
 
 - `script/verify-children.js` 는 `platformTokenBps()` 를 호출하고 생성자 인코딩에 넣는다. JS 라 컴파일 영향이
   없어 이번엔 두었고, 배포 스크립트 v3 재작성 티켓에서 함께 고친다.
+
+## T11 — 풀 총 스왑 요율 하드캡 (결정 28 + 결정 25 보강)
+
+### 배경
+
+풀 총 요율 = 라우터 몫(swapPlatformBps + swapLpBps, FeeRouter 에서 live) + 풀 몫(royaltyBps + burnBps, 풀 생성 시
+immutable). FeeRouter 합계 밴드는 라우터 구조체 4필드 합만 검사해 풀 몫에는 적용되지 않았다.
+(예: L0 `setFees(500,80,0,0,20,0)` 통과 → 로열티 30 풀 130 bps, L1 로열티 80 + 소각 50 풀 190 bps.)
+목표: owner 가 밴드 안에서 무엇을 설정하든 L0 풀 ≤ 100, L1/L2 풀 ≤ 150.
+
+### 바꾼 상수 / 검사
+
+| 위치 | 이전 | 이후 |
+|---|---|---|
+| `FeeRouter.L0_SWAP_PLATFORM_MAX` | 80 | **70** |
+| `FeeRouter.L0_ROUTER_SHARE_MAX` (신규) | — | 70: L0 platform + lp > 70 → OutOfBand |
+| `FeeRouter.PREMIUM_ROUTER_SHARE_MAX` (신규) | — | 60: L1/L2 platform + lp > 60 → OutOfBand |
+| `MapaePool.MAX_POOL_SHARE_BPS_L0` (신규) | — | 30: L0 은 burn ≠ 0 또는 royalty > 30 → `PoolShareOutOfBand` |
+| `MapaePool.MAX_POOL_SHARE_BPS_PREMIUM` (신규) | — | 90: L1/L2 royalty + burn > 90 → `PoolShareOutOfBand` |
+| `Offering` per-pool 밴드 | royalty ≤ 80, burn ≤ 50 | + L1/L2 royalty + burn ≤ 90 (조기 `InvalidConfig`) |
+| `Offering` capExempt | [creatorVesting, platform] | **[creatorVesting]** (결정 21) |
+
+생성자 프리셋(L0 40+30, L1/L2 40+20)과 기존 합계 밴드(L0 80~100, premium 100~150)는 그대로. 집행 지점은 MapaePool
+생성자(어떤 경로로 만든 풀이든 적용), Offering 은 조기 revert 용.
+
+### 바꾼 기존 테스트
+
+| 테스트 | 이전 | 이후 |
+|---|---|---|
+| `FeeRouterV2.t.sol` `test_Band_L0_Boundaries` | platform 상한 81 revert / 80 ok `(500,80,10,10,0,0)` | 71 revert `(500,71,10,9,0,0)` / 70 ok `(500,70,15,15,0,0)` |
+| `FeeRouterV2.t.sol` `test_Band_Premium_Boundaries` | 합 150 경계 `(750,60,40,30,20,400)` ok | `(750,40,60,30,20,400)` ok (라우터 몫 60) |
+| `FeeRouterV2.t.sol` `testFuzz_L0_SwapPlatformFloor` | inBand: platform ≤ 80 | inBand: platform ≤ 70 && platform + lp ≤ 70 |
+| `InvariantsV2.t.sol` `test_R2_SwapRoyaltyBurnBands` | L1 80/50 edge ok | 80/50 revert(합 130), 80/10 ok(royalty 경계), 40/50 ok(burn 경계) |
+
+로열티 + 소각 > 90 인 L1/L2 픽스처는 없었다(기본 60/30 = 90).
+
+### 테스트
+
+- 신규 `test/PoolFeeCap.t.sol` F1~F6 (6, F1·F2 fuzz). F7(커브 졸업 풀 totalFeeBps == 100)은 기존
+  `CurveSale.t.sol` `test_C10_AfterGraduation`(호가 3종)이 단언. 합계 344 → **350 그린**.
+
+### 사이즈
+
+| 컨트랙트 | runtime | initcode | runtime 여유 | initcode 여유 |
+|---|---|---|---|---|
+| MapaePool | 9,684 B | 11,184 B | 14,892 B | 37,968 B |
+| Offering | 10,672 B | 15,163 B | 13,904 B | 33,989 B |
+| OfferingDeployer | 16,356 B | 16,384 B | 8,220 B | 32,768 B |
+| FeeRouter | 3,732 B | 6,215 B | 20,844 B | 42,937 B |
+| MapaeFactory | 8,650 B | 41,203 B | 15,926 B | 7,949 B |

@@ -229,9 +229,10 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
         swapBurnBps = p.swapBurnBps;
         recipients = p.recipients;
 
-        address[] memory capExempt = new address[](2);
+        // decision 21: the platform never receives the issued token, so only the creator
+        // vesting needs a holding-cap exemption (the offering itself is exempt as minter).
+        address[] memory capExempt = new address[](1);
         capExempt[0] = p.recipients.creatorVesting;
-        capExempt[1] = p.recipients.platform;
         // Linked library (DELEGATECALL): CREATE runs from this address/nonce,
         // identical to an inline `new` — bytecode lives outside our initcode (C8).
         token = MembershipTokenDeployer.deploy(
