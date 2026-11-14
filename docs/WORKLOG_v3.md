@@ -82,3 +82,49 @@ CurveMath 테스트 24개, `FOUNDRY_FUZZ_RUNS=10000` 에서도 실패 0.
   문구는 졸업 티켓에서 확정.
 - **(b) 라이브러리 링크 배포.** Offering 이 MembershipTokenDeployer 에 링크되므로
   `script/Deploy.s.sol` 과 `verify-children.js` 에 라이브러리 주소 처리가 필요하다 (배포 티켓).
+
+## T3 — C1 호가 자산 레지스트리 + 프리셋 decimals 정리
+
+### 범위 판단 (지시서 v3.1 C1 대비)
+
+- FixedOffering(`Offering.sol`)은 이미 `paymentToken` 을 파라미터로 받고 decimals 를 하드코딩하지
+  않는다. 정가 공모는 전 등급 KRWs 전용이므로 팩토리의 `paymentToken` 을 그대로 쓴다.
+  `Offering.sol`, `PoolFactory.sol`, `MapaePool.sol`, `FeeRouter.sol` 은 수정하지 않았다.
+- 이 티켓의 산출물은 CurveSale 이 쓸 "허용 호가 자산 목록"이다.
+
+### 레지스트리 설계 (`src/MapaeFactory.sol`, 기존 함수·생성자·이벤트 무변경)
+
+- `QuoteConfig { registered, enabled, decimals, curveVirtualQuote }`, `mapping(quote => QuoteConfig)`,
+  등록 순서 배열 `_allQuotes`.
+- `allowQuote(quote, curveVirtualQuote)` onlyOwner: 0 주소 → `ZeroAddress`, 0 값 → `ZeroCurveVirtualQuote`,
+  재등록 → `QuoteAlreadyRegistered` (비활성화 뒤에도 재등록 불가). decimals 는
+  `IERC20Metadata.decimals()` 로 읽어 저장. 등록 즉시 enabled. 이벤트 `QuoteAllowed`.
+- `curveVirtualQuote`, `decimals` 를 바꾸는 경로는 존재하지 않는다 (가격 경로 = 플랫폼 프리셋).
+- `setQuoteEnabled(quote, enabled)` onlyOwner: 미등록 → `QuoteNotRegistered`. 신규 커브 개설 가능
+  여부만 바꾼다(열린 커브·풀은 스냅샷 사용 예정). 이벤트 `QuoteEnabledSet`.
+- view: `isQuoteAllowed` (registered && enabled), `quoteConfig`, `allQuotes`.
+- 생성자에서 `paymentToken` 자동 등록 안 함. 등록은 배포 스크립트 몫(이번 티켓 범위 밖).
+
+### CurvePresets decimals 정리
+
+- `VIRTUAL_QUOTE_RESERVE_KRWS = 2_000_000e18` 제거 → `VIRTUAL_QUOTE_KRWS_WHOLE = 2_000_000` +
+  `krwsVirtualQuote(decimals) = WHOLE × 10 ** decimals`.
+- `VIRTUAL_QUOTE_RESERVE_WETH = 0.6e18` 유지. 근거: GIWA WETH predeploy 는 18 decimals 고정.
+- KRWs 6 / 18 decimals 각각 임계 = 3 × Vq, P1, P2 테스트 추가. P2 헬퍼는 6 decimals 에서
+  1e18 스케일 나눗셈 정밀도 손실(3e4 수준)로 실패해 교차곱 비교로 바꿨다(기준 1e-9 동일).
+
+### WETH 확인 사실
+
+- GIWA Sepolia `0x4200000000000000000000000000000000000006`: `symbol() = "WETH"`, `decimals() = 18`
+  (PM 확인. 이 세션에서는 RPC 가 네트워크 정책으로 차단되어 직접 호출하지 않음).
+
+### 사이즈 (`forge build --sizes`)
+
+| 컨트랙트 | runtime | initcode | runtime 여유 | initcode 여유 |
+|---|---|---|---|---|
+| MapaeFactory | 8,817 B | 41,630 B | 15,759 B | 7,522 B |
+| OfferingDeployer | 16,554 B | 16,582 B | 8,022 B | 32,570 B |
+
+MapaeFactory initcode 여유는 8,837 → 7,522 B (−1,315 B). 4 KiB 가드 통과.
+
+테스트: 217 + 8 (QuoteRegistry 7, CurvePresets 1) = **225 그린**.

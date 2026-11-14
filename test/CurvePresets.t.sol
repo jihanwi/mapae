@@ -28,14 +28,17 @@ contract CurvePresetsTest is Test {
     }
 
     function test_VirtualQuoteReserves() public pure {
-        assertEq(P.VIRTUAL_QUOTE_RESERVE_KRWS, 2_000_000e18);
+        assertEq(P.VIRTUAL_QUOTE_KRWS_WHOLE, 2_000_000);
+        assertEq(P.krwsVirtualQuote(18), 2_000_000e18);
+        assertEq(P.krwsVirtualQuote(6), 2_000_000e6);
+        assertEq(P.krwsVirtualQuote(0), 2_000_000);
         assertEq(P.VIRTUAL_QUOTE_RESERVE_WETH, 0.6e18);
     }
 
     /// @dev Graduation threshold (quote to drain CURVE_SUPPLY) = 3 Vq and closing FDV = 15 Vq
     ///      under Vt = 3.2B/3 (PM 2026-11-14). Tolerance 1e-9 covers integer division.
     function test_GraduationEconomics_Krws() public pure {
-        uint256 vq = P.VIRTUAL_QUOTE_RESERVE_KRWS;
+        uint256 vq = P.krwsVirtualQuote(18);
         uint256 raised = P.graduationThreshold(vq);
         assertApproxEqRel(raised, 6_000_000e18, 1e9);
         assertApproxEqRel(raised, 3 * vq, 1e9);
@@ -52,7 +55,7 @@ contract CurvePresetsTest is Test {
 
     /// @dev closing / start price = (Vq + r)/(Vt − S) ÷ Vq/Vt = 16, independent of Vq.
     function test_PriceMultiple16x() public pure {
-        uint256 vq = P.VIRTUAL_QUOTE_RESERVE_KRWS;
+        uint256 vq = P.krwsVirtualQuote(18);
         uint256 raised = P.graduationThreshold(vq);
         uint256 vt = P.VIRTUAL_TOKEN_RESERVE;
         // ratio scaled by 1e18: (vq + r) · Vt / ((Vt − S) · vq)
@@ -62,14 +65,29 @@ contract CurvePresetsTest is Test {
 
     /// @dev P1: preset closed-form threshold (floor) and CurveMath sell-out cost (ceil) agree within 1 wei.
     function test_P1_ThresholdMatchesCurveMath() public pure {
-        _p1(P.VIRTUAL_QUOTE_RESERVE_KRWS);
+        _p1(P.krwsVirtualQuote(18));
         _p1(P.VIRTUAL_QUOTE_RESERVE_WETH);
     }
 
     /// @dev P2: AMM seed price r / DEX_SUPPLY equals the curve closing price (Vq + r)/(Vt − S) within 1e-9.
     function test_P2_ListingPriceContinuity() public pure {
-        _p2(P.VIRTUAL_QUOTE_RESERVE_KRWS);
+        _p2(P.krwsVirtualQuote(18));
         _p2(P.VIRTUAL_QUOTE_RESERVE_WETH);
+    }
+
+    /// @dev KRWs preset scaled to 6 and 18 decimals: threshold = 3 × Vq, P1, P2 hold for both.
+    function test_KrwsDecimals_6_and_18() public pure {
+        _krwsAtDecimals(6);
+        _krwsAtDecimals(18);
+    }
+
+    function _krwsAtDecimals(uint8 dec) internal pure {
+        uint256 vq = P.krwsVirtualQuote(dec);
+        uint256 raised = P.graduationThreshold(vq);
+        assertApproxEqRel(raised, 3 * vq, 1e9, "threshold != 3 Vq");
+        assertApproxEqRel(raised, 6_000_000 * 10 ** dec, 1e9, "threshold != 6M whole");
+        _p1(vq);
+        _p2(vq);
     }
 
     function _params(uint256 vq) internal pure returns (CurveMath.Params memory) {
@@ -90,10 +108,11 @@ contract CurvePresetsTest is Test {
 
     function _p2(uint256 vq) internal pure {
         uint256 r = CurveMath.costToSellOut(_params(vq), 0, 0);
-        // Compare r/DEX vs (vq + r)/(Vt − S) by cross-multiplication, scaled by 1e18.
-        uint256 seed = r * 1e18 / P.DEX_SUPPLY;
-        uint256 close = (vq + r) * 1e18 / (P.VIRTUAL_TOKEN_RESERVE - P.CURVE_SUPPLY);
-        assertApproxEqRel(seed, close, 1e9, "P2");
+        // r/DEX vs (vq + r)/(Vt − S), compared exactly by cross-multiplication (no division, so
+        // low-decimals quotes don't lose precision): seed·DEX·(Vt−S) = r·(Vt−S), close·DEX·(Vt−S) = (vq+r)·DEX.
+        uint256 seedX = r * (P.VIRTUAL_TOKEN_RESERVE - P.CURVE_SUPPLY);
+        uint256 closeX = (vq + r) * P.DEX_SUPPLY;
+        assertApproxEqRel(seedX, closeX, 1e9, "P2");
     }
 
     // ------------------------------------------------------------------

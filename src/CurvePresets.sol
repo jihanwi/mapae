@@ -35,11 +35,19 @@ library CurvePresets {
     // Virtual quote reserves (per quote asset; factory maps quote → preset)
     // ---------------------------------------------------------------------
 
-    /// @notice KRWs virtual quote reserve (KRWs / MockKRW, 18 decimals).
-    uint256 internal constant VIRTUAL_QUOTE_RESERVE_KRWS = 2_000_000e18;
+    /// @notice KRWs virtual quote reserve in whole won. Scaled by the quote's decimals at
+    ///         registration (see krwsVirtualQuote) — KRWs decimals are never hardcoded.
+    uint256 internal constant VIRTUAL_QUOTE_KRWS_WHOLE = 2_000_000;
 
-    /// @notice WETH virtual quote reserve (18 decimals). ETH input is wrapped.
+    /// @notice WETH virtual quote reserve (raw, 18 decimals). ETH input is wrapped.
+    /// @dev Kept raw: the quote is the GIWA WETH predeploy 0x4200…0006, a fixed-18-decimals
+    ///      contract (symbol "WETH", decimals 18 confirmed on GIWA Sepolia by PM).
     uint256 internal constant VIRTUAL_QUOTE_RESERVE_WETH = 0.6e18;
+
+    /// @notice KRWs virtual quote reserve in raw units for a KRWs token with `decimals`.
+    function krwsVirtualQuote(uint8 decimals) internal pure returns (uint256) {
+        return VIRTUAL_QUOTE_KRWS_WHOLE * 10 ** decimals;
+    }
 
     // ---------------------------------------------------------------------
     // Fees (bps of trade size; curve and AMM both total 1.00%)
