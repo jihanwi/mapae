@@ -13,6 +13,8 @@ import {useOnboarding} from "./hooks";
 import {useTx, useGlobalTxBusy} from "./components/tx";
 import {fmt, shortAddr} from "./lib/format";
 import {OnboardingProvider} from "./components/OnboardingModal";
+import {NicknameProvider, useNicknameModal} from "./components/NicknameModal";
+import {useNickname} from "./hooks/comments";
 import {ActivityProvider} from "./hooks/activity";
 
 /** Fixed-price offering section (v1/v2 contracts): /offerings and the legacy pages under it. */
@@ -39,6 +41,22 @@ function LangToggle() {
             <span className="text-ink-700 text-[13px] px-0.5">/</span>
             {item("en")}
         </div>
+    );
+}
+
+/** Header entry to view or change my nickname. */
+function NicknameButton() {
+    const tr = useCopy();
+    const {address} = useAccount();
+    const nick = useNickname(address);
+    const open = useNicknameModal();
+    return (
+        <button
+            onClick={open}
+            className="hidden sm:inline-flex items-center min-h-[44px] max-w-[160px] px-3 border border-ink-700 rounded-full text-[13px] text-hanji-100 hover:border-brass-600 truncate"
+        >
+            <span className="truncate">{nick.data ?? tr.social.nicknameButton}</span>
+        </button>
     );
 }
 
@@ -140,6 +158,8 @@ function Nav() {
                 <div className="flex items-center gap-2 flex-none">
                     <LangToggle />
                     {faucetBtn}
+                    {/* v3 only, sm and up (at 390px the comments section has the same "change" link) */}
+                    {!legacy && isConnected && !wrongChain && <NicknameButton />}
                     {wallet}
                 </div>
             </div>
@@ -217,19 +237,21 @@ export default function App() {
     const {pathname} = useLocation();
     return (
         <div className="min-h-[100dvh] bg-ink-950 text-hanji-100">
-            <Nav />
-            {/* legacy v2 section: Korean-only notice in other languages, ADDR-based strip */}
-            {isOfferingSection(pathname) && tr.legacyNotice && (
-                <div className="bg-ink-900 border-b border-ink-700">
-                    <div className="max-w-page mx-auto px-4 sm:px-8 py-2 text-[13px] text-hanji-400">{tr.legacyNotice}</div>
-                </div>
-            )}
-            {isOfferingSection(pathname) && <OnboardingStrip />}
-            <OnboardingProvider>
-                <ActivityProvider enabled={!isOfferingSection(pathname)}>
-                    <Outlet />
-                </ActivityProvider>
-            </OnboardingProvider>
+            <NicknameProvider>
+                <Nav />
+                {/* legacy v2 section: Korean-only notice in other languages, ADDR-based strip */}
+                {isOfferingSection(pathname) && tr.legacyNotice && (
+                    <div className="bg-ink-900 border-b border-ink-700">
+                        <div className="max-w-page mx-auto px-4 sm:px-8 py-2 text-[13px] text-hanji-400">{tr.legacyNotice}</div>
+                    </div>
+                )}
+                {isOfferingSection(pathname) && <OnboardingStrip />}
+                <OnboardingProvider>
+                    <ActivityProvider enabled={!isOfferingSection(pathname)}>
+                        <Outlet />
+                    </ActivityProvider>
+                </OnboardingProvider>
+            </NicknameProvider>
         </div>
     );
 }

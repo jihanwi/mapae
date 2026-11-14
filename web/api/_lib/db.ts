@@ -65,6 +65,23 @@ const SCHEMA = [
     )`,
     `CREATE INDEX IF NOT EXISTS mapae_transfers_token_to ON mapae_transfers (token, to_addr)`,
     `CREATE INDEX IF NOT EXISTS mapae_transfers_token_from ON mapae_transfers (token, from_addr)`,
+    `CREATE TABLE IF NOT EXISTS mapae_nicknames (
+        address text PRIMARY KEY,
+        nickname text NOT NULL,
+        nickname_lc text NOT NULL UNIQUE,
+        updated_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE TABLE IF NOT EXISTS mapae_comments (
+        id bigserial PRIMARY KEY,
+        curve text NOT NULL,
+        author text NOT NULL,
+        body text NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        deleted boolean NOT NULL DEFAULT false,
+        hidden boolean NOT NULL DEFAULT false
+    )`,
+    `CREATE INDEX IF NOT EXISTS mapae_comments_curve_id ON mapae_comments (curve, id DESC)`,
+    `CREATE INDEX IF NOT EXISTS mapae_comments_author_created ON mapae_comments (author, created_at DESC)`,
 ];
 
 export async function ensureSchema(sql: Sql): Promise<void> {
@@ -232,4 +249,89 @@ export async function trades(sql: Sql, curve: string, before: bigint | undefined
          LIMIT $3`,
         [curve, before === undefined ? null : before.toString(), limit]
     )) as TradeOut[];
+}
+
+// ---------------------------------------------------------------------------------------------
+// Nicknames and comments (lowercase addresses; no wallet address is ever returned for comments)
+// ---------------------------------------------------------------------------------------------
+
+export async function nicknameOf(sql: Sql, address: string): Promise<{nickname: string; updatedAtSec: number} | null> {
+    const rows = (await sql.query(`SELECT nickname, extract(epoch FROM updated_at)::bigint::text AS t FROM mapae_nicknames WHERE address = $1`, [address])) as {nickname: string; t: string}[];
+    return rows[0] ? {nickname: rows[0].nickname, updatedAtSec: Number(rows[0].t)} : null;
+}
+
+export async function nicknameTakenByOther(sql: Sql, nicknameLc: string, address: string): Promise<boolean> {
+    const rows = (await sql.query(`SELECT 1 FROM mapae_nicknames WHERE nickname_lc = $1 AND address <> $2`, [nicknameLc, address])) as unknown[];
+    return rows.length > 0;
+}
+
+/** Upsert; a nickname_lc clash with another wallet raises a unique violation (23505). */
+export async function setNickname(sql: Sql, address: string, nickname: string, nicknameLc: string): Promise<void> {
+    await sql.query(
+        `INSERT INTO mapae_nicknames (address, nickname, nickname_lc, updated_at) VALUES ($1, $2, $3, now())
+         ON CONFLICT (address) DO UPDATE SET nickname = EXCLUDED.nickname, nickname_lc = EXCLUDED.nickname_lc, updated_at = now()`,
+        [address, nickname, nicknameLc]
+    );
+}
+
+export async function curveKnown(sql: Sql, curve: string): Promise<boolean> {
+    return ((await sql.query(`SELECT 1 FROM mapae_curves WHERE curve = $1`, [curve])) as unknown[]).length > 0;
+}
+
+/** Both spam checks in one query: seconds since the last comment and the 24 h count. */
+export async function commentRate(sql: Sql, author: string): Promise<{sinceLastSec: number | null; last24h: number}> {
+    const rows = (await sql.query(
+        `SELECT extract(epoch FROM (now() - max(created_at)))::float8 AS since,
+                count(*) FILTER (WHERE created_at > now() - interval '24 hours')::int AS n
+         FROM mapae_comments WHERE author = $1`,
+        [author]
+    )) as {since: number | null; n: number}[];
+    return {sinceLastSec: rows[0]?.since ?? null, last24h: rows[0]?.n ?? 0};
+}
+
+/** Comments with nickname, holder (token balance > 0 from indexed transfers) and dev flags, all
+ *  in one query (joins + one lateral aggregate per row; no per-comment round trip). */
+const COMMENT_VIEW = `
+    SELECT c.id::text AS id, coalesce(n.nickname, '') AS nickname, c.body,
+           to_char(c.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "createdAt",
+           coalesce(b.bal, 0) > 0 AS holder,
+           (m.dev IS NOT NULL AND m.dev = c.author) AS dev
+    FROM mapae_comments c
+    LEFT JOIN mapae_nicknames n ON n.address = c.author
+    LEFT JOIN mapae_curves m ON m.curve = c.curve
+    LEFT JOIN LATERAL (
+        SELECT sum(CASE WHEN t.to_addr = c.author THEN t.value ELSE 0 END)
+             - sum(CASE WHEN t.from_addr = c.author THEN t.value ELSE 0 END) AS bal
+        FROM mapae_transfers t
+        WHERE t.token = m.token AND (t.to_addr = c.author OR t.from_addr = c.author)
+    ) b ON true`;
+
+type CommentRow = {id: string; nickname: string; body: string; createdAt: string; holder: boolean; dev: boolean};
+const toComment = (r: CommentRow) => ({...r, id: Number(r.id)});
+
+export async function listComments(sql: Sql, curve: string, before: number | undefined, limit: number) {
+    const rows = (await sql.query(
+        `${COMMENT_VIEW}
+         WHERE c.curve = $1 AND NOT c.deleted AND NOT c.hidden AND ($2::bigint IS NULL OR c.id < $2::bigint)
+         ORDER BY c.id DESC
+         LIMIT $3`,
+        [curve, before ?? null, limit]
+    )) as CommentRow[];
+    return rows.map(toComment);
+}
+
+export async function insertComment(sql: Sql, curve: string, author: string, body: string) {
+    const [ins] = (await sql.query(`INSERT INTO mapae_comments (curve, author, body) VALUES ($1, $2, $3) RETURNING id::text AS id`, [curve, author, body])) as {id: string}[];
+    const rows = (await sql.query(`${COMMENT_VIEW} WHERE c.id = $1::bigint`, [ins.id])) as CommentRow[];
+    return toComment(rows[0]);
+}
+
+export async function deleteComment(sql: Sql, id: number, author: string): Promise<boolean> {
+    const rows = (await sql.query(`UPDATE mapae_comments SET deleted = true WHERE id = $1 AND author = $2 RETURNING id`, [id, author])) as unknown[];
+    return rows.length > 0;
+}
+
+export async function hideComment(sql: Sql, id: number, hidden: boolean): Promise<boolean> {
+    const rows = (await sql.query(`UPDATE mapae_comments SET hidden = $2 WHERE id = $1 RETURNING id`, [id, hidden])) as unknown[];
+    return rows.length > 0;
 }
