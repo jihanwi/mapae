@@ -200,3 +200,47 @@ L1 토큰도 잠금 중 offering 으로의 전송이 허용되는 것이 유일�
 | Offering | 10,710 B | 15,359 B | 13,866 B | 33,793 B |
 | OfferingDeployer | 16,605 B | 16,633 B | 7,971 B | 32,519 B |
 | MapaeFactory | 8,817 B | 41,681 B | 15,759 B | 7,471 B |
+
+## T6 — FeeRouter 커브 구간 요율 + L0 스왑 밴드 조정 (지시서 v3.1 C6 중 요율 부분)
+
+v3 요율 (PM 확정): 커브 1.00% = 플랫폼 0.50 / Dev 0.35 / LP 시드 0.15, AMM 1.00% = 플랫폼 0.40 /
+Dev 0.30 / LP 0.30. `CurvePresets` 의 `CURVE_FEE_*`, `SWAP_FEE_*` 상수와 일치(F4 테스트로 고정).
+
+### L0 밴드와 프리셋 (이전 → 이후)
+
+| 항목 | 이전 | 이후 |
+|---|---|---|
+| `L0_SWAP_PLATFORM_MIN` | 60 | **40** |
+| `L0_SWAP_PLATFORM_MAX` | 80 | 80 |
+| L0 스왑 합 밴드 | 80~100 | 80~100 |
+| L0 offering / merch | 0~500 / 0 | 0~500 / 0 |
+| L0 프리셋 (offering, platform, royalty, burn, lp, merch) | (500, 60, 20, 20, 0, 0) | **(500, 40, 30, 0, 30, 0)** |
+| L1 / L2 밴드·프리셋 | — | 변경 없음 |
+
+### 커브 요율 (신설)
+
+- `IFeeRouter.CurveFees { platformBps, devBps, lpSeedBps }`, `getCurveFees()`, `setCurveFees()` onlyOwner,
+  이벤트 `CurveFeesUpdated(old, new)`. 초기값 **(50, 35, 15)**.
+- 하드 밴드 (상수, 오너도 위반 불가): platform **40~60**, dev **20~40**, lpSeed **0~20**, 합 **80~100**.
+- 생성자 프리셋과 `setCurveFees` 가 같은 `_validateCurve` 를 탄다 (기존 `_validate` 패턴).
+
+### 고친 기존 테스트 (`test/FeeRouterV2.t.sol`, L0 밴드 하한·프리셋에 묶인 것만)
+
+| 테스트 | 바뀐 숫자 |
+|---|---|
+| `test_InitialPresets` | L0 platform 60→40, royalty 20→30, burn 20→0, lp 0→30 (합 100 단언 유지) |
+| `test_Band_L0_Boundaries` | 하한 경계 59 revert / 60 ok → 39 revert `(500,39,41,20,0,0)` / 40 ok `(500,40,40,20,0,0)` |
+| `testFuzz_L0_SwapPlatformFloor` (불변식 7) | inBand 하한·`assertGe` 60→40 ("L0 swapPlatformBps 는 어떤 갱신 경로로도 40 미만 불가") |
+| `testFuzz_SetFees_NeverEscapesBand` | L0 저장값 하한 단언 60→40 |
+
+밴드와 무관한 단언(합·offering·merch 경계, L1/L2)은 그대로. 플랫폼 60 을 쓰는 나머지 L0 경계
+케이스는 새 밴드 안이라 유지.
+
+### 테스트
+
+- 신규 `test/FeeRouterCurve.t.sol` F1~F5 (6: F2 는 경계 ±1 + 전수 fuzz 2개).
+- 합계 235 → **241 그린**. FeeRouter runtime 3,602 B (여유 20,974 B).
+
+### 메모
+
+- 바이백 50% 라우팅(`BUYBACK_BPS`)은 미구현. 플랫폼 토큰과 호가 자산별 Vault 경로가 정해진 뒤 별도 티켓.

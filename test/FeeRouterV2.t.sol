@@ -8,7 +8,7 @@ import {IFeeRouter} from "../src/interfaces/IFeeRouter.sol";
 
 /// @notice FeeRouter band + preset tests. Covers invariant 6 (setFees reverts
 ///         outside band, incl. boundary ±1) and invariant 7 (L0 swap-platform
-///         floor 60 is unreachable from below via any update path).
+///         floor 40 (v3, was 60) is unreachable from below via any update path).
 contract FeeRouterV2Test is Test {
     FeeRouter internal router;
     address internal treasury = makeAddr("treasury");
@@ -33,10 +33,10 @@ contract FeeRouterV2Test is Test {
     function test_InitialPresets() public view {
         IFeeRouter.TierFees memory l0 = router.getFees(IFeeRouter.UtilityTier.L0);
         assertEq(l0.offeringFeeBps, 500);
-        assertEq(l0.swapPlatformBps, 60);
-        assertEq(l0.swapRoyaltyBps, 20);
-        assertEq(l0.swapBurnBps, 20);
-        assertEq(l0.swapLpBps, 0);
+        assertEq(l0.swapPlatformBps, 40);
+        assertEq(l0.swapRoyaltyBps, 30);
+        assertEq(l0.swapBurnBps, 0);
+        assertEq(l0.swapLpBps, 30);
         assertEq(l0.merchFeeBps, 0);
 
         IFeeRouter.TierFees memory l1 = router.getFees(IFeeRouter.UtilityTier.L1);
@@ -75,9 +75,9 @@ contract FeeRouterV2Test is Test {
     // ------------------------------------------------------------------
 
     function test_Band_L0_Boundaries() public {
-        // swap platform floor 60: 59 reverts, 60 ok (sum stays in [80,100])
-        _expectBand(IFeeRouter.UtilityTier.L0, _fees(500, 59, 21, 20, 0, 0));
-        router.setFees(IFeeRouter.UtilityTier.L0, _fees(500, 60, 20, 20, 0, 0));
+        // swap platform floor 40: 39 reverts, 40 ok (sum stays in [80,100])
+        _expectBand(IFeeRouter.UtilityTier.L0, _fees(500, 39, 41, 20, 0, 0));
+        router.setFees(IFeeRouter.UtilityTier.L0, _fees(500, 40, 40, 20, 0, 0));
         // swap platform ceil 80: 81 reverts, 80 ok
         _expectBand(IFeeRouter.UtilityTier.L0, _fees(500, 81, 10, 9, 0, 0));
         router.setFees(IFeeRouter.UtilityTier.L0, _fees(500, 80, 10, 10, 0, 0)); // sum 100
@@ -111,7 +111,7 @@ contract FeeRouterV2Test is Test {
     }
 
     // ------------------------------------------------------------------
-    // invariant 7: L0 swap-platform floor 60 unreachable from below (fuzz)
+    // invariant 7 (v3): L0 swapPlatformBps can never drop below 40 via any update path (fuzz)
     // ------------------------------------------------------------------
 
     function testFuzz_L0_SwapPlatformFloor(uint16 platform, uint16 royalty, uint16 burn, uint16 lp) public {
@@ -121,17 +121,17 @@ contract FeeRouterV2Test is Test {
         lp = uint16(bound(lp, 0, 200));
         IFeeRouter.TierFees memory f = _fees(500, platform, royalty, burn, lp, 0);
         uint256 sum = uint256(platform) + royalty + burn + lp;
-        bool inBand = platform >= 60 && platform <= 80 && sum >= 80 && sum <= 100;
+        bool inBand = platform >= 40 && platform <= 80 && sum >= 80 && sum <= 100;
         if (inBand) {
             router.setFees(IFeeRouter.UtilityTier.L0, f);
             // whatever is stored, the platform floor holds
-            assertGe(router.getFees(IFeeRouter.UtilityTier.L0).swapPlatformBps, 60);
+            assertGe(router.getFees(IFeeRouter.UtilityTier.L0).swapPlatformBps, 40);
         } else {
             vm.expectRevert(FeeRouter.OutOfBand.selector);
             router.setFees(IFeeRouter.UtilityTier.L0, f);
         }
-        // Regardless of the attempt, the stored L0 platform is never below 60.
-        assertGe(router.getFees(IFeeRouter.UtilityTier.L0).swapPlatformBps, 60);
+        // Regardless of the attempt, the stored L0 platform is never below 40.
+        assertGe(router.getFees(IFeeRouter.UtilityTier.L0).swapPlatformBps, 40);
     }
 
     // ------------------------------------------------------------------
@@ -159,7 +159,7 @@ contract FeeRouterV2Test is Test {
             IFeeRouter.TierFees memory s = router.getFees(tier);
             uint256 sum = uint256(s.swapPlatformBps) + s.swapRoyaltyBps + s.swapBurnBps + s.swapLpBps;
             if (tier == IFeeRouter.UtilityTier.L0) {
-                assertTrue(s.swapPlatformBps >= 60 && s.swapPlatformBps <= 80);
+                assertTrue(s.swapPlatformBps >= 40 && s.swapPlatformBps <= 80);
                 assertTrue(sum >= 80 && sum <= 100);
                 assertTrue(s.offeringFeeBps <= 500);
                 assertEq(s.merchFeeBps, 0);
