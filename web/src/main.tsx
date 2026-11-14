@@ -7,6 +7,8 @@ import {wagmiConfig} from "./config/wagmi";
 import {ToastProvider} from "./components/tx";
 import App from "./App";
 import Home from "./pages/Home";
+import Curves from "./pages/Curves";
+import Token from "./pages/Token";
 import Offering from "./pages/Offering";
 import Membership from "./pages/Membership";
 import Redeem from "./pages/Redeem";
@@ -22,7 +24,9 @@ const router = createHashRouter([
         element: <App />,
         errorElement: <NotFound />, // 6-b: 렌더/로더 에러 폴백
         children: [
-            {index: true, element: <Home />},
+            {index: true, element: <Curves />}, // v3 curve list
+            {path: "t/:curve", element: <Token />}, // v3 token page
+            {path: "offerings", element: <Home />}, // legacy fixed-price offerings (was "/")
             {path: "offering/:addr", element: <Offering />},
             {path: "membership", element: <Membership />},
             {path: "redeem", element: <Redeem />},

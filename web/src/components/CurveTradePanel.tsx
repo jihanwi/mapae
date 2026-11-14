@@ -1,0 +1,321 @@
+import {ReactNode, useMemo, useState} from "react";
+import {parseUnits} from "viem";
+import {useAccount, useReadContract, useWriteContract} from "wagmi";
+import {copy} from "../copy";
+import {
+    Address,
+    CtaState,
+    CurveDetail,
+    useQuoteBuy,
+    useQuoteSell,
+    usePoolQuote,
+    useTradeCta,
+    ZERO,
+} from "../hooks/curves";
+import {CurveFactoryAbi, CurveSaleAbi, MapaePoolV3Abi, MembershipTokenV3Abi} from "../contracts/abisV3";
+import {ADDR_V3} from "../contracts/addressesV3";
+import {giwaSepolia} from "../config/chain";
+import {fmt, sanitizeAmountInput} from "../lib/format";
+import {RunFn, TxButton} from "./tx";
+
+// Layout note (390px): full-width column, inputs are flex-1 min-w-0, rows wrap (flex-wrap);
+// no element has a fixed pixel width.
+
+type Side = "buy" | "sell";
+const SLIPPAGE_BPS = [50, 100, 300] as const;
+
+const minOut = (q: bigint, slipBps: number) => (q * BigInt(10_000 - slipBps)) / 10_000n;
+
+function Row({label, value, strong}: {label: string; value: ReactNode; strong?: boolean}) {
+    return (
+        <div className="flex justify-between gap-3 text-[13px] mb-1 flex-wrap">
+            <span className="text-hanji-400">{label}</span>
+            <span className={`tabular-nums text-right ${strong ? "text-hanji-100 font-semibold" : "text-hanji-100"}`}>{value}</span>
+        </div>
+    );
+}
+
+function ctaLabel(state: CtaState, side: Side): string {
+    switch (state.kind) {
+        case "connect":
+            return copy.curve.cta.connect;
+        case "wrongChain":
+            return copy.curve.cta.wrongChain;
+        case "notVerified":
+            return copy.curve.cta.notVerified;
+        case "enterAmount":
+            return copy.curve.cta.enterAmount;
+        case "insufficient":
+            return copy.curve.cta.insufficient;
+        case "loading":
+            return copy.curve.cta.loading;
+        case "approve":
+            return side === "buy" ? copy.curve.cta.approveBuy : copy.curve.cta.approveSell;
+        case "ready":
+            return side === "buy" ? copy.curve.cta.buy : copy.curve.cta.sell;
+    }
+}
+
+function useAmount(raw: string) {
+    return useMemo(() => {
+        try {
+            return parseUnits(raw || "0", 18);
+        } catch {
+            return 0n;
+        }
+    }, [raw]);
+}
+
+/** Buy/sell panel: curve trades before graduation, pool swaps after. */
+export function CurveTradePanel({c}: {c: CurveDetail}) {
+    const {address} = useAccount();
+    const [side, setSide] = useState<Side>("buy");
+    const [raw, setRaw] = useState("");
+    const [slip, setSlip] = useState<number>(100);
+    const amount = useAmount(raw);
+    const unit = c.isEth ? "ETH" : "KRWs";
+
+    const tokenBal = useReadContract({
+        address: c.token,
+        abi: MembershipTokenV3Abi,
+        functionName: "balanceOf",
+        args: [address ?? ZERO],
+        chainId: giwaSepolia.id,
+        query: {enabled: !!address, refetchInterval: 6_000},
+    });
+
+    return (
+        <div className="bg-ink-800 border border-ink-700 rounded-card p-4 sm:p-7 min-w-0">
+            {c.graduated && (
+                <div className="mb-4">
+                    <h3 className="m-0 mb-1 text-[17px] font-bold">{copy.curve.poolTitle}</h3>
+                    <p className="m-0 text-[12px] text-hanji-400">{copy.curve.poolNote}</p>
+                </div>
+            )}
+            <div className="flex rounded-input overflow-hidden border border-ink-700 mb-5">
+                {(["buy", "sell"] as const).map((d) => (
+                    <button
+                        key={d}
+                        onClick={() => {
+                            setSide(d);
+                            setRaw("");
+                        }}
+                        className={`flex-1 py-3 text-[14px] font-semibold ${side === d ? "bg-ink-700 text-hanji-100" : "bg-transparent text-hanji-400 hover:text-hanji-100"}`}
+                    >
+                        {d === "buy" ? copy.curve.buy : copy.curve.sell}
+                    </button>
+                ))}
+            </div>
+            <label className="block text-[13px] text-hanji-400 mb-2">
+                {side === "buy" ? copy.curve.payLabel(c.graduated && c.isEth ? "WETH" : unit) : copy.curve.sellLabel}
+            </label>
+            <div className="flex items-center bg-ink-900 border border-ink-700 rounded-input px-4 focus-within:border-brass-400 mb-2">
+                <input
+                    value={raw}
+                    onChange={(e) => setRaw(sanitizeAmountInput(e.target.value))}
+                    inputMode="decimal"
+                    placeholder="0"
+                    className="flex-1 min-w-0 bg-transparent border-none outline-none py-3.5 text-[16px] text-hanji-100 tabular-nums"
+                />
+                <span className="text-hanji-400 text-[14px] flex-none">{side === "buy" ? (c.graduated && c.isEth ? "WETH" : unit) : c.symbol}</span>
+            </div>
+            {address && tokenBal.data !== undefined && (
+                <div className="text-[12px] text-hanji-400 mb-3 tabular-nums">{copy.curve.balance(fmt(tokenBal.data as bigint, 4), c.symbol)}</div>
+            )}
+            <div className="flex items-center gap-2 mb-4 flex-wrap text-[12px]">
+                <span className="text-hanji-400">{copy.curve.slippage}</span>
+                {SLIPPAGE_BPS.map((b) => (
+                    <button
+                        key={b}
+                        onClick={() => setSlip(b)}
+                        className={`px-3 min-h-[32px] rounded-full border ${slip === b ? "border-brass-400 text-brass-400" : "border-ink-700 text-hanji-400 hover:border-brass-600"}`}
+                    >
+                        {b / 100}%
+                    </button>
+                ))}
+            </div>
+            {c.graduated ? (
+                <PoolSide c={c} side={side} amount={amount} slip={slip} />
+            ) : side === "buy" ? (
+                <CurveBuy c={c} amount={amount} slip={slip} />
+            ) : (
+                <CurveSell c={c} amount={amount} slip={slip} />
+            )}
+        </div>
+    );
+}
+
+function CtaBlock({state, side, action}: {state: CtaState; side: Side; action: (run: RunFn) => Promise<unknown>}) {
+    const enabled = state.kind === "ready" || state.kind === "approve";
+    return (
+        <>
+            <TxButton className="w-full" disabled={!enabled} action={action}>
+                {ctaLabel(state, side)}
+            </TxButton>
+            {state.kind === "notVerified" && <p className="text-[12px] text-brass-400 mt-2 mb-0">{copy.curve.cta.notVerifiedNote}</p>}
+        </>
+    );
+}
+
+function Fees({platform, dev, lp, unit}: {platform: bigint; dev: bigint; lp: bigint; unit: string}) {
+    const dp = unit === "KRWs" ? 2 : 8;
+    return (
+        <Row
+            label={copy.curve.feeTotal}
+            value={`${fmt(platform + dev + lp, dp)} ${unit} (${copy.curve.feePlatform} ${fmt(platform, dp)} · ${copy.curve.feeDev} ${fmt(dev, dp)} · ${copy.curve.feeLp} ${fmt(lp, dp)})`}
+        />
+    );
+}
+
+function CurveBuy({c, amount, slip}: {c: CurveDetail; amount: bigint; slip: number}) {
+    const {address} = useAccount();
+    const {writeContractAsync} = useWriteContract();
+    const q = useQuoteBuy(c.address, amount);
+    const unit = c.isEth ? "ETH" : "KRWs";
+    const dp = c.isEth ? 8 : 2;
+    const {state, refetch} = useTradeCta({
+        payToken: c.isEth ? "native" : c.quote,
+        amount,
+        spender: c.isEth ? undefined : c.address,
+    });
+    const quote = q.settled ? q.data : undefined;
+    const effective: CtaState = state.kind === "ready" || state.kind === "approve" ? (quote && quote.tokensOut > 0n ? state : {kind: "loading"}) : state;
+
+    const action = async (run: RunFn) => {
+        if (!quote || !address) return;
+        const min = minOut(quote.tokensOut, slip);
+        if (state.kind === "approve") {
+            const ok = await run("승인", () =>
+                writeContractAsync({address: c.quote, abi: MembershipTokenV3Abi, functionName: "approve", args: [c.address, amount], chainId: giwaSepolia.id})
+            );
+            if (!ok) return;
+        }
+        const ok = c.isEth
+            ? await run(`${c.symbol} 매수`, () =>
+                  writeContractAsync({
+                      address: ADDR_V3.curveFactory,
+                      abi: CurveFactoryAbi,
+                      functionName: "buyWithETH",
+                      args: [c.address, min],
+                      value: amount,
+                      chainId: giwaSepolia.id,
+                  })
+              )
+            : await run(`${c.symbol} 매수`, () =>
+                  writeContractAsync({address: c.address, abi: CurveSaleAbi, functionName: "buy", args: [amount, min], chainId: giwaSepolia.id})
+              );
+        if (ok) refetch();
+    };
+
+    return (
+        <>
+            <div className="mb-4">
+                {amount > 0n && q.isError && <p className="text-[13px] text-error m-0 mb-2">{copy.curve.quoteError}</p>}
+                {amount > 0n && !quote && !q.isError && <p className="text-[13px] text-hanji-400 m-0 mb-2">{copy.curve.quoting}</p>}
+                {quote && (
+                    <>
+                        <Row label={copy.curve.receive} value={`${fmt(quote.tokensOut, 4)} ${c.symbol}`} strong />
+                        <Fees platform={quote.platformFee} dev={quote.devFee} lp={quote.lpSeedFee} unit={unit} />
+                        <Row label={copy.curve.paid} value={`${fmt(quote.quoteSpent, dp)} ${unit}`} />
+                        {quote.refund > 0n && <Row label={copy.curve.refund} value={`${fmt(quote.refund, dp)} ${unit}`} />}
+                        {quote.graduates && <p className="text-[12px] text-brass-400 m-0 mt-2">{copy.curve.graduatesNow}</p>}
+                    </>
+                )}
+            </div>
+            <CtaBlock state={effective} side="buy" action={action} />
+        </>
+    );
+}
+
+function CurveSell({c, amount, slip}: {c: CurveDetail; amount: bigint; slip: number}) {
+    const {address} = useAccount();
+    const {writeContractAsync} = useWriteContract();
+    const q = useQuoteSell(c.address, amount);
+    const unit = c.isEth ? "WETH" : "KRWs";
+    const dp = c.isEth ? 8 : 2;
+    const {state, refetch} = useTradeCta({payToken: c.token, amount, spender: c.address});
+    const quote = q.settled ? q.data : undefined;
+    const effective: CtaState = state.kind === "ready" || state.kind === "approve" ? (quote ? state : {kind: "loading"}) : state;
+
+    const action = async (run: RunFn) => {
+        if (!quote || !address) return;
+        if (state.kind === "approve") {
+            const ok = await run("승인", () =>
+                writeContractAsync({address: c.token, abi: MembershipTokenV3Abi, functionName: "approve", args: [c.address, amount], chainId: giwaSepolia.id})
+            );
+            if (!ok) return;
+        }
+        const ok = await run(`${c.symbol} 매도`, () =>
+            writeContractAsync({
+                address: c.address,
+                abi: CurveSaleAbi,
+                functionName: "sell",
+                args: [amount, minOut(quote.quoteOut, slip)],
+                chainId: giwaSepolia.id,
+            })
+        );
+        if (ok) refetch();
+    };
+
+    return (
+        <>
+            <div className="mb-4">
+                {amount > 0n && q.isError && <p className="text-[13px] text-error m-0 mb-2">{copy.curve.quoteError}</p>}
+                {amount > 0n && !quote && !q.isError && <p className="text-[13px] text-hanji-400 m-0 mb-2">{copy.curve.quoting}</p>}
+                {quote && (
+                    <>
+                        <Row label={copy.curve.receiveQuote(unit)} value={`${fmt(quote.quoteOut, dp)} ${unit}`} strong />
+                        <Fees platform={quote.platformFee} dev={quote.devFee} lp={quote.lpSeedFee} unit={unit} />
+                    </>
+                )}
+                {c.isEth && <p className="text-[12px] text-hanji-400 m-0 mt-2">{copy.curve.wethOut}</p>}
+            </div>
+            <CtaBlock state={effective} side="sell" action={action} />
+        </>
+    );
+}
+
+function PoolSide({c, side, amount, slip}: {c: CurveDetail; side: Side; amount: bigint; slip: number}) {
+    const {address} = useAccount();
+    const {writeContractAsync} = useWriteContract();
+    const pool = c.pool as Address;
+    const q = usePoolQuote(pool, side, amount);
+    const payToken = side === "buy" ? c.quote : c.token;
+    const {state, refetch} = useTradeCta({payToken, amount, spender: pool});
+    const quote = q.settled ? q.data : undefined;
+    const effective: CtaState = state.kind === "ready" || state.kind === "approve" ? (quote && quote > 0n ? state : {kind: "loading"}) : state;
+    const quoteUnitLabel = c.isEth ? "WETH" : "KRWs";
+    const outUnit = side === "buy" ? c.symbol : quoteUnitLabel;
+
+    const action = async (run: RunFn) => {
+        if (!quote || !address) return;
+        if (state.kind === "approve") {
+            const ok = await run("승인", () =>
+                writeContractAsync({address: payToken, abi: MembershipTokenV3Abi, functionName: "approve", args: [pool, amount], chainId: giwaSepolia.id})
+            );
+            if (!ok) return;
+        }
+        const ok = await run(`${c.symbol} ${side === "buy" ? "매수" : "매도"}`, () =>
+            writeContractAsync({
+                address: pool,
+                abi: MapaePoolV3Abi,
+                functionName: side === "buy" ? "swapQuoteForToken" : "swapTokenForQuote",
+                args: [amount, minOut(quote, slip), address],
+                chainId: giwaSepolia.id,
+            })
+        );
+        if (ok) refetch();
+    };
+
+    return (
+        <>
+            {side === "buy" && c.isEth && <p className="text-[12px] text-brass-400 m-0 mb-3">{copy.curve.poolWethOnly}</p>}
+            <div className="mb-4">
+                {amount > 0n && q.isError && <p className="text-[13px] text-error m-0 mb-2">{copy.curve.quoteError}</p>}
+                {amount > 0n && quote === undefined && !q.isError && <p className="text-[13px] text-hanji-400 m-0 mb-2">{copy.curve.quoting}</p>}
+                {quote !== undefined && <Row label={copy.curve.poolReceive} value={`${fmt(quote, side === "buy" ? 4 : c.isEth ? 8 : 2)} ${outUnit}`} strong />}
+            </div>
+            <CtaBlock state={effective} side={side} action={action} />
+        </>
+    );
+}

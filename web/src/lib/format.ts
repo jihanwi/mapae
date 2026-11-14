@@ -10,6 +10,16 @@ export function fmt(wei: bigint, dp = 2): string {
     return frac ? `${int}.${frac}` : int;
 }
 
+/** 18-decimals → up to `sig` significant digits (for tiny curve prices such as 0.000000000562 ETH). */
+export function fmtSig(wei: bigint, sig = 4): string {
+    if (wei === 0n) return "0";
+    const s = formatUnits(wei, 18);
+    const [i, f = ""] = s.split(".");
+    if (i !== "0") return fmt(wei, Math.max(0, sig - i.length));
+    const lead = f.length - f.replace(/^0+/, "").length;
+    return `0.${f.slice(0, lead + sig).replace(/0+$/, "")}`;
+}
+
 export const shortAddr = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
 /** 금액 입력 살균 — 쉼표·기타문자 제거, 소수점 1개만 허용. 표시값 = 전송값 (9-c) */

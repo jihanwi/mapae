@@ -36,7 +36,8 @@ function Nav() {
 
     // 데스크톱 인라인 탭 / 모바일 4등분 그리드 탭 공용
     const tabs = [
-        {to: "/", end: true, label: copy.nav.home},
+        {to: "/", end: true, label: copy.nav.curves},
+        {to: "/offerings", end: false, label: copy.nav.home},
         {to: "/membership", end: false, label: copy.nav.membership},
         {to: "/redeem", end: false, label: copy.nav.redeem},
         {to: "/trade", end: false, label: copy.nav.trade},
@@ -44,7 +45,7 @@ function Nav() {
     const inlineItem = ({isActive}: {isActive: boolean}) =>
         `px-3.5 min-h-[44px] flex items-center text-[15px] whitespace-nowrap border-b-2 ${isActive ? "font-semibold text-hanji-100 border-brass-400" : "text-hanji-400 border-transparent hover:text-hanji-100"}`;
     const gridItem = ({isActive}: {isActive: boolean}) =>
-        `flex items-center justify-center min-h-[44px] text-[14px] whitespace-nowrap border-b-2 ${isActive ? "font-semibold text-hanji-100 border-brass-400" : "text-hanji-400 border-transparent"}`;
+        `flex items-center justify-center min-h-[44px] text-[13px] whitespace-nowrap border-b-2 ${isActive ? "font-semibold text-hanji-100 border-brass-400" : "text-hanji-400 border-transparent"}`;
 
     const wallet = wrongChain ? (
         <button onClick={() => switchChain({chainId: giwaSepolia.id})}
@@ -91,8 +92,8 @@ function Nav() {
                     {wallet}
                 </div>
             </div>
-            {/* 2줄(모바일 전용): 탭 4등분 풀폭 */}
-            <nav className="grid grid-cols-4 sm:hidden border-t border-ink-700">
+            {/* 2줄(모바일 전용): 탭 5등분 풀폭 */}
+            <nav className="grid grid-cols-5 sm:hidden border-t border-ink-700">
                 {tabs.map((t) => (
                     <NavLink key={t.to} to={t.to} end={t.end} className={gridItem}>{t.label}</NavLink>
                 ))}

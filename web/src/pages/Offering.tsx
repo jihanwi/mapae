@@ -85,7 +85,7 @@ export default function Offering() {
                 <div className="flex justify-center mb-5"><Medallion char="馬" size={88} dashed /></div>
                 <h1 className="m-0 mb-2 text-[22px] font-bold">{copy.offering.notFoundTitle}</h1>
                 <p className="m-0 mb-6 text-[14px] text-hanji-400">{copy.offering.notFoundNote}</p>
-                <Link to="/"><PrimaryBtn>{copy.offering.backToList}</PrimaryBtn></Link>
+                <Link to="/offerings"><PrimaryBtn>{copy.offering.backToList}</PrimaryBtn></Link>
             </div>
         );
     }
@@ -123,7 +123,7 @@ export default function Offering() {
 
     return (
         <div className="max-w-page mx-auto px-4 sm:px-8 pt-8 sm:pt-10 pb-16 sm:pb-20">
-            <Link to="/" className="text-[14px]">← 공모 목록</Link>
+            <Link to="/offerings" className="text-[14px]">← 공모 목록</Link>
             <div className="flex flex-col sm:flex-row flex-wrap gap-6 sm:gap-7 mt-5 sm:mt-6 items-start">
                 {/* 좌: 크리에이터 (모바일에선 응모 패널 아래로) */}
                 <div className="w-full sm:flex-1 order-2 sm:order-1" style={{minWidth: 0}}>
