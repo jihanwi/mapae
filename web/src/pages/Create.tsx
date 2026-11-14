@@ -191,7 +191,7 @@ export default function Create() {
                 {wantsMeta && (
                     <div className="mb-5 text-left flex flex-col gap-2">
                         {meta.state.phase === "failed" && <p className="m-0 text-[13px] text-brass-400">{tr.meta.notSaved}</p>}
-                        <SaveStatus state={meta.state} onRetry={() => void meta.save(created.curve, draft)} />
+                        <SaveStatus context="launch" state={meta.state} onRetry={() => void meta.save(created.curve, draft)} />
                     </div>
                 )}
                 <Link to={`/t/${created.curve}`}>

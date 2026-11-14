@@ -265,6 +265,8 @@ export const en = {
         uploading: "Saving…",
         saved: "The image and description are saved.",
         retry: "Try again",
+        saveAgain: "Save again",
+        launchPending: "Saving is taking a little longer. Try again in a moment.",
         addCta: "Add image and description",
         save: "Sign and save",
         saveNote: "You'll sign once in your wallet. It costs no gas.",

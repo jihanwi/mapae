@@ -129,8 +129,30 @@ describe("POST /api/meta handler", () => {
         expect(res).toEqual({status: 403, body: {error: "not_dev"}});
     });
     it("rejects an address that is not a CurveFactory curve", async () => {
-        const res = await handlePostMeta(await signedBody(), {store: memStore(), chain: chainOf({isCurve: false}), nowMs: NOW});
+        const sleeps: number[] = [];
+        let calls = 0;
+        const chain: Chain = {isCurve: async () => (calls++, false), devOf: async () => devAcct.address};
+        const res = await handlePostMeta(await signedBody(), {store: memStore(), chain, nowMs: NOW, sleep: async (ms) => void sleeps.push(ms)});
         expect(res).toEqual({status: 404, body: {error: "not_curve"}});
+        expect(calls).toBe(4); // 1 read + 3 retries
+        expect(sleeps).toEqual([1500, 1500, 1500]);
+    });
+    it("retries isCurve while the RPC has not seen the launch block yet", async () => {
+        const seq = [false, false, true];
+        let calls = 0;
+        const chain: Chain = {isCurve: async () => seq[calls++] ?? true, devOf: async () => devAcct.address};
+        const res = await handlePostMeta(await signedBody(), {store: memStore(), chain, nowMs: NOW, sleep: async () => {}});
+        expect(res.status).toBe(201);
+        expect(calls).toBe(3);
+    });
+    it("never reads the chain for a malformed signature or bad input", async () => {
+        let calls = 0;
+        const chain: Chain = {isCurve: async () => (calls++, true), devOf: async () => devAcct.address};
+        const deps = {store: memStore(), chain, nowMs: NOW, sleep: async () => {}};
+        expect((await handlePostMeta({...(await signedBody()), signature: "0x1234"}, deps)).body).toEqual({error: "bad_signature"});
+        expect((await handlePostMeta(await signedBody({issuedAt: "2026-11-14T11:00:00.000Z"}), deps)).body).toEqual({error: "expired"});
+        expect((await handlePostMeta({...(await signedBody()), curve: "0x12"}, deps)).body).toEqual({error: "bad_request"});
+        expect(calls).toBe(0);
     });
     it("returns 409 and keeps the existing record", async () => {
         const store = memStore({[metaPath(CURVE)]: '{"keep":true}'});

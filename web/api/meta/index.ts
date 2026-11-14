@@ -5,6 +5,9 @@ import {giwaChain} from "../_lib/chain.js";
 import {handleGetMeta, handlePostMeta} from "../_lib/handler.js";
 import {cors, forbiddenOrigin, json, MAX_BODY, preflight} from "../_lib/http.js";
 
+// POST may wait up to ~4.5 s for the RPC to see a just-launched curve (see handler.ts).
+export const maxDuration = 30;
+
 export async function GET(request: Request): Promise<Response> {
     const c = cors(request);
     if (!c.allowed) return forbiddenOrigin(c);
