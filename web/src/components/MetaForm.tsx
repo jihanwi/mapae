@@ -6,6 +6,7 @@ import {useCopy} from "../copy";
 import {MAX_DESCRIPTION, descriptionLength, sanitizeDescription, validLink} from "../../api/_lib/validate";
 import {MetaDraft, SaveState} from "../hooks/meta";
 import {prepareImage} from "../lib/metaImage";
+import {saveView, SaveContext} from "../lib/metaStatus";
 import {Medallion} from "./ui";
 
 const inputCls =
@@ -132,19 +133,19 @@ export function MetaFields({draft, onChange, disabled}: {draft: MetaDraft; onCha
 }
 
 /** Status line for a save attempt (signing / saving / saved / failed with the server code). */
-export function SaveStatus({state, onRetry}: {state: SaveState; onRetry?: () => void}) {
+export function SaveStatus({state, onRetry, context = "add"}: {state: SaveState; onRetry?: () => void; context?: SaveContext}) {
     const tr = useCopy();
-    if (state.phase === "idle") return null;
-    if (state.phase === "signing") return <p className="m-0 text-[13px] text-hanji-400">{tr.meta.signing}</p>;
-    if (state.phase === "uploading") return <p className="m-0 text-[13px] text-hanji-400">{tr.meta.uploading}</p>;
-    if (state.phase === "saved") return <p className="m-0 text-[13px] text-success">{tr.meta.saved}</p>;
-    const msg = (tr.meta.errors as Record<string, string>)[state.code] ?? tr.meta.errors.temporary;
+    const v = saveView(state, context);
+    if (v.kind === "none") return null;
+    if (v.kind === "progress") return <p className="m-0 text-[13px] text-hanji-400">{v.phase === "signing" ? tr.meta.signing : tr.meta.uploading}</p>;
+    if (v.kind === "saved") return <p className="m-0 text-[13px] text-success">{tr.meta.saved}</p>;
+    const msg = v.message === "launchPending" ? tr.meta.launchPending : ((tr.meta.errors as Record<string, string>)[v.message] ?? tr.meta.errors.temporary);
     return (
         <div className="text-[13px]">
             <p className="m-0 text-error">{msg}</p>
-            {onRetry && state.code !== "already_saved" && state.code !== "not_dev" && state.code !== "not_curve" && (
+            {onRetry && v.canRetry && (
                 <button type="button" onClick={onRetry} className="mt-2 min-h-[40px] px-4 rounded-input border border-ink-700 text-hanji-100 hover:border-brass-600">
-                    {tr.meta.retry}
+                    {v.retryLabel === "saveAgain" ? tr.meta.saveAgain : tr.meta.retry}
                 </button>
             )}
         </div>

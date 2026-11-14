@@ -398,6 +398,8 @@ export const ko = {
         uploading: "저장하는 중…",
         saved: "이미지와 설명을 저장했어요",
         retry: "다시 시도",
+        saveAgain: "다시 저장하기",
+        launchPending: "저장이 조금 늦어지고 있어요. 잠시 후 다시 시도해 주세요",
         addCta: "이미지와 설명 추가",
         save: "서명하고 저장하기",
         saveNote: "지갑 서명을 한 번 받아요. 가스는 들지 않아요",

@@ -65,7 +65,21 @@ const str = (v: unknown) => (typeof v === "string" ? v : undefined);
 /** Base64 length bound so an oversized image is rejected before decoding. */
 const MAX_BASE64 = Math.ceil(MAX_IMAGE_BYTES / 3) * 4 + 4;
 
-export async function handlePostMeta(body: unknown, deps: {store: Store; chain: Chain; nowMs: number}): Promise<Result> {
+/** isCurve right after launch can be false because the RPC has not seen the block yet: read it up
+ *  to IS_CURVE_TRIES times, IS_CURVE_GAP_MS apart (about 4.5 s in total). */
+export const IS_CURVE_TRIES = 4;
+export const IS_CURVE_GAP_MS = 1_500;
+export const sleepMs = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+async function isCurveWithRetry(chain: Chain, curve: Address, sleep: (ms: number) => Promise<void>): Promise<boolean> {
+    for (let i = 0; i < IS_CURVE_TRIES; i++) {
+        if (i > 0) await sleep(IS_CURVE_GAP_MS);
+        if (await chain.isCurve(curve)) return true;
+    }
+    return false;
+}
+
+export async function handlePostMeta(body: unknown, deps: {store: Store; chain: Chain; nowMs: number; sleep?: (ms: number) => Promise<void>}): Promise<Result> {
     const {store, chain} = deps;
     if (typeof body !== "object" || body === null) return err(400, ErrorCode.badRequest);
     const b = body as Record<string, unknown>;
@@ -112,10 +126,11 @@ export async function handlePostMeta(body: unknown, deps: {store: Store; chain: 
         return err(401, ErrorCode.badSignature);
     }
 
-    // 4) on chain: a CurveFactory curve whose dev is the signer
+    // 4) on chain: a CurveFactory curve whose dev is the signer. Only reached after every input
+    //    and signature check above, so malformed requests never cost the retried RPC reads.
     let dev: Address;
     try {
-        if (!(await chain.isCurve(curve))) return err(404, ErrorCode.notCurve);
+        if (!(await isCurveWithRetry(chain, curve, deps.sleep ?? sleepMs))) return err(404, ErrorCode.notCurve);
         dev = getAddress(await chain.devOf(curve)) as Address;
     } catch {
         return err(503, ErrorCode.temporary);
