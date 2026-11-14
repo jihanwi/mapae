@@ -62,6 +62,8 @@ abstract contract CurveSaleTestBase is Test {
     /// @dev Concrete suites supply the quote asset and its virtual quote reserve.
     function _deployQuote() internal virtual returns (IERC20 q, uint256 virtualQuote);
 
+    uint32 internal constant PRIORITY_WINDOW = 600;
+
     function setUp() public {
         vm.warp(1_750_000_000);
         (quote, vq) = _deployQuote();
@@ -87,7 +89,8 @@ abstract contract CurveSaleTestBase is Test {
                 mapaeFactory: mapaeFactory,
                 tokenName: "Curve Token",
                 tokenSymbol: "CRV",
-                virtualQuote: vq
+                virtualQuote: vq,
+                priorityWindow: PRIORITY_WINDOW
             })
         );
     }
@@ -237,25 +240,19 @@ abstract contract CurveSaleTestBase is Test {
     // C1 real-name gate
     // ---------------------------------------------------------------------
 
-    function testFuzz_C1_UnverifiedCannotTrade(address who, uint256 amount) public {
+    function testFuzz_C1_priority_UnverifiedCannotBuyInWindow(address who, uint256 amount) public {
         vm.assume(who != address(0) && !dojang.isVerified(who));
         amount = bound(amount, 1, 1e30);
-        vm.startPrank(who);
+        vm.prank(who);
         vm.expectRevert(abi.encodeWithSelector(CurveSale.NotVerified.selector, who));
         curve.buy(amount, 0);
-        vm.expectRevert(abi.encodeWithSelector(CurveSale.NotVerified.selector, who));
-        curve.sell(amount, 0);
-        vm.stopPrank();
     }
 
-    function test_C1_RevertingDojangFailsClosed() public {
+    function test_C1_priority_RevertingDojangFailsClosedInWindow() public {
         CurveSale bad = _newCurve(IDojang(address(new RevertingDojangCS())));
-        vm.startPrank(alice);
+        vm.prank(alice);
         vm.expectRevert(bytes("dojang down"));
         bad.buy(1e18, 0);
-        vm.expectRevert(bytes("dojang down"));
-        bad.sell(1, 0);
-        vm.stopPrank();
     }
 
     // ---------------------------------------------------------------------
@@ -332,7 +329,7 @@ abstract contract CurveSaleTestBase is Test {
         vm.prank(dev);
         curve.buy(small, 0);
         assertEq(curve.verifiedBuyerCount(), 2, "dev never counted");
-        assertTrue(curve.hasBought(dev));
+        assertFalse(curve.countedVerifiedBuyer(dev));
     }
 
     function testFuzz_C7_CountMonotonic(uint256[N_OPS] memory seeds) public {
@@ -428,9 +425,7 @@ abstract contract CurveSaleTestBase is Test {
 
         vm.prank(stranger);
         vm.expectRevert(abi.encodeWithSelector(PoolFactory.NotTokenOffering.selector, stranger, address(curve)));
-        poolFactory.createPool(
-            token, quote, stranger, feeRouter, IFeeRouter.UtilityTier.L0, mapaeFactory, 30, 0, IDojang(address(dojang))
-        );
+        poolFactory.createPool(token, quote, stranger, feeRouter, IFeeRouter.UtilityTier.L0, mapaeFactory, 30, 0);
 
         uint256 closing = _sellOutBudget(curve);
         _fund(bob, closing);
@@ -605,7 +600,8 @@ abstract contract CurveSaleTestBase is Test {
                 mapaeFactory: mapaeFactory,
                 tokenName: "X",
                 tokenSymbol: "X",
-                virtualQuote: 0
+                virtualQuote: 0,
+                priorityWindow: PRIORITY_WINDOW
             })
         );
         vm.expectRevert(CurveSale.ZeroAddress.selector);
@@ -619,7 +615,8 @@ abstract contract CurveSaleTestBase is Test {
                 mapaeFactory: mapaeFactory,
                 tokenName: "X",
                 tokenSymbol: "X",
-                virtualQuote: vq
+                virtualQuote: vq,
+                priorityWindow: PRIORITY_WINDOW
             })
         );
     }

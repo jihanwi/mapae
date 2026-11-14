@@ -69,9 +69,7 @@ contract SponsorshipTest is Test, IBurnerRegistry {
         _burners[address(sponsorship)] = true;
 
         // factory == address(this): this test contract is the burner registry.
-        pool = poolFactory.createPool(
-            token, IERC20(address(krw)), creator, feeRouter, TIER, address(this), 60, 30, IDojang(address(dojang))
-        );
+        pool = poolFactory.createPool(token, IERC20(address(krw)), creator, feeRouter, TIER, address(this), 60, 30);
         token.registerPool(address(pool));
         token.transfer(address(pool), 100e18);
         krw.faucet(1_000_000e18);

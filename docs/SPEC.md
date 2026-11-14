@@ -22,7 +22,7 @@ v3에서 바뀐 컨트랙트 구성과 인터페이스. 숫자는 전부 `src/` 
 | `src/CurveFactory.sol` | 커브 개설, Dev 첫 매수, 발행 빈도 제한, ETH 매수·개설 경로 |
 | `src/MapaeFactory.sol` | 정가 공모 팩토리 + 호가 자산 레지스트리(`allowQuote`, `setQuoteEnabled`) |
 | `src/FeeRouter.sol` | 등급별 AMM 요율 + 커브 요율(`getCurveFees`)과 하드 밴드 |
-| `src/MapaePool.sol` | AMM 풀. 스왑 실명 게이트, 풀 몫 상한 |
+| `src/MapaePool.sol` | AMM 풀. 풀 몫 상한(스왑은 누구나, v3.1) |
 | `src/MembershipToken.sol` | 고정 공급 ERC-20. `endTransferLock()` 추가 |
 | `src/interfaces/IWETH.sol` | WETH 최소 인터페이스(`deposit`, `withdraw`) |
 
@@ -52,11 +52,15 @@ v3에서 바뀐 컨트랙트 구성과 인터페이스. 숫자는 전부 `src/` 
 
 ### CurveSale
 
-- 생성자 `InitParams { quote, dojang, dev, feeRouter, poolFactory, mapaeFactory, tokenName, tokenSymbol, virtualQuote }`.
+- 생성자 `InitParams { quote, dojang, dev, feeRouter, poolFactory, mapaeFactory, tokenName, tokenSymbol, virtualQuote, priorityWindow }`
+  (v3.1에서 `priorityWindow` 추가). `priorityUntil = 생성 시각 + priorityWindow`(immutable).
   생성 시 FeeRouter 커브 요율을 immutable로 스냅샷하고, 토큰을 전송 잠금 `CURVE_LOCK_DURATION = 100 * 365 days`로
   만든 뒤 `TOTAL_SUPPLY` 전량을 자신에게 민트한다(민트 권한 소각).
 - 거래: `buy(quoteIn, minTokensOut)`, `sell(tokenIn, minQuoteOut)`, `buyFor(trader, quoteIn, minTokensOut)`(factory 전용).
-  거래자 실명 게이트(fail-closed), 졸업 후 revert.
+  v3.1 실명 우선 구간: `block.timestamp < priorityUntil`이면 매수자가 실명이어야 한다(아니면 `NotVerified`,
+  Dojang이 revert하면 매수도 revert, fail-closed). `priorityUntil` 이후(같은 시각 포함)에는 누구나 매수한다.
+  이때 실명 여부는 `try isVerified`로만 조회하고, 조회가 revert하면 비실명으로 본다(매수는 막지 않는다).
+  매도는 보유자 누구나(실명 검사 없음). 매수와 매도 모두 졸업 후 revert. view `inPriorityWindow()`.
 - 수수료 청구(t = platform + dev + lpSeed):
   - 매수: `net = quoteIn − floor(quoteIn·t/1e4)`로 커브 계산, 청구액 `P = min(quoteIn, ceil(quoteUsed·1e4/(1e4 − t)))`,
     `fee = P − quoteUsed`, platform·dev는 P 기준 floor, lpSeed는 나머지. 매수자에게서 정확히 P만 가져온다.
@@ -64,7 +68,9 @@ v3에서 바뀐 컨트랙트 구성과 인터페이스. 숫자는 전부 `src/` 
 - 졸업 조건: 커브 완판(`s == CURVE_SUPPLY`) 하나뿐. 그 매수와 같은 tx에서 L0 풀을 만들고(royalty
   `SWAP_FEE_DEV_BPS` 30, burn 0, creator = dev) `DEX_SUPPLY`와 `r + lpSeedAccrued`를 넣어 LP를 0xdEaD로 민트한 뒤
   `endTransferLock()`을 호출한다.
-- 실명 카운트: 주소당 첫 매수에서 `verifiedBuyerCount` 증가, dev는 영구 제외.
+- 실명 카운트(v3.1): 지갑이 실명 상태로 처음 매수할 때만 `verifiedBuyerCount`가 늘고 `VerifiedBuyerCounted`가 나간다
+  (`countedVerifiedBuyer` 매핑, 구간 뒤에도 같은 규칙). 비실명으로 먼저 산 지갑은 나중에 실명이 되어 다시 살 때 한 번
+  센다. dev는 영구 제외. `Buy` 이벤트에 그 매수 시점의 실명 여부 `verified`가 들어간다(구간 안에서는 항상 true).
 - 인출: `claimDevFees()`(dev 전용), `sweepPlatformFees()`(누구나 호출, treasury로). 졸업 후에도 동작.
 - view: `quoteBuy`, `quoteSell`(실행과 wei 단위 일치), `spotPrice`, `token`, `settlementToken`(= quote),
   `phase`(졸업 전 Open, 후 Settled), `tier`(항상 L0), `totalFeeBps`.
@@ -77,6 +83,9 @@ v3에서 바뀐 컨트랙트 구성과 인터페이스. 숫자는 전부 `src/` 
   `devBuyQuoteIn > 0`이면 같은 tx에서 `buyFor(dev, ...)`로 Dev 첫 매수, 미사용분 환불, allowance 0 복구.
 - `createCurveWithETH(name, symbol, minTokensOut)`(payable): quote = WETH, Dev 첫 매수 금액 = msg.value.
 - `buyWithETH(curve, minTokensOut)`(payable): WETH 커브만, 미사용분은 ETH로 환불. `receive()`는 WETH만 받는다.
+- 실명 우선 구간(v3.1): `priorityWindow`(기본 600초, 밴드 60~3600, `setPriorityWindow` owner 전용,
+  `PriorityWindowSet(old, new)`, 밴드 밖은 `PriorityWindowOutOfBand`). 개설 시점 값이 커브에 고정되고, 바꿔도 이미 열린
+  커브에는 영향이 없다. `CurveCreated` 끝에 `uint64 priorityUntil`.
 - 발행 빈도: 실명 지갑당 연속 7일(`CURVE_WINDOW`) 안 최대 3개(`MAX_CURVES_PER_WINDOW`).
 - 이름 1~32 bytes(`MAX_NAME_BYTES`), 심볼 1~10 bytes(`MAX_SYMBOL_BYTES`).
 - `setCurveEnabled`(onlyOwner): 새 커브 개설만 막는다.
@@ -127,9 +136,10 @@ L1 `(750, 40, 60, 30, 20, 400)`, L2 `(750, 40, 60, 30, 20, 300)`.
 ### 전송·실명 규칙
 
 - 커브 토큰은 졸업 전 커브와의 왕복 전송만 허용(`MembershipToken`: 잠금 중 `to == offering` 예외), 졸업 시 해제.
-- `MapaePool.swapQuoteForToken` / `swapTokenForQuote`는 전 등급에서 호출자와 수령자 모두 실명이어야 한다.
-  `swapForBurn`(등록 burner), `convertAndBurn`, `mint`, `burn`은 게이트 없음.
-- `MapaePool`, `PoolFactory.createPool`은 dojang 0 주소로 만들 수 없다.
+- v3.1: `MapaePool.swapQuoteForToken` / `swapTokenForQuote`는 전 등급에서 누구나 호출할 수 있다(실명 게이트 제거,
+  `MapaePool`과 `PoolFactory.createPool`에서 dojang 인자 삭제). `swapForBurn`(등록 burner만), `convertAndBurn`,
+  요율 하드캡, LP 영구 락업은 그대로다.
+- 실명이 필요한 곳(v3.1): 커브 개설(개설자), 실명 우선 구간 안의 커브 매수, L1 정가 공모 응모(`Offering`).
 
 ## v5.2 변경 (Milestone A · 코어) — 이 절이 하위 절과 상충 시 **우선**
 

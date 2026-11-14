@@ -32,6 +32,9 @@ contract CurveFactory is Ownable, ReentrancyGuard {
     uint256 public constant CURVE_WINDOW = 7 days;
     uint256 public constant MAX_NAME_BYTES = 32;
     uint256 public constant MAX_SYMBOL_BYTES = 10;
+    /// @notice Band for priorityWindow (seconds).
+    uint32 public constant MIN_PRIORITY_WINDOW = 60;
+    uint32 public constant MAX_PRIORITY_WINDOW = 3600;
 
     error ZeroAddress();
     error CurvesDisabled();
@@ -45,8 +48,10 @@ contract CurveFactory is Ownable, ReentrancyGuard {
     error ZeroValue();
     error EthRefundFailed();
     error DirectEthRejected();
+    error PriorityWindowOutOfBand(uint32 window);
 
     event CurveEnabledSet(bool enabled);
+    event PriorityWindowSet(uint32 oldWindow, uint32 newWindow);
     event CurveCreated(
         address indexed dev,
         address indexed curve,
@@ -54,7 +59,8 @@ contract CurveFactory is Ownable, ReentrancyGuard {
         address quote,
         uint256 virtualQuote,
         string name,
-        string symbol
+        string symbol,
+        uint64 priorityUntil
     );
 
     IDojang public immutable dojang;
@@ -66,6 +72,9 @@ contract CurveFactory is Ownable, ReentrancyGuard {
 
     /// @notice New-curve kill switch. Existing curves keep trading and graduating.
     bool public curveEnabled = true;
+    /// @notice Real-name priority window given to each new curve (seconds after creation during
+    ///         which only Dojang-verified wallets may buy). Changing it never affects open curves.
+    uint32 public priorityWindow = 600;
 
     address[] internal _allCurves;
     mapping(address dev => address[] curves) internal _curvesByDev;
@@ -106,6 +115,13 @@ contract CurveFactory is Ownable, ReentrancyGuard {
         emit CurveEnabledSet(enabled);
     }
 
+    /// @notice Priority window for curves opened from now on, within [60, 3600] seconds.
+    function setPriorityWindow(uint32 window) external onlyOwner {
+        if (window < MIN_PRIORITY_WINDOW || window > MAX_PRIORITY_WINDOW) revert PriorityWindowOutOfBand(window);
+        emit PriorityWindowSet(priorityWindow, window);
+        priorityWindow = window;
+    }
+
     /// @notice Open a curve. `devBuyQuoteIn > 0` performs the dev first buy in the same tx
     ///         (may sell out and graduate the curve immediately).
     function createCurve(
@@ -131,8 +147,8 @@ contract CurveFactory is Ownable, ReentrancyGuard {
         if (msg.value > 0) _ethBuy(CurveSale(curve), minTokensOut);
     }
 
-    /// @notice Buy on a WETH-quoted curve with native ETH. The real-name gate is enforced by
-    ///         CurveSale.buyFor on msg.sender (fail-closed). Unspent ETH is refunded.
+    /// @notice Buy on a WETH-quoted curve with native ETH. The priority window is enforced by
+    ///         CurveSale.buyFor on msg.sender. Unspent ETH is refunded.
     function buyWithETH(CurveSale curve, uint256 minTokensOut)
         external
         payable
@@ -195,7 +211,8 @@ contract CurveFactory is Ownable, ReentrancyGuard {
                 mapaeFactory: address(mapaeFactory),
                 tokenName: name,
                 tokenSymbol: symbol,
-                virtualQuote: virtualQuote
+                virtualQuote: virtualQuote,
+                priorityWindow: priorityWindow
             })
         );
         curve = address(c);
@@ -206,7 +223,7 @@ contract CurveFactory is Ownable, ReentrancyGuard {
         curveOf[token] = curve;
         devOf[token] = msg.sender;
         isCurve[curve] = true;
-        emit CurveCreated(msg.sender, curve, token, address(quote), virtualQuote, name, symbol);
+        emit CurveCreated(msg.sender, curve, token, address(quote), virtualQuote, name, symbol, c.priorityUntil());
     }
 
     /// @dev Pull → approve → buyFor(dev) → refund unspent → reset allowance. Ends with zero

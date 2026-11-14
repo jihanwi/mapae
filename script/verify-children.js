@@ -12,7 +12,12 @@
 //
 // v3: constructor signatures match `forge inspect <Contract> abi` (T12). Offering, OfferingDeployer
 // and CurveSale link the MembershipTokenDeployer library, so their verification passes
-// --libraries; the address comes from --library or deployments/giwa-sepolia-v3.json.
+// --libraries; the address comes from --library or the deployment json (--deployment, default
+// deployments/giwa-sepolia-v3_1.json when present, else deployments/giwa-sepolia-v3.json).
+//
+// v3.1: MapaePool lost its trailing dojang argument, CurveSale.InitParams gained a trailing
+// uint32 priorityWindow (recovered as priorityUntil - creation block timestamp) and CurveCreated
+// gained a trailing uint64 priorityUntil.
 //
 //   node script/verify-children.js --rpc $GIWA_SEPOLIA_RPC_URL --verifier-url $BLOCKSCOUT_API_URL \
 //     --from-block <deployBlock> [--factory <MapaeFactory>] [--curve-factory <CurveFactory>] [--library <addr>]
@@ -30,18 +35,21 @@ const args = Object.fromEntries(
 );
 const USAGE =
     "usage: node script/verify-children.js --rpc <url> --verifier-url <url> --from-block <n> " +
-    "[--factory <MapaeFactory>] [--curve-factory <CurveFactory>] [--library <MembershipTokenDeployer>]";
+    "[--factory <MapaeFactory>] [--curve-factory <CurveFactory>] [--library <MembershipTokenDeployer>] " +
+    "[--deployment <json>]";
 if (!args.rpc || !args["verifier-url"] || (!args.factory && !args["curve-factory"])) {
     console.error(USAGE);
     process.exit(1);
 }
 if (args["from-block"] === undefined) {
-    console.error("--from-block is required (use deployBlock from deployments/giwa-sepolia-v3.json)\n" + USAGE);
+    console.error("--from-block is required (use deployBlock from the deployment json)\n" + USAGE);
     process.exit(1);
 }
 
-// MembershipTokenDeployer (linked library) address: --library, else the v3 deployment json.
-const V3_JSON = "deployments/giwa-sepolia-v3.json";
+// MembershipTokenDeployer (linked library) address: --library, else the deployment json.
+const V3_JSON =
+    args.deployment ??
+    (existsSync("deployments/giwa-sepolia-v3_1.json") ? "deployments/giwa-sepolia-v3_1.json" : "deployments/giwa-sepolia-v3.json");
 const library =
     args.library ??
     (existsSync(V3_JSON) ? JSON.parse(readFileSync(V3_JSON, "utf8")).membershipTokenDeployer : undefined);
@@ -87,21 +95,21 @@ const logs = args.factory
     ? scan(args.factory, "OfferingCreated(address,address,address,address,address,address)", "OfferingCreated")
     : [];
 const curveLogs = args["curve-factory"]
-    ? scan(args["curve-factory"], "CurveCreated(address,address,address,address,uint256,string,string)", "CurveCreated")
+    ? scan(args["curve-factory"], "CurveCreated(address,address,address,address,uint256,string,string,uint64)", "CurveCreated")
     : [];
 
 // v3 constructor signatures (checked against `forge inspect <Contract> abi`):
 // OfferingParams lost platformTokenBps and recipients.reserve (decision 21) → recipients is
-// (creatorVesting, platform); MapaePool gained the trailing dojang; CurveSale takes InitParams
-// (quote, dojang, dev, feeRouter, poolFactory, mapaeFactory, tokenName, tokenSymbol, virtualQuote).
+// (creatorVesting, platform); MapaePool had a trailing dojang (removed in v3.1); CurveSale takes InitParams
+// (quote, dojang, dev, feeRouter, poolFactory, mapaeFactory, tokenName, tokenSymbol, virtualQuote, priorityWindow).
 const OFFERING_CTOR =
     "constructor((address,address,address,address,string,string,uint256,uint256,uint256,uint256,uint256,uint256,uint16,uint16,uint16,uint16,uint16,uint8,uint256,uint16,address,address,uint8,address,(address,address)))";
 const TOKEN_CTOR = "constructor(string,string,address,uint256,uint16,address[])";
 const RM_CTOR = "constructor(address,address,address,address,uint8,address)";
 const VESTING_CTOR = "constructor(address,uint64,uint64,uint64,uint8)";
 const SPONSORSHIP_CTOR = "constructor(address,address,address,uint16,uint16,uint8,address)";
-const POOL_CTOR = "constructor(address,address,address,address,uint8,address,uint16,uint16,address)";
-const CURVE_CTOR = "constructor((address,address,address,address,address,address,string,string,uint256))";
+const POOL_CTOR = "constructor(address,address,address,address,uint8,address,uint16,uint16)";
+const CURVE_CTOR = "constructor((address,address,address,address,address,address,string,string,uint256,uint32))";
 
 function verify(addr, contractPath, ctorSig, ctorValues, extraFlags = []) {
     const argFlags =
@@ -140,9 +148,8 @@ function verifyPool(pool, token, quote, creator) {
     const poolBurnerFactory = call(pool, "factory()(address)");
     const poolRoyaltyBps = call(pool, "royaltyBps()(uint16)");
     const poolBurnBps = call(pool, "burnBps()(uint16)");
-    const poolDojang = call(pool, "dojang()(address)");
     return verify(pool, "src/MapaePool.sol:MapaePool", POOL_CTOR, [
-        token, quote, creator, poolFeeRouter, poolTier, poolBurnerFactory, poolRoyaltyBps, poolBurnBps, poolDojang,
+        token, quote, creator, poolFeeRouter, poolTier, poolBurnerFactory, poolRoyaltyBps, poolBurnBps,
     ]);
 }
 
@@ -236,7 +243,7 @@ for (const log of logs) {
     verifyPool(pool, token, paymentToken, creator) ? ok++ : fail++;
 }
 
-// ---- Curve path: CurveCreated(dev, curve, token, quote, virtualQuote, name, symbol) ----
+// ---- Curve path: CurveCreated(dev, curve, token, quote, virtualQuote, name, symbol, priorityUntil) ----
 let curvePools = 0;
 const pendingCurves = [];
 for (const log of curveLogs) {
@@ -251,8 +258,12 @@ for (const log of curveLogs) {
     const virtualQuote = num(call(curve, "virtualQuote()(uint256)"));
     const name = JSON.parse(call(token, "name()(string)"));
     const symbol = JSON.parse(call(token, "symbol()(string)"));
+    // priorityWindow is not stored: priorityUntil = creation block timestamp + priorityWindow.
+    const priorityUntil = BigInt(num(call(curve, "priorityUntil()(uint64)")));
+    const createdAt = BigInt(cast("block", String(parseInt(log.blockNumber, 16)), "--field", "timestamp", "--rpc-url", args.rpc));
+    const priorityWindow = (priorityUntil - createdAt).toString();
     const initTuple =
-        `(${quote},${dojang},${dev},${feeRouter},${poolFactory},${mapaeFactory},"${name}","${symbol}",${virtualQuote})`;
+        `(${quote},${dojang},${dev},${feeRouter},${poolFactory},${mapaeFactory},"${name}","${symbol}",${virtualQuote},${priorityWindow})`;
     verify(curve, "src/CurveSale.sol:CurveSale", CURVE_CTOR, [initTuple], LIB_FLAGS) ? ok++ : fail++;
 
     // token: MembershipToken(name, symbol, curve, CURVE_LOCK_DURATION, 0, [])

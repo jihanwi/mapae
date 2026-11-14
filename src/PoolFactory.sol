@@ -5,7 +5,6 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {MapaePool} from "./MapaePool.sol";
 import {MembershipToken} from "./MembershipToken.sol";
 import {IFeeRouter} from "./interfaces/IFeeRouter.sol";
-import {IDojang} from "./interfaces/IDojang.sol";
 
 /// @title PoolFactory
 /// @notice One MapaePool per MembershipToken (D7). Creation is restricted to
@@ -15,7 +14,6 @@ import {IDojang} from "./interfaces/IDojang.sol";
 contract PoolFactory {
     error PoolExists(address token, address pool);
     error NotTokenOffering(address caller, address offering);
-    error ZeroDojang();
 
     event PoolCreated(address indexed token, address indexed pool, address indexed creator);
 
@@ -30,16 +28,14 @@ contract PoolFactory {
         IFeeRouter.UtilityTier tier,
         address factory,
         uint16 royaltyBps,
-        uint16 burnBps,
-        IDojang dojang
+        uint16 burnBps
     ) external returns (MapaePool pool) {
-        if (address(dojang) == address(0)) revert ZeroDojang();
         if (poolOf[address(token)] != address(0)) {
             revert PoolExists(address(token), poolOf[address(token)]);
         }
         if (msg.sender != token.offering()) revert NotTokenOffering(msg.sender, token.offering());
 
-        pool = new MapaePool(token, quote, creator, feeRouter, tier, factory, royaltyBps, burnBps, dojang);
+        pool = new MapaePool(token, quote, creator, feeRouter, tier, factory, royaltyBps, burnBps);
         poolOf[address(token)] = address(pool);
         _allPools.push(address(pool));
         emit PoolCreated(address(token), address(pool), creator);

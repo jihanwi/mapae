@@ -70,7 +70,7 @@ contract RefundRejecter {
 contract CurveFactoryETHTest is MapaeFactoryTestBase {
     uint16 internal constant BPS = 10_000;
     bytes32 internal constant BUY_SIG =
-        keccak256("Buy(address,bool,uint256,uint256,uint256,uint256,uint256,uint256,uint256)");
+        keccak256("Buy(address,bool,bool,uint256,uint256,uint256,uint256,uint256,uint256,uint256)");
 
     TestWETH9 internal weth;
     CurveFactory internal cf;
@@ -228,7 +228,7 @@ contract CurveFactoryETHTest is MapaeFactoryTestBase {
         assertGt(MembershipToken(t1).balanceOf(buyer), 0);
         assertLe(spent, 0.2 ether);
         assertEq(CurveSale(c1).verifiedBuyerCount(), 0, "dev first buy not counted");
-        assertTrue(CurveSale(c1).hasBought(buyer));
+        assertFalse(CurveSale(c1).countedVerifiedBuyer(buyer), "dev never counted");
         _assertFactoryClean(c1);
 
         // sells out inside the create tx; excess refunded

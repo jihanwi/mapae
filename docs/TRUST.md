@@ -35,12 +35,16 @@ v3(실명 본딩커브 레일 + 정가 공모)의 신뢰 구조와 한계를 적
 | 경로 | 게이트 |
 |---|---|
 | `CurveFactory.createCurve` / `createCurveWithETH` | 개설자 `isVerified` |
-| `CurveSale.buy` / `sell` / `buyFor` | 거래자 `isVerified` |
-| `MapaePool.swapQuoteForToken` / `swapTokenForQuote` (전 등급) | 호출자와 수령자(다를 때) 모두 `isVerified` |
+| `CurveSale.buy` / `buyFor` (v3.1) | 실명 우선 구간(`block.timestamp < priorityUntil`, 기본 10분) 안에서만 매수자 `isVerified`. 구간 뒤에는 누구나 |
+| `CurveSale.sell` (v3.1) | 게이트 없음. 보유자 누구나 |
+| `MapaePool.swapQuoteForToken` / `swapTokenForQuote` (v3.1, 전 등급) | 게이트 없음. 누구나 |
+| `Offering` 응모 (L1 정가 공모) | 응모자 `isVerified` (변경 없음) |
 | `MapaePool.swapForBurn` | 게이트 없음. MapaeFactory 등록 burner(Sponsorship, BuybackVault)만 호출 가능 |
 | `MapaePool.convertAndBurn` | 게이트 없음. 출력 전량 소각 |
 
-Dojang 조회가 revert하면 해당 호출도 revert한다(fail-closed, try/catch 없음).
+Dojang 조회가 revert하면 해당 호출도 revert한다(fail-closed, try/catch 없음). 예외는 실명 우선 구간이 끝난 뒤의 커브
+매수다(v3.1): 이때 실명 여부는 집계(`verifiedBuyerCount`)와 `Buy.verified` 표시에만 쓰이므로, 조회가 revert해도 매수는
+진행하고 비실명으로 기록한다. 구간 안에서는 실명이 매수 조건이라 fail-closed를 유지한다.
 
 ### 풀 총 스왑 요율 하드캡 (결정 28)
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-// MAPAE v3 on-chain curve demo (mock stack from deployments/giwa-sepolia-v3.json). No time
+// MAPAE v3 on-chain curve demo (mock stack from DEMO_DEPLOYMENT, default deployments/giwa-sepolia-v3_1.json). No time
 // conditions (no vm.warp), so it broadcasts as-is on a live chain:
 //
 //   forge script script/DemoCurve.s.sol --account deployer --sender <deployer-addr> --rpc-url $GIWA_SEPOLIA_RPC_URL --broadcast --slow
@@ -61,7 +61,7 @@ contract DemoCurve is Script {
     }
 
     function run() external {
-        string memory dep = vm.readFile("deployments/giwa-sepolia-v3.json");
+        string memory dep = vm.readFile(vm.envOr("DEMO_DEPLOYMENT", string("deployments/giwa-sepolia-v3_1.json")));
         (, address operator,) = vm.readCallers();
         Ctx memory c = Ctx({
             operator: operator,
