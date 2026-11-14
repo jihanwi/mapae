@@ -2,8 +2,8 @@
 // per-curve aggregation, market cap comparison and the six list sort orders. Tested in
 // activity.test.ts. Amounts are raw 18-decimals bigints; nothing is converted to floating point.
 import {decodeEventLog, encodeEventTopics, Hex} from "viem";
-import {CurveSaleAbi, MapaePoolV3Abi} from "../contracts/abisV3";
-import {marketCapQuote, progressBps, TOTAL_SUPPLY, WAD} from "./curveMath";
+import {CurveSaleAbi, MapaePoolV3Abi} from "../contracts/abisV3.js"; // .js: also imported by Vercel Functions (ESM)
+import {marketCapQuote, progressBps, TOTAL_SUPPLY, WAD} from "./curveMath.js";
 
 type Address = `0x${string}`;
 const lc = (a: string) => a.toLowerCase();
