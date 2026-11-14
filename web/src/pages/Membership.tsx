@@ -132,7 +132,7 @@ function Empty() {
                 <div className="text-[17px] font-bold mb-1">{copy.membership.empty}</div>
                 <div className="text-[13px] text-hanji-400">진행 중인 공모에 응모하면 여기에 표시돼요</div>
             </div>
-            <Link to="/"><PrimaryBtn>{copy.membership.emptyCta}</PrimaryBtn></Link>
+            <Link to="/offerings"><PrimaryBtn>{copy.membership.emptyCta}</PrimaryBtn></Link>
         </div>
     );
 }

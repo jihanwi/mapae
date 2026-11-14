@@ -1,13 +1,43 @@
 import {formatUnits} from "viem";
 
-/** 18-decimals → "1,234,567" (소수점은 유효할 때만, 최대 dp자리) */
-export function fmt(wei: bigint, dp = 2): string {
+/** 18-decimals → "1,234,567" (소수점은 유효할 때만, 최대 dp자리). locale: BCP 47 (v3 passes the UI language). */
+export function fmt(wei: bigint, dp = 2, locale = "en-US"): string {
     const s = formatUnits(wei, 18);
     const [i, f] = s.split(".");
-    const int = BigInt(i).toLocaleString("en-US");
+    const int = BigInt(i).toLocaleString(locale);
     if (!f || dp === 0) return int;
     const frac = f.slice(0, dp).replace(/0+$/, "");
     return frac ? `${int}.${frac}` : int;
+}
+
+/** Like fmt, but rounds up at `dp`. For amounts the user pays (charged amount, fees, cost to
+ *  graduate / sell out, KRWs needed), so entering the shown amount is never 1 unit short.
+ *  A value that is exact at `dp` stays unchanged. */
+export function fmtCeil(wei: bigint, dp = 2, locale = "en-US"): string {
+    if (dp >= 18) return fmt(wei, 18, locale);
+    const step = 10n ** BigInt(18 - dp);
+    const up = ((wei + step - 1n) / step) * step;
+    return fmt(up, dp, locale);
+}
+
+/** Like fmt, but rounds half-up at `dp` instead of truncating. Display only for prices and market
+ *  cap; amounts the user pays, receives or holds keep fmt (floor) so they never look larger. */
+export function fmtRound(wei: bigint, dp = 2, locale = "en-US"): string {
+    if (dp >= 18) return fmt(wei, 18, locale);
+    const step = 10n ** BigInt(18 - dp);
+    const rounded = ((wei + step / 2n) / step) * step;
+    return fmt(rounded, dp, locale);
+}
+
+/** 18-decimals → up to `sig` significant digits, rounded half-up (for tiny curve prices such as
+ *  0.000000000562 ETH). Prices only; see fmtRound. */
+export function fmtSig(wei: bigint, sig = 4, locale = "en-US"): string {
+    if (wei === 0n) return "0";
+    const s = formatUnits(wei, 18);
+    const [i, f = ""] = s.split(".");
+    if (i !== "0") return fmtRound(wei, Math.max(0, sig - i.length), locale);
+    const lead = f.length - f.replace(/^0+/, "").length;
+    return fmtRound(wei, Math.min(18, lead + sig), locale);
 }
 
 export const shortAddr = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
@@ -29,4 +59,9 @@ export function countdown(deadline: bigint, now: number): string {
     const p = (n: number) => String(n).padStart(2, "0");
     const hms = `${p(Math.floor(left / 3600) % 24)}:${p(Math.floor(left / 60) % 60)}:${p(left % 60)}`;
     return `D-${d} ${hms}`;
+}
+
+/** Date/time in the UI locale (e.g. the next allowed curve creation time). */
+export function fmtDateTime(unixSeconds: bigint | number, locale: string): string {
+    return new Date(Number(unixSeconds) * 1000).toLocaleString(locale);
 }

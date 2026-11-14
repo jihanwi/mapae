@@ -44,7 +44,9 @@ contract DemoStage2bL1 is Script {
         if (bundle == 0 || bundle == 1) {
             _settleAndClaim(off, token);
             _swapAndSponsor(
-                off, krw, Sponsorship(MapaeFactory(vm.parseJsonAddress(dep, "$.factoryMock")).sponsorshipOf(address(off)))
+                off,
+                krw,
+                Sponsorship(MapaeFactory(vm.parseJsonAddress(dep, "$.factoryMock")).sponsorshipOf(address(off)))
             );
         }
         if (bundle == 0 || bundle == 2) _creatorSetup(rm, vault);

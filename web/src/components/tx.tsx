@@ -2,8 +2,8 @@ import {createContext, useCallback, useContext, useState, ReactNode} from "react
 import {useQueryClient} from "@tanstack/react-query";
 import {useAccount, usePublicClient} from "wagmi";
 import {explorerTx, giwaSepolia} from "../config/chain";
-import {humanError} from "../lib/errors";
-import {copy} from "../copy";
+import {humanError, revertName} from "../lib/errors";
+import {useCopy} from "../copy";
 import {PrimaryBtn, SecondaryBtn} from "./ui";
 
 type Toast = {id: number; kind: "pending" | "success" | "error"; text: string; hash?: string};
@@ -26,6 +26,7 @@ export function useToast() {
 }
 
 export function ToastProvider({children}: {children: ReactNode}) {
+    const tr = useCopy();
     const [toasts, setToasts] = useState<Toast[]>([]);
     const [busyCount, setBusyCount] = useState(0);
     const push = useCallback((t: Omit<Toast, "id">) => {
@@ -52,7 +53,7 @@ export function ToastProvider({children}: {children: ReactNode}) {
                         </div>
                         {t.hash && (
                             <a href={explorerTx(t.hash)} target="_blank" rel="noreferrer" className="text-brass-400 text-[12px] hover:text-hanji-100">
-                                {copy.tx.viewOnChain}
+                                {tr.tx.viewOnChain}
                             </a>
                         )}
                     </div>
@@ -63,10 +64,13 @@ export function ToastProvider({children}: {children: ReactNode}) {
 }
 
 export type TxPhase = "idle" | "wallet" | "confirming";
-export type RunFn = (label: string, fn: () => Promise<`0x${string}`>) => Promise<boolean>;
+/** scope "v3": v3 error copy; onRevert: called with the decoded custom error name on failure. */
+export type RunOpts = {scope?: "v3"; onRevert?: (errorName: string | undefined) => void};
+export type RunFn = (label: string, fn: () => Promise<`0x${string}`>, opts?: RunOpts) => Promise<boolean>;
 
 /** 트랜잭션 실행 훅 — 3단계 상태(서명 대기 → 컨펌 대기 → 완료) + 토스트 + 쿼리 무효화 */
 export function useTx() {
+    const tr = useCopy();
     const {push, update, setBusyCount} = useContext(ToastCtx);
     const client = usePublicClient();
     const qc = useQueryClient();
@@ -74,31 +78,32 @@ export function useTx() {
     const [phase, setPhase] = useState<TxPhase>("idle");
 
     const run: RunFn = useCallback(
-        async (label, fn) => {
+        async (label, fn, opts) => {
             // H1: 어떤 경로로도 무음 실패 금지. fn은 커넥터 기반
             // writeContractAsync라 wallet client 체크 자체가 불필요 —
             // 영수증 대기용 publicClient만 확인하고, 없으면 안내 토스트.
             if (!client) {
-                push({kind: "error", text: copy.tx.notReady});
+                push({kind: "error", text: tr.tx.notReady});
                 return false;
             }
             setBusy(true);
             setBusyCount((n) => n + 1);
             setPhase("wallet"); // ① 지갑 서명 대기
-            const id = push({kind: "pending", text: `${label} — ${copy.tx.pendingWallet}`});
+            const id = push({kind: "pending", text: `${label} — ${tr.tx.pendingWallet}`});
             try {
                 const hash = await fn();
                 setPhase("confirming"); // ② 컨펌 대기
-                update(id, {kind: "pending", text: `${label} — ${copy.tx.pendingTx}`, hash});
+                update(id, {kind: "pending", text: `${label} — ${tr.tx.pendingTx}`, hash});
                 const receipt = await client.waitForTransactionReceipt({hash});
                 if (receipt.status !== "success") throw new Error("reverted");
-                update(id, {kind: "success", text: `${label} — ${copy.tx.success}`, hash}); // ③ 완료 (H3)
+                update(id, {kind: "success", text: `${label} — ${tr.tx.success}`, hash}); // ③ 완료 (H3)
                 await qc.invalidateQueries();
                 // 9-f: 로그(이벤트) 인덱싱이 늦는 경우 대비해 잠시 뒤 한 번 더 무효화 → 피드/카운터 즉시 갱신
                 setTimeout(() => { void qc.invalidateQueries(); }, 4000);
                 return true;
             } catch (e) {
-                update(id, {kind: "error", text: humanError(e)}); // ③′ 실패 — 버튼은 finally에서 복원
+                update(id, {kind: "error", text: humanError(e, tr, opts?.scope)}); // ③′ 실패 — 버튼은 finally에서 복원
+                opts?.onRevert?.(revertName(e));
                 return false;
             } finally {
                 setPhase("idle");
@@ -106,7 +111,7 @@ export function useTx() {
                 setBusyCount((n) => n - 1);
             }
         },
-        [client, push, update, qc, setBusyCount]
+        [client, push, update, qc, setBusyCount, tr]
     );
     return {run, busy, phase};
 }
@@ -126,13 +131,14 @@ export function TxButton({
     className?: string;
     children: ReactNode;
 }) {
+    const tr = useCopy();
     const {run, busy, phase} = useTx();
     const globalBusy = useGlobalTxBusy();
     const {isConnected, chainId} = useAccount();
     const wrongChain = isConnected && chainId !== giwaSepolia.id; // #7: 잘못된 네트워크에선 tx 차단
     const label = wrongChain
-        ? copy.hints.switchChain
-        : phase === "wallet" ? copy.tx.pendingWallet : phase === "confirming" ? copy.tx.pendingTx : children;
+        ? tr.hints.switchChain
+        : phase === "wallet" ? tr.tx.pendingWallet : phase === "confirming" ? tr.tx.pendingTx : children;
     const Btn = variant === "primary" ? PrimaryBtn : SecondaryBtn;
     return (
         <Btn className={className} disabled={disabled || busy || globalBusy || wrongChain} onClick={() => void action(run)}>

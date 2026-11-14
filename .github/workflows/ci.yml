@@ -4,11 +4,43 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+  pull-requests: read # dorny/paths-filter reads the PR file list through the API
+
 env:
   FOUNDRY_PROFILE: default
 
 jobs:
-  check:
+  # Decide per job whether it needs to run. Path filters live here (not in the workflow-level
+  # `paths`) so the workflow always runs and every job reports a status: a job skipped by its
+  # `if` counts as passed for required checks, while a workflow that never starts stays pending.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      contracts: ${{ steps.filter.outputs.contracts }}
+      web: ${{ steps.filter.outputs.web }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            contracts:
+              - 'src/**'
+              - 'test/**'
+              - 'script/**'
+              - 'lib/**'
+              - 'foundry.toml'
+              - 'deployments/**'
+              - '.github/workflows/**'
+            web:
+              - 'web/**'
+              - '.github/workflows/**'
+
+  contracts:
+    needs: changes
+    if: needs.changes.outputs.contracts == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -39,3 +71,41 @@ jobs:
         run: |
           npm ci
           npm test
+
+  web:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    env:
+      VITE_BASE: /
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+      - run: npx tsc -b
+      - run: npm run build
+      - run: npx vitest run
+
+  # Single stable check to mark as required: passes when every job either passed or was skipped
+  # by its path filter, fails when any job failed or was cancelled.
+  ci-ok:
+    needs: [changes, contracts, web]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: All jobs passed or were skipped
+        run: |
+          echo "changes=${{ needs.changes.result }} contracts=${{ needs.contracts.result }} web=${{ needs.web.result }}"
+          if [[ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" == "true" ]]; then
+            exit 1
+          fi

@@ -5,8 +5,12 @@ import {WagmiProvider} from "wagmi";
 import {QueryClient, QueryClientProvider} from "@tanstack/react-query";
 import {wagmiConfig} from "./config/wagmi";
 import {ToastProvider} from "./components/tx";
+import {LangProvider} from "./copy";
 import App from "./App";
 import Home from "./pages/Home";
+import Curves from "./pages/Curves";
+import Token from "./pages/Token";
+import Create from "./pages/Create";
 import Offering from "./pages/Offering";
 import Membership from "./pages/Membership";
 import Redeem from "./pages/Redeem";
@@ -22,7 +26,10 @@ const router = createHashRouter([
         element: <App />,
         errorElement: <NotFound />, // 6-b: 렌더/로더 에러 폴백
         children: [
-            {index: true, element: <Home />},
+            {index: true, element: <Curves />}, // v3 curve list
+            {path: "t/:curve", element: <Token />}, // v3 token page
+            {path: "create", element: <Create />}, // v3 curve creation
+            {path: "offerings", element: <Home />}, // legacy fixed-price offerings (was "/")
             {path: "offering/:addr", element: <Offering />},
             {path: "membership", element: <Membership />},
             {path: "redeem", element: <Redeem />},
@@ -36,9 +43,11 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
         <WagmiProvider config={wagmiConfig}>
             <QueryClientProvider client={qc}>
-                <ToastProvider>
-                    <RouterProvider router={router} />
-                </ToastProvider>
+                <LangProvider>
+                    <ToastProvider>
+                        <RouterProvider router={router} />
+                    </ToastProvider>
+                </LangProvider>
             </QueryClientProvider>
         </WagmiProvider>
     </React.StrictMode>
