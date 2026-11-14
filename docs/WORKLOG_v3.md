@@ -289,22 +289,21 @@ Dev 0.30 / LP 0.30. `CurvePresets` 의 `CURVE_FEE_*`, `SWAP_FEE_*` 상수와 일
 
 | 테스트 | 내용 | 지시서 v3.1 |
 |---|---|---|
-| C1 | 미검증 주소 buy/sell revert, Dojang revert 시 fail-closed | (매핑 대기) |
-| C2 | 졸업 전 quote 잔고 = r + 적립 3종, 토큰 잔고 = TOTAL − s | (매핑 대기) |
-| C3 | 매수자 잔고 감소 = quoteSpent ≤ quoteIn, 과대 마감 매수도 필요분만 | (매핑 대기) |
-| C4 | platform + dev + lpSeed = fee, 식 일치, quoteBuy/quoteSell = 실행 | (매핑 대기) |
+| C1 | 미검증 주소 buy/sell revert, Dojang revert 시 fail-closed | **26** (매수·매도) |
+| C2 | 졸업 전 quote 잔고 = r + 적립 3종, 토큰 잔고 = TOTAL − s | **18** |
+| C3 | 매수자 잔고 감소 = quoteSpent ≤ quoteIn, 과대 마감 매수도 필요분만 | **19** |
+| C4 | platform + dev + lpSeed = fee, 식 일치, quoteBuy/quoteSell = 실행 | — |
 | C5 | treasury 토큰 잔고 0, dev 토큰 = 직접 매수 − 매도 | **17** (treasury 토큰 0) |
-| C6 | 실명 지갑 1개가 1회 매수로 셀프졸업 | (매핑 대기) |
-| C7 | 실명 카운트 주소당 1회, dev 제외, 단조 | (매핑 대기) |
+| C6 | 실명 지갑 1개가 1회 매수로 셀프졸업 | **20** |
+| C7 | 실명 카운트 주소당 1회, dev 제외, 단조 | **21** |
 | C8 | LP 전량 dEaD, 풀 준비금 = DEX / r + lpSeed, 풀 스팟 ≥ 커브 종가 | **23** |
-| C9 | 졸업 전 보유자 간 전송 revert, 제3자 createPool revert, 졸업 후 전송 | (매핑 대기) |
-| C10 | 졸업 후 buy/sell revert, 수수료 인출 정상, 풀 스왑·totalFeeBps 100 | (매핑 대기) |
-| C11 | 전원 전량 매도 시 모두 지급, r = s = 0, 적립금 유지 | (매핑 대기) |
-| C12 | 슬리피지·tokensOut 0 revert | (매핑 대기) |
-| C13 | claimDevFees dev 만, sweep 은 treasury 로만 | (매핑 대기) |
+| C9 | 졸업 전 보유자 간 전송 revert, 제3자 createPool revert, 졸업 후 전송 | — |
+| C10 | 졸업 후 buy/sell revert, 수수료 인출 정상, 풀 스왑·totalFeeBps 100 | — |
+| C11 | 전원 전량 매도 시 모두 지급, r = s = 0, 적립금 유지 | — |
+| C12 | 슬리피지·tokensOut 0 revert | — |
+| C13 | claimDevFees dev 만, sweep 은 treasury 로만 | — |
 
-지시서 v3.1 원문이 이 리포·세션에 없어 18~21, 26 의 문구를 확인할 수 없다. 17 은 v2 SPEC 정의,
-23 은 아래 새 문구 기준으로만 매핑했다. 나머지는 PM 매핑을 받아 채운다.
+대응표는 T8 에서 PM 이 준 지시서 v3.1 C9 원문으로 채웠다(아래 T8 절 표 참고). "—" 는 대응하는 번호 없음.
 
 **불변식 23 새 문구:** 준비금 기준으로 풀 스팟가 = 커브 종가, LP 시드 합류분만큼만 위로.
 실측 (호가 3종, 혼합 이력 후 졸업): (풀 − 종가)/종가 = lpSeed/r = 0.16856% (1e-9 이내 일치),
@@ -315,3 +314,71 @@ lpSeedBps 0 커브에서는 상대 오차 0 / 1.7e-13 / 1e-18 (KRWs18 / 6-dec / 
 - 신규: `L0PoolFeeCap.t.sol` 2, `CurveSale.t.sol` 15 × 호가 3종(KRWs 18, 6-dec, WETH 18 Vq 0.6e18) = 45.
 - `BytecodeSize.t.sol` 목록에 CurveSale 추가.
 - 합계 241 → **288 그린**.
+
+## T8 — CurveFactory (커브 개설, Dev 첫 매수, 발행 빈도 제한) + CurveSale.buyFor
+
+### 지시서 v3.1 C9 불변식 대응표 (T7 표 확정)
+
+| 번호 | 원문 | 테스트 |
+|---|---|---|
+| 17 | platformTreasury 의 발행 토큰 잔고 항상 0, 전 트랙 적용 | C5 (커브), K9 (전 과정), v2 InvariantsV2 17 (정가 공모) |
+| 18 | 커브 매수 후 실 준비금 + 적립 수수료 == 누적 순입금 | C2 |
+| 19 | 과납 불가: 졸업 매수 tx 에서 환불 + 사용 금액 == 입력 금액 | C3 |
+| 20 | 단일 실명 지갑이 커브 전량을 매수해 졸업시킬 수 있다 | C6, K5 (개설 tx 안 졸업) |
+| 21 | verifiedBuyerCount 는 단조 증가, Dev 주소는 영구 미포함 | C7, K5 |
+| 23 | 준비금 기준으로 풀 스팟가 = 커브 종가, LP 시드 합류분만큼만 위로, LP 100% 0xdEaD | C8 |
+| 26 | 미검증 주소는 생성·매수·매도 전부 revert | 매수·매도 C1, 풀 스왑 T5 G1, 생성 K1 |
+
+22, 24, 25 는 삭제된 번호.
+
+### CurveSale.buyFor (커밋 1)
+
+- `factory = msg.sender`(생성자) immutable. `buy` 본문을 `_buy(trader, payer, quoteIn, minTokensOut)` 로 이동,
+  `buy` 는 `_buy(msg.sender, msg.sender, ...)` (동작 변화 없음, 기존 CurveSale 테스트 무수정 그린).
+- `buyFor(trader, ...)`: factory 만(`NotFactory`). 실명 게이트·카운트·isDev·이벤트 trader 는 trader 기준,
+  호가는 factory 에게서, 토큰은 trader 에게.
+
+### CurveFactory (`src/CurveFactory.sol`, 커밋 2)
+
+- **MapaeFactory 와 분리한 이유:** MapaeFactory initcode 는 OfferingDeployer·StackDeployer 생성 코드를
+  이미 품어 여유가 7,396 B 뿐이다. CurveSale 생성 코드(10,673 B)를 넣으면 EIP-3860 한도를 넘는다.
+  CurveFactory 는 MapaeFactory 를 호가 레지스트리(`isQuoteAllowed`, `quoteConfig`)와 풀 burner
+  레지스트리로만 참조하며 MapaeFactory 는 수정하지 않았다.
+- 검사 순서: `curveEnabled` → `dojang.isVerified(msg.sender)` (fail-closed) → `isQuoteAllowed(quote)` →
+  발행 빈도 → name 1~32 bytes, symbol 1~10 bytes. virtualQuote 는 레지스트리 값(호출자 지정 불가).
+- **발행 빈도 규칙:** 실명 지갑 하나당 연속 7일 안 최대 3개. 지갑별 최근 3개 개설 시각 링버퍼,
+  가장 오래된 시각 + 7일 > now 이면 `CurveRateLimited(nextAllowedAt)`. 정확히 7일이 지난 시각부터 가능.
+  실패한 개설 시도는 tx 전체가 되돌려지므로 슬롯을 소모하지 않는다.
+- `curveEnabled` (기본 true, onlyOwner 토글): 신규 개설만 차단, 기존 커브 거래·졸업 무영향.
+- 레지스트리: `allCurves`, `curvesByDev`, `curveOf(token)`, `devOf(token)`, `isCurve(curve)`, `nextAllowedAt(dev)`.
+- **Dev 첫 매수 흐름** (`devBuyQuoteIn > 0`): dev → factory 로 devBuyQuoteIn 수취 → curve 에 approve →
+  `buyFor(dev, devBuyQuoteIn, minTokensOut)` → 미사용분 dev 환불 → approve 0. 개설 tx 안에서 완판·졸업 허용.
+  종료 시 factory 의 호가 잔고와 curve allowance 는 0 (K5).
+
+### 알려진 동작
+
+- **풀 주소 선입금:** 풀 주소는 PoolFactory nonce 로 예측 가능하다. 졸업 전 누군가 그 주소로 호가 자산을
+  보내면 졸업 시 `mint` 가 그 잔고까지 시딩에 포함해 풀 가격이 위로만 오른다(토큰은 잠금으로 보낼 수 없음).
+  손실은 기부자 본인에게만 있어 대응하지 않는다 (PM 결정, T7 이탈 5).
+- **커브 토큰과 L1 모듈:** BuybackVault 의 `route`/`topUp` 은 `ITierSource(token.offering()).tier()` 를
+  부르는데 CurveSale 은 `tier()` 가 없어 호출 자체가 revert 한다(K10). 명시적 `TierNotAllowed` 는 아니다.
+
+### 사이즈
+
+| 컨트랙트 | runtime | initcode | runtime 여유 | initcode 여유 |
+|---|---|---|---|---|
+| CurveFactory | 15,942 B | 16,507 B | 8,634 B | 32,645 B |
+| CurveSale | 8,250 B | 10,673 B | 16,326 B | 38,479 B |
+
+### 테스트
+
+- 신규 `test/CurveFactory.t.sol`: K1~K8, K10 13개 × 호가 3종 + K9 (KRWs) 1 = 40. `BytecodeSize` 에 CurveFactory 추가.
+- K9 가스 (forge 테스트 내 측정): createCurve 3,428,813 / 일반 buy 67,809 / 졸업 buy 2,401,255.
+- 합계 288 → **328 그린**.
+
+### 남은 작업
+
+- ETH 라우터 (ETH → WETH 래핑 후 buy/sell, 매도 시 언랩).
+- 배포 스크립트: CurveFactory 배포, `allowQuote` 등록, MembershipTokenDeployer 라이브러리 링크
+  (`Deploy.s.sol`, `verify-children.js`).
+- DemoCurve 스크립트 (개설 → 매수 → 졸업 → 풀 스왑 시연).

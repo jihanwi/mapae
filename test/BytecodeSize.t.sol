@@ -15,7 +15,7 @@ contract BytecodeSizeTest is Test {
     uint256 internal constant OFFERING_DEPLOYER_MIN_MARGIN = 4_096;
 
     function _contracts() internal pure returns (string[] memory c) {
-        c = new string[](17);
+        c = new string[](18);
         c[0] = "MapaeFactory.sol:MapaeFactory";
         c[1] = "OfferingDeployer.sol:OfferingDeployer";
         c[2] = "StackDeployer.sol:StackDeployer";
@@ -33,6 +33,7 @@ contract BytecodeSizeTest is Test {
         c[14] = "DojangEASAdapter.sol:DojangEASAdapter";
         c[15] = "MockKRW.sol:MockKRW";
         c[16] = "CurveSale.sol:CurveSale";
+        c[17] = "CurveFactory.sol:CurveFactory";
     }
 
     function test_AllContracts_UnderEip170AndEip3860() public view {
