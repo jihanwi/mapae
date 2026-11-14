@@ -13,6 +13,7 @@ import {useOnboarding} from "./hooks";
 import {useTx, useGlobalTxBusy} from "./components/tx";
 import {fmt, shortAddr} from "./lib/format";
 import {OnboardingProvider} from "./components/OnboardingModal";
+import {ActivityProvider} from "./hooks/activity";
 
 /** Fixed-price offering section (v1/v2 contracts): /offerings and the legacy pages under it. */
 export function isOfferingSection(pathname: string): boolean {
@@ -225,7 +226,9 @@ export default function App() {
             )}
             {isOfferingSection(pathname) && <OnboardingStrip />}
             <OnboardingProvider>
-                <Outlet />
+                <ActivityProvider enabled={!isOfferingSection(pathname)}>
+                    <Outlet />
+                </ActivityProvider>
             </OnboardingProvider>
         </div>
     );

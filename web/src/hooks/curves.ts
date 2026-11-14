@@ -27,6 +27,10 @@ export type CurveInfo = {
     symbol: string;
     /** quote === ADDR_V3.weth */
     isEth: boolean;
+    /** Position in allCurves (higher = newer). */
+    index: number;
+    /** Graduated pool spot (quote per token, 18 decimals); set by useCurves only, after graduation. */
+    poolSpot?: bigint;
 };
 
 export type CurveDetail = CurveInfo & {
@@ -53,7 +57,7 @@ const DETAIL_FIELDS = ["devAccrued", "platformBps", "devBps", "lpSeedBps"] as co
 const curveAbi = CurveSaleAbi as Abi;
 const tokenAbi = MembershipTokenV3Abi as Abi;
 
-function toInfo(address: Address, r: unknown[], name: unknown, symbol: unknown): CurveInfo {
+function toInfo(address: Address, r: unknown[], name: unknown, symbol: unknown, index = 0): CurveInfo {
     const quote = r[1] as Address;
     return {
         address,
@@ -70,6 +74,7 @@ function toInfo(address: Address, r: unknown[], name: unknown, symbol: unknown):
         name: name as string,
         symbol: symbol as string,
         isEth: quote.toLowerCase() === ADDR_V3.weth.toLowerCase(),
+        index,
     };
 }
 
@@ -81,28 +86,43 @@ function results(data: readonly {status: string; result?: unknown}[] | undefined
 }
 
 /** Every curve from CurveFactory.allCurves(), newest first. 3 RPC calls regardless of N:
- *  allCurves, one batch of curve fields, one batch of token name/symbol (needs the token address). */
-export function useCurves() {
+ *  allCurves, one batch of curve fields, and one batch of token name/symbol plus the graduated
+ *  pools' spotPrice (both need addresses from the first batch). All refresh every 10 s. */
+export function useCurves(enabled = true) {
     const list = useReadContract({
         address: ADDR_V3.curveFactory,
         abi: CurveFactoryAbi,
         functionName: "allCurves",
         chainId: giwaSepolia.id,
-        query: {refetchInterval: 10_000},
+        query: {enabled, refetchInterval: 10_000},
     });
-    const addrs = ((list.data ?? []) as readonly Address[]).slice().reverse();
+    const addrs = enabled ? ((list.data ?? []) as readonly Address[]).slice().reverse() : [];
     const fields = useReadContracts({
         contracts: addrs.flatMap((a) => CURVE_FIELDS.map((fn) => ({address: a, abi: curveAbi, functionName: fn, chainId: giwaSepolia.id}))),
         query: {enabled: addrs.length > 0, refetchInterval: 10_000},
     });
     const N = CURVE_FIELDS.length;
     const tokens = addrs.map((_, i) => results(fields.data, i * N, N)?.[0] as Address | undefined);
+    // Graduated pools (field 6 = graduated, field 8 = pool), appended after the name/symbol pairs.
+    const pools = addrs.map((_, i) => {
+        const r = results(fields.data, i * N, N);
+        return r && (r[6] as boolean) && (r[8] as Address) !== ZERO ? (r[8] as Address) : undefined;
+    });
+    const poolIdx = pools.map((p, i) => (p ? i : -1)).filter((i) => i >= 0);
     const names = useReadContracts({
-        contracts: tokens.flatMap((t) => [
-            {address: t, abi: tokenAbi, functionName: "name", chainId: giwaSepolia.id},
-            {address: t, abi: tokenAbi, functionName: "symbol", chainId: giwaSepolia.id},
-        ]),
-        query: {enabled: addrs.length > 0 && tokens.every(Boolean), staleTime: Infinity},
+        contracts: [
+            ...tokens.flatMap((t) => [
+                {address: t, abi: tokenAbi, functionName: "name", chainId: giwaSepolia.id},
+                {address: t, abi: tokenAbi, functionName: "symbol", chainId: giwaSepolia.id},
+            ]),
+            ...poolIdx.map((i) => ({address: pools[i], abi: MapaePoolV3Abi as Abi, functionName: "spotPrice", chainId: giwaSepolia.id})),
+        ],
+        query: {enabled: addrs.length > 0 && tokens.every(Boolean), refetchInterval: 10_000},
+    });
+    const spotOf = new Map<number, bigint>();
+    poolIdx.forEach((i, k) => {
+        const x = names.data?.[addrs.length * 2 + k];
+        if (x?.status === "success") spotOf.set(i, x.result as bigint);
     });
     const curves: CurveInfo[] = [];
     let incomplete = false;
@@ -113,10 +133,12 @@ export function useCurves() {
             incomplete = true;
             return;
         }
-        curves.push(toInfo(a, r, ns[0], ns[1]));
+        // allCurves order: index 0 is the oldest; addrs is reversed (newest first).
+        curves.push({...toInfo(a, r, ns[0], ns[1], addrs.length - 1 - i), poolSpot: spotOf.get(i)});
     });
     const fieldFailed = fields.data?.some((x) => x.status !== "success") ?? false;
-    const nameFailed = names.data?.some((x) => x.status !== "success") ?? false;
+    // Only name/symbol failures block the list; a failed pool price leaves that market cap unknown.
+    const nameFailed = names.data?.slice(0, addrs.length * 2).some((x) => x.status !== "success") ?? false;
     const isError = list.isError || fields.isError || names.isError || fieldFailed || nameFailed;
     return {
         curves,
