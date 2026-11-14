@@ -12,7 +12,7 @@ contract BytecodeSizeTest is Test {
 
     /// @dev Headroom OfferingDeployer must keep so Offering logic changes
     ///      (C1~C7) don't silently eat the budget again. Pre-C8 margin was 442.
-    uint256 internal constant OFFERING_DEPLOYER_MIN_MARGIN = 4_096;
+    uint256 internal constant OFFERING_DEPLOYER_MIN_MARGIN = 4096;
 
     function _contracts() internal pure returns (string[] memory c) {
         c = new string[](18);
@@ -56,6 +56,8 @@ contract BytecodeSizeTest is Test {
     ///      the next-tightest budget after OfferingDeployer.
     function test_MapaeFactory_InitcodeKeepsHeadroom() public view {
         uint256 initcode = vm.getCode("MapaeFactory.sol:MapaeFactory").length;
-        assertLe(initcode + OFFERING_DEPLOYER_MIN_MARGIN, EIP3860_INITCODE_MAX, "MapaeFactory initcode headroom < 4 KiB");
+        assertLe(
+            initcode + OFFERING_DEPLOYER_MIN_MARGIN, EIP3860_INITCODE_MAX, "MapaeFactory initcode headroom < 4 KiB"
+        );
     }
 }
