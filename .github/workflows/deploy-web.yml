@@ -30,6 +30,9 @@ jobs:
 
       - name: Build
         working-directory: web
+        env:
+          # GitHub Pages has no functions; metadata is served by the Vercel deployment.
+          VITE_API_BASE: https://mapae-snowy.vercel.app
         run: |
           npm ci
           npm run build

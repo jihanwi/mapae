@@ -1,6 +1,7 @@
 import {Link, useParams} from "react-router-dom";
 import {isAddress} from "viem";
-import {useReadContract, useReadContracts} from "wagmi";
+import {useAccount, useReadContract, useReadContracts} from "wagmi";
+import {useState} from "react";
 import {useCopy} from "../copy";
 import {Address, CurveDetail, useCurve, ZERO} from "../hooks/curves";
 import {CurveFactoryAbi, MapaePoolV3Abi} from "../contracts/abisV3";
@@ -10,7 +11,9 @@ import {fmt, fmtCeil, fmtRound, fmtSig, shortAddr} from "../lib/format";
 import {explorerAddr, explorerTx, giwaSepolia} from "../config/chain";
 import {useActivity} from "../hooks/activity";
 import {agoLabel, tradeAmount, tradeUnit, useNow} from "../components/feed";
-import {Badge, Gauge, Medallion, NetError, PrimaryBtn, Skeleton, Stat} from "../components/ui";
+import {Badge, Gauge, NetError, PrimaryBtn, SecondaryBtn, Skeleton, Stat} from "../components/ui";
+import {CurveAvatar, draftValid, linkDomain, MetaFields, SaveStatus} from "../components/MetaForm";
+import {CurveMeta, draftHasContent, emptyDraft, MetaDraft, useCurveMeta, useSaveMeta} from "../hooks/meta";
 import {CurveTradePanel} from "../components/CurveTradePanel";
 import {pctLabel, quoteUnit} from "./Curves";
 
@@ -127,6 +130,66 @@ function RecentTrades({c}: {c: CurveDetail}) {
     );
 }
 
+/** Description and links under the header. Text only (no HTML); links show the domain. */
+function MetaInfo({m}: {m: CurveMeta}) {
+    const tr = useCopy();
+    const links = (
+        [
+            [tr.meta.linkX, m.links.x],
+            [tr.meta.linkTelegram, m.links.telegram],
+            [tr.meta.linkWebsite, m.links.website],
+        ] as const
+    ).filter(([, u]) => u);
+    if (!m.description && links.length === 0) return null;
+    return (
+        <div className="flex flex-col gap-2 min-w-0">
+            {m.description && <p className="m-0 text-[14px] text-hanji-100 break-words">{m.description}</p>}
+            {links.length > 0 && (
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-[13px]">
+                    {links.map(([label, u]) => (
+                        <a key={label} href={u} target="_blank" rel="noopener noreferrer nofollow" className="text-brass-400 hover:text-hanji-100 break-all">
+                            {label} · {linkDomain(u)}
+                        </a>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
+/** Shown to the Dev on their own curve while it has no metadata: same fields and signing flow, once. */
+function AddMeta({c}: {c: CurveDetail}) {
+    const tr = useCopy();
+    const [open, setOpen] = useState(false);
+    const [draft, setDraft] = useState<MetaDraft>(emptyDraft);
+    const {state, save} = useSaveMeta();
+    if (state.phase === "saved") return <SaveStatus state={state} />;
+    if (!open) {
+        return (
+            <SecondaryBtn className="w-full sm:w-auto" onClick={() => setOpen(true)}>
+                {tr.meta.addCta}
+            </SecondaryBtn>
+        );
+    }
+    const busy = state.phase === "signing" || state.phase === "uploading";
+    return (
+        <div className="bg-ink-800 border border-ink-700 rounded-card p-4 sm:p-6 flex flex-col gap-3 min-w-0">
+            <div className="flex items-start justify-between gap-3">
+                <h3 className="m-0 text-[15px] font-bold">{tr.meta.addCta}</h3>
+                <button type="button" onClick={() => setOpen(false)} className="text-[13px] text-hanji-400 hover:text-hanji-100 min-h-[32px] px-1">
+                    {tr.meta.close}
+                </button>
+            </div>
+            <MetaFields draft={draft} onChange={setDraft} disabled={busy} />
+            <p className="m-0 text-[12px] text-hanji-400">{tr.meta.saveNote}</p>
+            <PrimaryBtn className="w-full" disabled={busy || !draftHasContent(draft) || !draftValid(draft)} onClick={() => void save(c.address, draft)}>
+                {tr.meta.save}
+            </PrimaryBtn>
+            <SaveStatus state={state} onRetry={() => void save(c.address, draft)} />
+        </div>
+    );
+}
+
 function Contracts({c}: {c: CurveDetail}) {
     const tr = useCopy();
     const rows: [string, Address][] = [
@@ -159,6 +222,8 @@ export default function Token() {
     });
     const isCurve = reg.data?.[0]?.status === "success" ? (reg.data[0].result as boolean) : undefined;
     const {curve: c, isLoading, isError, refetch} = useCurve(isCurve ? addr : undefined);
+    const meta = useCurveMeta();
+    const {address: account} = useAccount();
 
     const wrap = (node: React.ReactNode) => <div className="max-w-page mx-auto px-4 sm:px-8 pt-8 sm:pt-10 pb-16 sm:pb-20">{node}</div>;
 
@@ -174,12 +239,14 @@ export default function Token() {
     if (reg.isError || isError) return wrap(<NetError onRetry={() => { void reg.refetch(); refetch(); }} />);
     if (isCurve === undefined || isLoading || !c) return wrap(<Skeleton h={320} />);
 
+    const m = meta.get(c.address);
+    const isDev = !!account && account.toLowerCase() === c.dev.toLowerCase();
     return wrap(
         <div className="flex flex-col gap-5 sm:gap-6 max-w-[720px] mx-auto w-full min-w-0">
             <Link to="/" className="text-[14px]">← {tr.curve.backToList}</Link>
             {/* 1) header */}
             <div className="flex items-center gap-4 min-w-0">
-                <Medallion char={c.symbol.slice(0, 1) || "馬"} size={64} />
+                <CurveAvatar char={c.symbol.slice(0, 1) || "馬"} imageUrl={m?.imageUrl} size={64} />
                 <div className="min-w-0 flex-1">
                     <h1 className="m-0 text-[24px] sm:text-[28px] font-bold break-all">{c.name}</h1>
                     <div className="text-[13px] text-hanji-400 flex flex-wrap gap-x-3 gap-y-1">
@@ -191,6 +258,9 @@ export default function Token() {
                     </div>
                 </div>
             </div>
+            {/* 1b) description and links (Vercel Blob metadata); the Dev can add them once */}
+            {m && <MetaInfo m={m} />}
+            {!m && meta.loaded && isDev && <AddMeta c={c} />}
             {/* 2) people counter */}
             <div className="text-[15px] tabular-nums">
                 <span className="font-semibold">{tr.curve.verifiedTraders(c.verifiedBuyerCount)}</span>
