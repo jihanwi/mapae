@@ -160,7 +160,7 @@ export const ko = {
         verifiedTradersNote: "Dev 제외",
         graduated: "졸업 완료",
         live: "거래 중",
-        progress: (pct: string) => `졸업 ${pct}%`,
+        progress: (pct: string) => `졸업 진행 ${pct}%`,
         toGraduate: (amt: string, unit: string) => `졸업까지 ${amt} ${unit}`,
         poolLink: "졸업 풀 보기 ↗",
         dev: "Dev",
@@ -346,6 +346,7 @@ export const ko = {
         rejected: "지갑에서 연결을 취소했어요",
         pending: "지갑에 열려 있는 요청이 있어요. 지갑 창을 확인해 주세요",
         unknown: "지갑에 연결하지 못했어요. 지갑이 잠겨 있지 않은지 확인해 주세요",
+        switchFailed: "네트워크를 바꾸지 못했어요. 지갑에서 GIWA Sepolia로 바꿔 주세요",
     },
     // v3 화면 전용 에러 문구 (v1/v2 화면은 위 errors 를 그대로 쓴다)
     errorsV3: {
