@@ -7,7 +7,9 @@ import {CurveStats, marketCap, sortCurves, Tab, TABS} from "../lib/activity";
 import {progressBps} from "../lib/curveMath";
 import {fmtRound, shortAddr} from "../lib/format";
 import {agoLabel, prefersReducedMotion, tradeAmount, tradeUnit, useNow} from "../components/feed";
-import {Badge, Card, CardSkeleton, Gauge, Medallion, NetError} from "../components/ui";
+import {Badge, Card, CardSkeleton, Gauge, NetError} from "../components/ui";
+import {CurveAvatar} from "../components/MetaForm";
+import {useCurveMeta} from "../hooks/meta";
 
 // Layout note (390px): the page uses fluid padding and a minmax(min(100%, 300px), 1fr) grid, so a
 // card never asks for more width than the viewport; text blocks are min-w-0 + truncate. The six
@@ -38,7 +40,7 @@ function useFlashOnIncrease(value: bigint | undefined): boolean {
     return on;
 }
 
-function CurveCard({c, stats, tsOf, now}: {c: CurveInfo; stats: CurveStats | undefined; tsOf: (b: bigint) => number | undefined; now: number}) {
+function CurveCard({c, stats, tsOf, now, imageUrl}: {c: CurveInfo; stats: CurveStats | undefined; tsOf: (b: bigint) => number | undefined; now: number; imageUrl?: string | null}) {
     const tr = useCopy();
     const unit = quoteUnit(c);
     const bps = c.graduated ? 10_000n : progressBps(c.virtualQuote, c.r);
@@ -49,7 +51,7 @@ function CurveCard({c, stats, tsOf, now}: {c: CurveInfo; stats: CurveStats | und
         <Link to={`/t/${c.address}`} className="block min-w-0 no-underline text-hanji-100">
             <Card className={`h-full hover:border-brass-600 transition-colors duration-300 ${flash ? "!border-brass-400" : ""}`}>
                 <div className="flex items-center gap-3.5 mb-4 min-w-0">
-                    <Medallion char={c.symbol.slice(0, 1) || "馬"} />
+                    <CurveAvatar char={c.symbol.slice(0, 1) || "馬"} imageUrl={imageUrl} />
                     <div className="min-w-0 flex-1">
                         <div className="text-[17px] font-bold truncate">{c.name}</div>
                         <div className="text-[13px] text-hanji-400 truncate">
@@ -130,6 +132,7 @@ export default function Curves() {
     const tr = useCopy();
     const {curves, isLoading, isError, refetch} = useCurves();
     const activity = useActivity();
+    const meta = useCurveMeta(); // one request for every curve; no metadata on failure
     const [tab, setTab] = useState<Tab>("latest");
     const now = useNow();
     const sorted = sortCurves(tab, curves, activity.stats, activity.graduatedAt);
@@ -163,7 +166,7 @@ export default function Curves() {
                     ) : (
                         <div className="grid gap-5" style={grid}>
                             {sorted.map((c) => (
-                                <CurveCard key={c.address} c={c} stats={activity.stats.get(c.address)} tsOf={activity.tsOf} now={now} />
+                                <CurveCard key={c.address} c={c} stats={activity.stats.get(c.address)} tsOf={activity.tsOf} now={now} imageUrl={meta.get(c.address)?.imageUrl} />
                             ))}
                         </div>
                     )}

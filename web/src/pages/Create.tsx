@@ -17,6 +17,8 @@ import {NetError, PrimaryBtn, Skeleton} from "../components/ui";
 import {RunFn, TxButton} from "../components/tx";
 import {opensOnboarding, useOnboardingModal} from "../components/OnboardingModal";
 import {modalLabel} from "../components/CurveTradePanel";
+import {draftValid, MetaFields, SaveStatus} from "../components/MetaForm";
+import {draftHasContent, emptyDraft, MetaDraft, useSaveMeta} from "../hooks/meta";
 
 type QuoteKind = "KRWs" | "ETH";
 type QuoteConfig = {registered: boolean; enabled: boolean; decimals: number; curveVirtualQuote: bigint};
@@ -84,6 +86,10 @@ export default function Create() {
     const [rawBuy, setRawBuy] = useState("");
     const [created, setCreated] = useState<{curve: Address; hash: `0x${string}`} | null>(null);
     const [decodeFailed, setDecodeFailed] = useState<`0x${string}` | null>(null);
+    // Optional metadata, signed and uploaded after the launch tx (never part of the CTA checks).
+    const [draft, setDraft] = useState<MetaDraft>(emptyDraft);
+    const meta = useSaveMeta();
+    const wantsMeta = draftHasContent(draft);
 
     const devBuy = useMemo(() => {
         try {
@@ -111,7 +117,7 @@ export default function Create() {
     const rateLimited = r.nextAllowedAt > nowSec;
     const quoteOk = !!cfg && cfg.registered && cfg.enabled;
     const formOk = r.loaded && withinByteLimit(name, r.maxName) && withinByteLimit(symbol, r.maxSymbol) && quoteOk;
-    const blocked = !r.curveEnabled || rateLimited || !formOk;
+    const blocked = !r.curveEnabled || rateLimited || !formOk || !draftValid(draft);
 
     const action = async (run: RunFn) => {
         if (!address || !client) return;
@@ -163,8 +169,12 @@ export default function Create() {
             (l) => l.address.toLowerCase() === ADDR_V3.curveFactory.toLowerCase()
         );
         const curve = events[0]?.args.curve as Address | undefined;
-        if (curve) setCreated({curve, hash});
-        else setDecodeFailed(hash);
+        if (curve) {
+            setCreated({curve, hash});
+            // The curve is live at this point; a rejected signature or failed upload only leaves
+            // the metadata unsaved (the success screen offers a retry).
+            if (wantsMeta) void meta.save(curve, draft);
+        } else setDecodeFailed(hash);
     };
 
     const wrap = (node: React.ReactNode) => (
@@ -178,6 +188,12 @@ export default function Create() {
             <div className="bg-ink-800 border border-ink-700 rounded-card p-5 sm:p-7 text-center">
                 <h1 className="m-0 mb-2 text-[22px] font-bold">{tr.create.doneTitle}</h1>
                 <p className="m-0 mb-5 text-[14px] text-hanji-400 break-all">{tr.create.doneNote(name, symbol)}</p>
+                {wantsMeta && (
+                    <div className="mb-5 text-left flex flex-col gap-2">
+                        {meta.state.phase === "failed" && <p className="m-0 text-[13px] text-brass-400">{tr.meta.notSaved}</p>}
+                        <SaveStatus state={meta.state} onRetry={() => void meta.save(created.curve, draft)} />
+                    </div>
+                )}
                 <Link to={`/t/${created.curve}`}>
                     <PrimaryBtn className="w-full">{tr.create.goToken}</PrimaryBtn>
                 </Link>
@@ -279,6 +295,12 @@ export default function Create() {
                     )}
                     {preview && preview.tokensOut === CURVE_SUPPLY && <p className="m-0 mt-2 text-[12px] text-brass-400">{tr.create.devBuyGraduates}</p>}
                 </Field>
+            </div>
+
+            <div className="bg-ink-800 border border-ink-700 rounded-card p-4 sm:p-7 flex flex-col gap-3">
+                <h2 className="m-0 text-[15px] font-bold">{tr.meta.sectionTitle}</h2>
+                <MetaFields draft={draft} onChange={setDraft} />
+                {wantsMeta && <p className="m-0 text-[12px] text-hanji-400">{tr.meta.signNote}</p>}
             </div>
 
             <div className="rounded-input px-4 py-3.5 text-[13px] text-hanji-100 border border-ink-700 bg-ink-900 text-center">{tr.curve.fixedPanel}</div>

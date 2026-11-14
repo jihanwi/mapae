@@ -206,6 +206,18 @@ describe("popular ranking", () => {
         const t = [trade(a.address, addr(0x101), 5n, 50n), trade(b.address, addr(0x201), 9n, 50n), trade(c.address, addr(0x301), 20n, 10n)];
         expect(ids(sortCurves("popular", [a, b, c], aggregate(t)))).toEqual([2, 1, 3]);
     });
+    it("a curve where only the Dev trades big does not lead the volume rank", () => {
+        // a: 1 trader, small non-Dev volume, huge Dev volume; b: 1 trader, larger non-Dev volume
+        const t = [
+            trade(a.address, addr(0x101), 1n, 10n),
+            trade(a.address, DEV, 2n, 10n ** 30n, true),
+            trade(b.address, addr(0x201), 1n, 50n),
+        ];
+        const s = aggregate(t);
+        expect(s.get(a.address)!.volumeQuote).toBe(10n + 10n ** 30n); // card value still includes the Dev
+        expect(s.get(a.address)!.volumeQuoteNonDev).toBe(10n);
+        expect(ids(sortCurves("popular", [a, b], s))).toEqual([2, 1]);
+    });
     it("normalizes volume by 3 x virtualQuote across pair assets", () => {
         // a: KRWs volume 0.3 x threshold, d: ETH volume 0.6 x threshold
         const dEth = {...d, virtualQuote: VQ_ETH};

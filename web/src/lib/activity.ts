@@ -199,8 +199,10 @@ export type CurveStats = {
     tradeCount: number;
     /** Distinct non-Dev wallets that traded in the window. */
     uniqueTraders: number;
-    /** Buy + sell volume in the pair asset, fees included, Dev trades included. */
+    /** Buy + sell volume in the pair asset, fees included, Dev trades included (shown on cards). */
     volumeQuote: bigint;
+    /** Same, without the Dev's trades (used for the Popular volume rank). */
+    volumeQuoteNonDev: bigint;
     /** Newest first. */
     recent: Trade[];
 };
@@ -212,14 +214,17 @@ export function aggregate(trades: readonly Trade[], recentLimit = 30): Map<Addre
     for (const t of [...trades].sort(newerFirst)) {
         let s = out.get(t.curve);
         if (!s) {
-            s = {lastTradeBlock: t.block, tradeCount: 0, uniqueTraders: 0, volumeQuote: 0n, recent: []};
+            s = {lastTradeBlock: t.block, tradeCount: 0, uniqueTraders: 0, volumeQuote: 0n, volumeQuoteNonDev: 0n, recent: []};
             out.set(t.curve, s);
             traders.set(t.curve, new Set());
         }
         s.tradeCount++;
         s.volumeQuote += t.volume;
         if (t.block > s.lastTradeBlock) s.lastTradeBlock = t.block;
-        if (!t.isDev) traders.get(t.curve)!.add(lc(t.trader));
+        if (!t.isDev) {
+            traders.get(t.curve)!.add(lc(t.trader));
+            s.volumeQuoteNonDev += t.volume;
+        }
         if (s.recent.length < recentLimit) s.recent.push(t);
     }
     for (const [c, set] of traders) out.get(c)!.uniqueTraders = set.size;
@@ -284,7 +289,7 @@ export function sortCurves<T extends SortCurve>(tab: Tab, curves: readonly T[], 
         case "popular": {
             const active = list.filter((c) => (stats.get(c.address)?.uniqueTraders ?? 0) > 0);
             const u = (c: T) => stats.get(c.address)!.uniqueTraders;
-            const v = (c: T) => volumeRatio(stats.get(c.address)!.volumeQuote, c.virtualQuote);
+            const v = (c: T) => volumeRatio(stats.get(c.address)!.volumeQuoteNonDev, c.virtualQuote); // Dev trades do not lift the rank
             const ru = competitionRanks(active, (a, b) => u(a) > u(b));
             const rv = competitionRanks(active, (a, b) => cmpRatio(v(a), v(b)) > 0);
             const sum = new Map(active.map((c, i) => [c.address, ru[i] + rv[i]]));
