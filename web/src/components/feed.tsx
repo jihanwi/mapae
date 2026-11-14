@@ -20,10 +20,10 @@ export function agoLabel(tr: Copy, nowSec: number, tsSec: number): string {
 }
 
 /** Pair asset unit of a trade: WETH for pool swaps of an ETH curve, else the curve's unit. */
-export const tradeUnit = (t: Trade, isEth: boolean) => (isEth ? (t.venue === "pool" ? "WETH" : "ETH") : "KRWs");
+export const tradeUnit = (t: Pick<Trade, "venue">, isEth: boolean) => (isEth ? (t.venue === "pool" ? "WETH" : "ETH") : "KRWs");
 
 /** Pair asset amount: paid on a buy (round up), received on a sell (round down). */
-export function tradeAmount(t: Trade, isEth: boolean, locale: string): string {
+export function tradeAmount(t: Pick<Trade, "side" | "quoteAmount">, isEth: boolean, locale: string): string {
     const dp = isEth ? 6 : 0;
     return t.side === "buy" ? fmtCeil(t.quoteAmount, dp, locale) : fmt(t.quoteAmount, dp, locale);
 }

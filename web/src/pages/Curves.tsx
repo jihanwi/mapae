@@ -3,6 +3,8 @@ import {Link} from "react-router-dom";
 import {useCopy} from "../copy";
 import {CurveInfo, useCurves} from "../hooks/curves";
 import {useActivity} from "../hooks/activity";
+import {useChainSummary} from "../hooks/chainData";
+import {keyByCurves, mergeStats} from "../lib/chainMerge";
 import {CurveStats, marketCap, sortCurves, Tab, TABS} from "../lib/activity";
 import {progressBps} from "../lib/curveMath";
 import {fmtRound, shortAddr} from "../lib/format";
@@ -46,7 +48,7 @@ function CurveCard({c, stats, tsOf, now, imageUrl}: {c: CurveInfo; stats: CurveS
     const bps = c.graduated ? 10_000n : progressBps(c.virtualQuote, c.r);
     const mcap = marketCap(c, c.poolSpot);
     const flash = useFlashOnIncrease(stats?.lastTradeBlock);
-    const lastTs = stats ? tsOf(stats.lastTradeBlock) : undefined;
+    const lastTs = stats ? (stats.lastTradeTs ?? tsOf(stats.lastTradeBlock)) : undefined;
     return (
         <Link to={`/t/${c.address}`} className="block min-w-0 no-underline text-hanji-100">
             <Card className={`h-full hover:border-brass-600 transition-colors duration-300 ${flash ? "!border-brass-400" : ""}`}>
@@ -67,12 +69,12 @@ function CurveCard({c, stats, tsOf, now, imageUrl}: {c: CurveInfo; stats: CurveS
                 <div className="text-[13px] text-hanji-400 mb-3 tabular-nums">{tr.curve.verifiedTraders(c.verifiedBuyerCount)}</div>
                 <Gauge committed={bps} target={10_000n} />
                 <div className="mt-2 text-[12px] text-hanji-400 tabular-nums">{tr.curve.progress(pctLabel(bps))}</div>
-                {stats && (
+                {stats && (lastTs !== undefined || stats.tradeCount > 0) && (
                     <div className="mt-3 pt-3 border-t border-ink-700 text-[12px] text-hanji-400 tabular-nums flex flex-col gap-1 min-w-0">
                         {lastTs !== undefined && <span>{tr.feed.lastTrade(agoLabel(tr, now, lastTs))}</span>}
-                        <span className="truncate">
+                        {stats.tradeCount > 0 && <span className="truncate">
                             {tr.feed.recentLine(stats.uniqueTraders, fmtRound(stats.volumeQuote, c.isEth ? 4 : 0, tr.locale), unit)}
-                        </span>
+                        </span>}
                     </div>
                 )}
             </Card>
@@ -135,11 +137,17 @@ export default function Curves() {
     const meta = useCurveMeta(); // one request for every curve; no metadata on failure
     const [tab, setTab] = useState<Tab>("latest");
     const now = useNow();
-    const sorted = sortCurves(tab, curves, activity.stats, activity.graduatedAt);
+    // 24 h stats: the server index plus browser RPC trades after its indexedBlock. Without the
+    // server (503 / no answer) the list keeps working on the browser window alone.
+    const summary = useChainSummary();
+    const serverOk = summary.isSuccess;
+    const stats = serverOk ? keyByCurves(mergeStats(summary.data, activity.trades, activity.tsOf, now), curves) : activity.stats;
+    const sorted = sortCurves(tab, curves, stats, activity.graduatedAt);
     const grid = {gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 300px), 1fr))"};
     const note =
         tab === "popular" ? tr.feed.popularNote : tab === "mcap" ? tr.feed.mcapNote : undefined;
-    const windowNote = (tab === "latest" || tab === "popular") && activity.hours !== undefined ? tr.feed.window(activity.hours) : undefined;
+    const windowNote =
+        tab === "latest" || tab === "popular" ? (serverOk ? tr.chain.window24h : activity.hours !== undefined ? tr.feed.window(activity.hours) : undefined) : undefined;
     return (
         <div className="max-w-page mx-auto px-4 sm:px-8 pt-8 sm:pt-12 pb-16 sm:pb-20 min-w-0">
             <h1 className="m-0 mb-2 text-[24px] sm:text-[28px] font-bold">{tr.curve.listTitle}</h1>
@@ -166,7 +174,7 @@ export default function Curves() {
                     ) : (
                         <div className="grid gap-5" style={grid}>
                             {sorted.map((c) => (
-                                <CurveCard key={c.address} c={c} stats={activity.stats.get(c.address)} tsOf={activity.tsOf} now={now} imageUrl={meta.get(c.address)?.imageUrl} />
+                                <CurveCard key={c.address} c={c} stats={stats.get(c.address)} tsOf={activity.tsOf} now={now} imageUrl={meta.get(c.address)?.imageUrl} />
                             ))}
                         </div>
                     )}

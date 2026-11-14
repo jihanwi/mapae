@@ -10,6 +10,9 @@ import {costToSellOut, grossForNet, marketCapQuote, progressBps, spotPrice, TOTA
 import {fmt, fmtCeil, fmtRound, fmtSig, shortAddr} from "../lib/format";
 import {explorerAddr, explorerTx, giwaSepolia} from "../config/chain";
 import {useActivity} from "../hooks/activity";
+import {useChainSummary, useHolders, useTradeHistory} from "../hooks/chainData";
+import {mergeHistory, sharePct} from "../lib/chainMerge";
+import {CandleChart} from "../components/CandleChart";
 import {agoLabel, tradeAmount, tradeUnit, useNow} from "../components/feed";
 import {Badge, Gauge, NetError, PrimaryBtn, SecondaryBtn, Skeleton, Stat} from "../components/ui";
 import {CurveAvatar, draftValid, linkDomain, MetaFields, SaveStatus} from "../components/MetaForm";
@@ -87,44 +90,95 @@ function Progress({c}: {c: CurveDetail}) {
     );
 }
 
-/** Curve trades and graduated pool swaps of this curve, newest first (max 30, from the activity window). */
-function RecentTrades({c}: {c: CurveDetail}) {
+/** Trade history: the server index (paged with "load more") plus browser RPC trades after the
+ *  server's indexedBlock, deduped by (tx, logIndex). Without the server it falls back to the
+ *  browser window alone, as before. Buy/sell keep the existing success/error text colors. */
+function TradeHistory({c}: {c: CurveDetail}) {
     const tr = useCopy();
-    const {loaded, error, stats, tsOf, hours} = useActivity();
+    const activity = useActivity();
+    const summary = useChainSummary();
+    const hist = useTradeHistory(c.address);
     const now = useNow();
-    const rows = stats.get(c.address)?.recent ?? [];
+    const browser = activity.stats.get(c.address)?.recent ?? [];
+    const serverOk = hist.isSuccess && summary.isSuccess;
+    const server = serverOk ? hist.data.pages.flatMap((p) => p.trades) : [];
+    const rows = mergeHistory(server, browser, serverOk ? summary.data.indexedBlock : null, activity.tsOf);
+    const loading = !serverOk && !hist.isError && !summary.isError && !activity.loaded;
     return (
         <div className="bg-ink-900 border border-ink-700 rounded-card p-4 sm:p-6 min-w-0">
             <h3 className="m-0 mb-3 text-[15px] font-bold">{tr.feed.recentTitle}</h3>
-            {error != null && <p className="m-0 mb-2 text-[13px] text-error">{tr.feed.loadError}</p>}
-            {!loaded ? (
-                error == null && <p className="m-0 text-[13px] text-hanji-400">…</p>
+            {activity.error != null && !serverOk && <p className="m-0 mb-2 text-[13px] text-error">{tr.feed.loadError}</p>}
+            {loading ? (
+                <p className="m-0 text-[13px] text-hanji-400">…</p>
             ) : rows.length === 0 ? (
-                <p className="m-0 text-[13px] text-hanji-400">{tr.feed.noTrades(hours ?? 1)}</p>
+                <p className="m-0 text-[13px] text-hanji-400">{serverOk ? tr.chain.chartEmpty : tr.feed.noTrades(activity.hours ?? 1)}</p>
             ) : (
                 <ul className="m-0 p-0 list-none">
-                    {rows.map((t) => {
-                        const ts = tsOf(t.block);
+                    {rows.map((t) => (
+                        <li key={t.key} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 border-t border-ink-700 first:border-t-0 text-[13px] tabular-nums min-w-0">
+                            <span className="text-hanji-400 w-[72px] flex-none">{t.ts !== undefined ? agoLabel(tr, now, t.ts) : ""}</span>
+                            <span className="flex-none">
+                                {t.isDev ? <Badge kind="partial">{tr.curve.dev}</Badge> : <span className="text-hanji-100">{shortAddr(t.trader)}</span>}
+                            </span>
+                            <span className={`flex-none font-semibold ${t.side === "buy" ? "text-success" : "text-error"}`}>{t.side === "buy" ? tr.feed.buy : tr.feed.sell}</span>
+                            <span className="text-hanji-100">
+                                {fmt(t.tokenAmount, 2, tr.locale)} {c.symbol}
+                            </span>
+                            <span className="text-hanji-100">
+                                {tradeAmount(t, c.isEth, tr.locale)} {tradeUnit(t, c.isEth)}
+                            </span>
+                            <span className="ml-auto flex-none">
+                                <ExtLink href={explorerTx(t.tx)}>{tr.feed.txLink}</ExtLink>
+                            </span>
+                        </li>
+                    ))}
+                </ul>
+            )}
+            {serverOk && hist.hasNextPage && (
+                <button
+                    type="button"
+                    disabled={hist.isFetchingNextPage}
+                    onClick={() => void hist.fetchNextPage()}
+                    className="mt-3 w-full min-h-[40px] rounded-input border border-ink-700 text-[13px] text-hanji-100 hover:border-brass-600 disabled:opacity-50"
+                >
+                    {tr.chain.loadMore}
+                </button>
+            )}
+        </div>
+    );
+}
+
+/** Top 20 holders from the index: share of the 1e9 supply (bigint, floored to 0.01%), labels. */
+function Holders({c}: {c: CurveDetail}) {
+    const tr = useCopy();
+    const q = useHolders(c.address);
+    const label = (l: string | null) => (l === "curve" ? tr.chain.labelCurve : l === "pool" ? tr.chain.labelPool : l === "dev" ? tr.chain.labelDev : null);
+    return (
+        <div className="bg-ink-900 border border-ink-700 rounded-card p-4 sm:p-6 min-w-0">
+            <div className="flex items-baseline justify-between gap-3 flex-wrap mb-3">
+                <h3 className="m-0 text-[15px] font-bold">{tr.chain.holdersTitle}</h3>
+                {q.isSuccess && <span className="text-[12px] text-hanji-400 tabular-nums">{tr.chain.holdersTotal(q.data.total)}</span>}
+            </div>
+            {q.isError ? (
+                <p className="m-0 text-[13px] text-hanji-400">{tr.chain.unavailable}</p>
+            ) : !q.isSuccess ? (
+                <p className="m-0 text-[13px] text-hanji-400">…</p>
+            ) : q.data.holders.length === 0 ? (
+                <p className="m-0 text-[13px] text-hanji-400">{tr.chain.holdersEmpty}</p>
+            ) : (
+                <ol className="m-0 p-0 list-none">
+                    {q.data.holders.slice(0, 20).map((h, i) => {
+                        const l = label(h.label);
                         return (
-                            <li key={`${t.tx}:${t.logIndex}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 border-t border-ink-700 first:border-t-0 text-[13px] tabular-nums min-w-0">
-                                <span className="text-hanji-400 w-[72px] flex-none">{ts !== undefined ? agoLabel(tr, now, ts) : ""}</span>
-                                <span className="flex-none">
-                                    {t.isDev ? <Badge kind="partial">{tr.curve.dev}</Badge> : <span className="text-hanji-100">{shortAddr(t.trader)}</span>}
-                                </span>
-                                <span className={`flex-none font-semibold ${t.side === "buy" ? "text-success" : "text-error"}`}>{t.side === "buy" ? tr.feed.buy : tr.feed.sell}</span>
-                                <span className="text-hanji-100">
-                                    {fmt(t.tokenAmount, 2, tr.locale)} {c.symbol}
-                                </span>
-                                <span className="text-hanji-100">
-                                    {tradeAmount(t, c.isEth, tr.locale)} {tradeUnit(t, c.isEth)}
-                                </span>
-                                <span className="ml-auto flex-none">
-                                    <ExtLink href={explorerTx(t.tx)}>{tr.feed.txLink}</ExtLink>
-                                </span>
+                            <li key={h.address} className="flex items-center gap-3 py-1.5 text-[13px] tabular-nums min-w-0">
+                                <span className="text-hanji-400 w-6 flex-none text-right">{i + 1}</span>
+                                <ExtLink href={explorerAddr(h.address)}>{shortAddr(h.address)}</ExtLink>
+                                {l && <Badge kind="neutral">{l}</Badge>}
+                                <span className="ml-auto flex-none text-hanji-100">{sharePct(BigInt(h.balance), TOTAL_SUPPLY)}%</span>
                             </li>
                         );
                     })}
-                </ul>
+                </ol>
             )}
         </div>
     );
@@ -270,14 +324,17 @@ export default function Token() {
             <Progress c={c} />
             {/* 4) price / market cap */}
             <PriceStats c={c} />
+            {/* 4b) candle chart from the server index */}
+            <CandleChart curve={c.address} unit={c.graduated && c.isEth ? "WETH" : quoteUnit(c)} />
             {/* 5) fixed panel */}
             <div className="rounded-input px-4 py-3.5 text-[13px] text-hanji-100 border border-ink-700 bg-ink-900 text-center">
                 {tr.curve.fixedPanel}
             </div>
             {/* 6) trade panel */}
             <CurveTradePanel c={c} />
-            {/* 7) recent trades (curve + graduated pool) */}
-            <RecentTrades c={c} />
+            {/* 7) trade history (server index + browser RPC), holders */}
+            <TradeHistory c={c} />
+            <Holders c={c} />
             {/* 8) contract links */}
             <Contracts c={c} />
         </div>
