@@ -187,7 +187,10 @@ function OnboardingModal({args, onClose}: {args: OpenArgs; onClose: () => void})
 
                 {isConnected && noGas && (
                     <div className="mt-2 rounded-input px-4 py-3 text-[13px] text-brass-400" style={{background: "rgba(195,154,59,.08)", border: "1px solid rgba(195,154,59,.3)"}}>
-                        {tr.onboardingV3.needGas}
+                        {tr.onboardingV3.needGas}{" "}
+                        <a href={tr.onboarding.gasFaucetUrl} target="_blank" rel="noreferrer">
+                            {tr.onboardingV3.gasFaucet}
+                        </a>
                     </div>
                 )}
                 {isConnected && readFailed && <p className="m-0 mt-2 text-[13px] text-error">{tr.onboardingV3.readError}</p>}
