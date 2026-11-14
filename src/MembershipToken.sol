@@ -40,6 +40,8 @@ contract MembershipToken is ERC20, ERC20Burnable, ERC20Permit, IMembershipToken 
     event MintFinalized(uint256 totalMinted, uint256 holdingCap, uint256 transferLockUntil);
     /// @notice Emitted once when the offering registers the AMM pool at settle.
     event PoolRegistered(address indexed pool);
+    /// @notice Emitted when the offering ends the transfer lock early (curve graduation).
+    event TransferLockEnded(uint256 timestamp);
 
     uint16 internal constant BPS = 10_000;
 
@@ -123,13 +125,26 @@ contract MembershipToken is ERC20, ERC20Burnable, ERC20Permit, IMembershipToken 
     function _update(address from, address to, uint256 value) internal override {
         if (from != address(0) && to != address(0)) {
             if (!transfersEnabled) revert TransfersNotEnabled();
-            if (block.timestamp < transferLockUntil && from != offering && from != pool) {
+            // `to != offering`: during the lock holders may still sell back INTO the offering
+            // (the curve). Holder-to-holder transfers stay locked (v3 decision A).
+            if (block.timestamp < transferLockUntil && from != offering && from != pool && to != offering) {
                 revert TransferLocked(transferLockUntil);
             }
         }
         super._update(from, to, value);
         if (to != address(0) && holdingCap != 0 && !capExempt[to] && from != offering && balanceOf(to) > holdingCap) {
             revert OverHoldingCap(to, balanceOf(to), holdingCap);
+        }
+    }
+
+    /// @notice End the transfer lock now. Offering-only. Used by the curve at graduation so
+    ///         holder-to-holder transfers open exactly when the curve sells out (v3 decision A).
+    ///         No-op when the lock is already over (or was never set).
+    function endTransferLock() external {
+        if (msg.sender != offering) revert NotOffering();
+        if (block.timestamp < transferLockUntil) {
+            transferLockUntil = block.timestamp;
+            emit TransferLockEnded(block.timestamp);
         }
     }
 
