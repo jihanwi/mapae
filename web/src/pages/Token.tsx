@@ -6,7 +6,7 @@ import {Address, CurveDetail, useCurve, ZERO} from "../hooks/curves";
 import {CurveFactoryAbi, MapaePoolV3Abi} from "../contracts/abisV3";
 import {ADDR_V3} from "../contracts/addressesV3";
 import {costToSellOut, grossForNet, marketCapQuote, progressBps, spotPrice, TOTAL_SUPPLY, WAD} from "../lib/curveMath";
-import {fmt, fmtRound, fmtSig, shortAddr} from "../lib/format";
+import {fmtCeil, fmtRound, fmtSig, shortAddr} from "../lib/format";
 import {explorerAddr, giwaSepolia} from "../config/chain";
 import {Badge, Gauge, Medallion, NetError, PrimaryBtn, Skeleton, Stat} from "../components/ui";
 import {CurveTradePanel} from "../components/CurveTradePanel";
@@ -76,7 +76,7 @@ function Progress({c}: {c: CurveDetail}) {
             <Gauge committed={bps} target={10_000n} height={10} />
             <div className="mt-3 flex justify-between gap-3 flex-wrap text-[13px] tabular-nums">
                 <span className="text-hanji-400">{tr.curve.progress(pctLabel(bps))}</span>
-                <span className="text-hanji-100">{tr.curve.toGraduate(fmt(left, unit === "ETH" ? 6 : 0, tr.locale), unit)}</span>
+                <span className="text-hanji-100">{tr.curve.toGraduate(fmtCeil(left, unit === "ETH" ? 6 : 0, tr.locale), unit)}</span>
             </div>
         </div>
     );

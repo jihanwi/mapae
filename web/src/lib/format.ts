@@ -10,6 +10,16 @@ export function fmt(wei: bigint, dp = 2, locale = "en-US"): string {
     return frac ? `${int}.${frac}` : int;
 }
 
+/** Like fmt, but rounds up at `dp`. For amounts the user pays (charged amount, fees, cost to
+ *  graduate / sell out, KRWs needed), so entering the shown amount is never 1 unit short.
+ *  A value that is exact at `dp` stays unchanged. */
+export function fmtCeil(wei: bigint, dp = 2, locale = "en-US"): string {
+    if (dp >= 18) return fmt(wei, 18, locale);
+    const step = 10n ** BigInt(18 - dp);
+    const up = ((wei + step - 1n) / step) * step;
+    return fmt(up, dp, locale);
+}
+
 /** Like fmt, but rounds half-up at `dp` instead of truncating. Display only for prices and market
  *  cap; amounts the user pays, receives or holds keep fmt (floor) so they never look larger. */
 export function fmtRound(wei: bigint, dp = 2, locale = "en-US"): string {

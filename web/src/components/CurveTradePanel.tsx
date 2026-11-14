@@ -15,7 +15,7 @@ import {
 import {CurveFactoryAbi, CurveSaleAbi, MapaePoolV3Abi, MembershipTokenV3Abi} from "../contracts/abisV3";
 import {ADDR_V3} from "../contracts/addressesV3";
 import {giwaSepolia} from "../config/chain";
-import {fmt, sanitizeAmountInput} from "../lib/format";
+import {fmt, fmtCeil, sanitizeAmountInput} from "../lib/format";
 import {maxInput} from "../lib/maxInput";
 import {RunFn, RunOpts, TxButton} from "./tx";
 import {PrimaryBtn} from "./ui";
@@ -225,7 +225,7 @@ function Fees({platform, dev, lp, unit}: {platform: bigint; dev: bigint; lp: big
     return (
         <Row
             label={tr.curve.feeTotal}
-            value={`${fmt(platform + dev + lp, dp, tr.locale)} ${unit} (${tr.curve.feePlatform} ${fmt(platform, dp, tr.locale)} · ${tr.curve.feeDev} ${fmt(dev, dp, tr.locale)} · ${tr.curve.feeLp} ${fmt(lp, dp, tr.locale)})`}
+            value={`${fmtCeil(platform + dev + lp, dp, tr.locale)} ${unit} (${tr.curve.feePlatform} ${fmtCeil(platform, dp, tr.locale)} · ${tr.curve.feeDev} ${fmtCeil(dev, dp, tr.locale)} · ${tr.curve.feeLp} ${fmtCeil(lp, dp, tr.locale)})`}
         />
     );
 }
@@ -288,7 +288,7 @@ function CurveBuy({c, amount, slip, onDone}: {c: CurveDetail; amount: bigint; sl
                     <>
                         <Row label={tr.curve.receive} value={`${fmt(quote.tokensOut, 4, tr.locale)} ${c.symbol}`} strong />
                         <Fees platform={quote.platformFee} dev={quote.devFee} lp={quote.lpSeedFee} unit={unit} />
-                        <Row label={tr.curve.paid} value={`${fmt(quote.quoteSpent, dp, tr.locale)} ${unit}`} />
+                        <Row label={tr.curve.paid} value={`${fmtCeil(quote.quoteSpent, dp, tr.locale)} ${unit}`} />
                         {quote.refund > 0n && <Row label={tr.curve.refund} value={`${fmt(quote.refund, dp, tr.locale)} ${unit}`} />}
                         {quote.graduates && <p className="text-[12px] text-brass-400 m-0 mt-2">{tr.curve.graduatesNow}</p>}
                     </>

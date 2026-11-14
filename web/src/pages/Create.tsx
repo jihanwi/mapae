@@ -12,7 +12,7 @@ import {explorerAddr, explorerTx, giwaSepolia} from "../config/chain";
 import {Address, CtaState, useTradeCta, ZERO} from "../hooks/curves";
 import {CURVE_SUPPLY, DEX_SUPPLY, TOTAL_SUPPLY, costToSellOut, grossForNet, quoteBuyWithFees, spotPrice} from "../lib/curveMath";
 import {utf8ByteLength, withinByteLimit} from "../lib/bytes";
-import {fmt, fmtDateTime, fmtSig, sanitizeAmountInput} from "../lib/format";
+import {fmt, fmtCeil, fmtDateTime, fmtSig, sanitizeAmountInput} from "../lib/format";
 import {NetError, PrimaryBtn, Skeleton} from "../components/ui";
 import {RunFn, TxButton} from "../components/tx";
 import {opensOnboarding, useOnboardingModal} from "../components/OnboardingModal";
@@ -253,7 +253,7 @@ export default function Create() {
                     <div className="bg-ink-900 rounded-stat px-3.5 py-3 min-w-0">
                         <div className="text-[12px] text-hanji-400 mb-1">{tr.create.sellOut}</div>
                         <div className="font-semibold tabular-nums break-all">
-                            {fmt(sellOut, dp, tr.locale)} <span className="text-hanji-400 font-normal">{unit}</span>
+                            {fmtCeil(sellOut, dp, tr.locale)} <span className="text-hanji-400 font-normal">{unit}</span>
                         </div>
                     </div>
                 </div>
@@ -273,7 +273,7 @@ export default function Create() {
                         <div className="mt-2 text-[13px] tabular-nums flex justify-between gap-3 flex-wrap">
                             <span className="text-hanji-400">{tr.create.devBuyReceive}</span>
                             <span>
-                                {fmt(preview.tokensOut, 2, tr.locale)} {symbol || tr.curve.tokenUnit} · {tr.curve.paid} {fmt(preview.quoteSpent, kind === "ETH" ? 8 : 2, tr.locale)} {unit}
+                                {fmt(preview.tokensOut, 2, tr.locale)} {symbol || tr.curve.tokenUnit} · {tr.curve.paid} {fmtCeil(preview.quoteSpent, kind === "ETH" ? 8 : 2, tr.locale)} {unit}
                             </span>
                         </div>
                     )}

@@ -14,7 +14,7 @@ import {ADDR_V3} from "../contracts/addressesV3";
 import {MockDojangV3Abi, MockKRWV3Abi} from "../contracts/abisV3";
 import {giwaSepolia} from "../config/chain";
 import {Address, CtaState, ZERO} from "../hooks/curves";
-import {fmt} from "../lib/format";
+import {fmt, fmtCeil} from "../lib/format";
 import {faucetAmount} from "../lib/faucet";
 import {useTx} from "./tx";
 import {PrimaryBtn, SecondaryBtn} from "./ui";
@@ -152,7 +152,7 @@ function OnboardingModal({args, onClose}: {args: OpenArgs; onClose: () => void})
                         {krw !== undefined && cap !== undefined && (
                             <>
                                 <p className="m-0 mb-3 text-[13px] text-hanji-400 tabular-nums">
-                                    {tr.onboardingV3.krwNote(fmt(krw, 0, tr.locale), fmt(need, 0, tr.locale))}
+                                    {tr.onboardingV3.krwNote(fmt(krw, 0, tr.locale), fmtCeil(need, 0, tr.locale))}
                                 </p>
                                 <SecondaryBtn
                                     className="w-full"
