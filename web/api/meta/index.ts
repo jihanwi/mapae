@@ -9,7 +9,7 @@ export async function GET(request: Request): Promise<Response> {
     const c = cors(request);
     if (!c.allowed) return forbiddenOrigin(c);
     const r = await handleGetMeta({store: blobStore});
-    const cache: Record<string, string> = r.status === 200 ? {"Cache-Control": "s-maxage=30, stale-while-revalidate=300"} : {};
+    const cache: Record<string, string> = r.status === 200 ? {"Cache-Control": "s-maxage=15, stale-while-revalidate=60"} : {};
     return json(r.status, r.body, {...c.headers, ...cache});
 }
 

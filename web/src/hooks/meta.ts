@@ -15,13 +15,26 @@ export type MetaIndex = Record<string, CurveMeta>;
 
 const KEY = ["curve-meta"];
 
+/** Index with `entry` added for `curve` (lowercased). An existing entry is never replaced: metadata
+ *  is write-once, so whatever the server already has wins. Returns a new object. */
+export function addMetaEntry(index: MetaIndex, curve: string, entry: CurveMeta): MetaIndex {
+    const k = curve.toLowerCase();
+    return k in index ? index : {...index, [k]: entry};
+}
+
+// Entries this browser saved in this session. GET /api/meta is edge-cached (s-maxage + SWR), so a
+// refetch right after a save can still return the old index; merging these keeps a just-saved
+// image and description on screen until the server index catches up.
+const savedHere = new Map<string, CurveMeta>();
+const withSavedHere = (index: MetaIndex) => [...savedHere].reduce((acc, [k, e]) => addMetaEntry(acc, k, e), index);
+
 export function useCurveMeta() {
     const q = useQuery({
         queryKey: KEY,
         queryFn: async (): Promise<MetaIndex> => {
             const r = await fetch(`${API_BASE}/api/meta`);
             if (!r.ok) throw new Error(`meta ${r.status}`);
-            return (await r.json()) as MetaIndex;
+            return withSavedHere((await r.json()) as MetaIndex);
         },
         staleTime: 60_000,
         retry: 1,
@@ -72,17 +85,21 @@ export function useSaveMeta() {
                     headers: {"content-type": "application/json"},
                     body: JSON.stringify({...req.body, signature}),
                 });
+                const body = (await r.json().catch(() => ({}))) as {error?: string; imageUrl?: string | null};
                 if (!r.ok) {
-                    const body = (await r.json().catch(() => ({}))) as {error?: string};
                     setState({phase: "failed", code: body.error ?? "temporary"});
                     return false;
                 }
+                // Show it now: put the saved entry into the cached index instead of refetching
+                // (a refetch would likely hit the edge-cached index without it).
+                const entry: CurveMeta = {description: req.body.description, links: req.body.links, imageUrl: body.imageUrl ?? null};
+                savedHere.set(curve.toLowerCase(), entry);
+                qc.setQueryData<MetaIndex>(KEY, (old) => addMetaEntry(old ?? {}, curve, entry));
             } catch {
                 setState({phase: "failed", code: "temporary"});
                 return false;
             }
             setState({phase: "saved"});
-            void qc.invalidateQueries({queryKey: KEY});
             return true;
         },
         [signMessageAsync, qc]

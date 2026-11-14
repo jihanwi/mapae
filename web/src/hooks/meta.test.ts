@@ -1,6 +1,6 @@
 import {describe, expect, it} from "vitest";
 import {privateKeyToAccount} from "viem/accounts";
-import {draftHasContent, emptyDraft, prepareMetaRequest} from "./meta";
+import {addMetaEntry, draftHasContent, emptyDraft, prepareMetaRequest} from "./meta";
 import {handlePostMeta, Store} from "../../api/_lib/handler";
 import {centerSquare} from "../lib/metaImage";
 
@@ -51,5 +51,19 @@ describe("draft helpers", () => {
         expect(centerSquare(1000, 600)).toEqual([200, 0, 600]);
         expect(centerSquare(600, 1001)).toEqual([0, 200, 600]);
         expect(centerSquare(512, 512)).toEqual([0, 0, 512]);
+    });
+});
+
+describe("addMetaEntry (cache update after a 201)", () => {
+    const links = {x: "", telegram: "", website: ""};
+    const a = {description: "old", links, imageUrl: "https://blob.example/a.webp"};
+    const b = {description: "new", links, imageUrl: null};
+    it("adds the saved curve under its lowercase address and keeps existing entries", () => {
+        const next = addMetaEntry({"0xaa": a}, "0xBB", b);
+        expect(next).toEqual({"0xaa": a, "0xbb": b});
+    });
+    it("never replaces an entry that is already there", () => {
+        const idx = {"0xbb": a};
+        expect(addMetaEntry(idx, "0xBB", b)).toEqual({"0xbb": a});
     });
 });
