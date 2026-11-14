@@ -1,10 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-// MAPAE v3 deploy (GIWA Sepolia). Keystore account only, never a raw key; the treasury is a
+// MAPAE v3.1 deploy (GIWA Sepolia). Keystore account only, never a raw key; the treasury is a
 // SEPARATE address passed through the environment (decision: treasury != deployer).
 //
-//   TREASURY_ADDRESS=0x... forge script script/DeployV3.s.sol --account deployer --rpc-url $GIWA_SEPOLIA_RPC_URL --broadcast --verify --verifier blockscout --verifier-url $BLOCKSCOUT_API_URL
+//   TREASURY_ADDRESS=0x... [REUSE_MOCK_KRW=0x...] [REUSE_MOCK_DOJANG=0x...] \
+//   forge script script/DeployV3.s.sol --account deployer --rpc-url $GIWA_SEPOLIA_RPC_URL --broadcast --verify --verifier blockscout --verifier-url $BLOCKSCOUT_API_URL
+//
+// v3.1 (priority window, open pool swaps): REUSE_MOCK_KRW / REUSE_MOCK_DOJANG reuse the testnet
+// MockKRW / MockDojang (balances and verifications carry over). Everything else is deployed new:
+// MapaePool's bytecode changed, so PoolFactory is new, and every contract holding PoolFactory or
+// the new CurveSale / Offering code (MapaeFactory, CurveFactory) is new too. See docs/DEPLOY_V3_1.md.
 //
 // Stack (shared infra + two dojang flavours):
 //   MockKRW, MockDojang, PoolFactory, FeeRouter(owner = deployer, treasury = TREASURY_ADDRESS),
@@ -18,8 +24,8 @@ pragma solidity ^0.8.26;
 // MembershipTokenDeployer is an external (linked) library. forge script deploys it automatically
 // as part of the broadcast; this script recovers the linked address from CurveSale's creation
 // code (the library's own runtime starts with PUSH20 <self>) and records it in the json, so
-// verify-children.js can pass --libraries. Output: deployments/giwa-sepolia-v3.json (the v2 file
-// deployments/giwa-sepolia.json is never touched).
+// verify-children.js can pass --libraries. Output: deployments/giwa-sepolia-v3_1.json (the v3 file
+// deployments/giwa-sepolia-v3.json and the v2 file deployments/giwa-sepolia.json are never touched).
 
 import {Script, console} from "forge-std/Script.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -44,7 +50,7 @@ contract DeployV3 is Script {
     uint256 internal constant MIN_RAISE = 500_000e18;
     /// @notice Testnet WETH virtual quote reserve (decision 29): 3 × 0.002 = 0.006 ETH graduation.
     uint256 public constant TESTNET_WETH_VIRTUAL_QUOTE = 0.002 ether;
-    string internal constant OUT = "deployments/giwa-sepolia-v3.json";
+    string internal constant OUT = "deployments/giwa-sepolia-v3_1.json";
 
     struct Deployed {
         address deployer;
@@ -63,6 +69,8 @@ contract DeployV3 is Script {
         address membershipTokenDeployer;
         uint256 krwsVirtualQuote;
         uint256 wethVirtualQuote;
+        bool reusedMockKRW;
+        bool reusedMockDojang;
     }
 
     function run() external {
@@ -70,21 +78,36 @@ contract DeployV3 is Script {
         (, address deployer,) = vm.readCallers();
         require(treasury != address(0), "DeployV3: TREASURY_ADDRESS env var is required");
         require(treasury != deployer, "DeployV3: TREASURY_ADDRESS must differ from the deployer");
+        address reuseKrw = vm.envOr("REUSE_MOCK_KRW", address(0));
+        address reuseDojang = vm.envOr("REUSE_MOCK_DOJANG", address(0));
         uint256 deployBlock = block.number;
-        Deployed memory d = deploy(deployer, treasury);
+        Deployed memory d = deploy(deployer, treasury, reuseKrw, reuseDojang);
         _writeJson(d, deployBlock);
         _log(d);
     }
 
-    /// @notice Full deployment, broadcast as `deployer`. Callable from tests.
+    /// @notice Full deployment with fresh mocks, broadcast as `deployer`. Callable from tests.
     function deploy(address deployer, address treasury) public returns (Deployed memory d) {
+        return deploy(deployer, treasury, address(0), address(0));
+    }
+
+    /// @notice Full deployment. Non-zero `reuseKrw` / `reuseDojang` reuse an existing MockKRW /
+    ///         MockDojang instead of deploying new ones (they must have code).
+    function deploy(address deployer, address treasury, address reuseKrw, address reuseDojang)
+        public
+        returns (Deployed memory d)
+    {
         require(treasury != address(0) && treasury != deployer, "DeployV3: bad treasury");
+        require(reuseKrw == address(0) || reuseKrw.code.length > 0, "DeployV3: REUSE_MOCK_KRW has no code");
+        require(reuseDojang == address(0) || reuseDojang.code.length > 0, "DeployV3: REUSE_MOCK_DOJANG has no code");
         d.deployer = deployer;
         d.treasury = treasury;
+        d.reusedMockKRW = reuseKrw != address(0);
+        d.reusedMockDojang = reuseDojang != address(0);
 
         vm.startBroadcast(deployer);
-        d.krw = new MockKRW();
-        d.mockDojang = new MockDojang();
+        d.krw = d.reusedMockKRW ? MockKRW(reuseKrw) : new MockKRW();
+        d.mockDojang = d.reusedMockDojang ? MockDojang(reuseDojang) : new MockDojang();
         d.poolFactory = new PoolFactory();
         d.feeRouter = new FeeRouter(deployer, treasury);
         d.buybackVault = new BuybackVault(IERC20(address(d.krw)), deployer);
@@ -164,7 +187,8 @@ contract DeployV3 is Script {
     }
 
     function _writeJson(Deployed memory d, uint256 deployBlock) internal {
-        string memory j = "v3";
+        string memory j = "v3_1";
+        vm.serializeString(j, "version", "v3.1");
         vm.serializeUint(j, "chainId", block.chainid);
         vm.serializeUint(j, "deployBlock", deployBlock);
         vm.serializeAddress(j, "deployer", d.deployer);
@@ -182,6 +206,9 @@ contract DeployV3 is Script {
         vm.serializeAddress(j, "curveFactoryDojang", address(d.curveFactoryDojang));
         vm.serializeAddress(j, "weth", GiwaSepolia.WETH);
         vm.serializeAddress(j, "membershipTokenDeployer", d.membershipTokenDeployer);
+        vm.serializeBool(j, "reusedMockKRW", d.reusedMockKRW);
+        vm.serializeBool(j, "reusedMockDojang", d.reusedMockDojang);
+        vm.serializeUint(j, "priorityWindow", d.curveFactoryMock.priorityWindow());
         vm.serializeUint(j, "krwsVirtualQuote", d.krwsVirtualQuote);
         string memory out = vm.serializeUint(j, "wethVirtualQuote", d.wethVirtualQuote);
         vm.writeJson(out, OUT);
@@ -189,8 +216,8 @@ contract DeployV3 is Script {
 
     function _log(Deployed memory d) internal pure {
         console.log("Treasury:                ", d.treasury);
-        console.log("MockKRW:                 ", address(d.krw));
-        console.log("MockDojang:              ", address(d.mockDojang));
+        console.log("MockKRW:                 ", address(d.krw), d.reusedMockKRW ? "(reused)" : "(new)");
+        console.log("MockDojang:              ", address(d.mockDojang), d.reusedMockDojang ? "(reused)" : "(new)");
         console.log("PoolFactory:             ", address(d.poolFactory));
         console.log("FeeRouter:               ", address(d.feeRouter));
         console.log("BuybackVault:            ", address(d.buybackVault));
