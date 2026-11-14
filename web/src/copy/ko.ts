@@ -339,6 +339,13 @@ export const ko = {
         userRejected: "지갑에서 요청을 취소했어요",
         default: "거래가 실패했어요. 잠시 후 다시 시도해 주세요",
     },
+    // wallet connect (shared by nav and the v3 onboarding modal)
+    wallet: {
+        chooseTitle: "지갑 선택",
+        rejected: "지갑에서 연결을 취소했어요",
+        pending: "지갑에 열려 있는 요청이 있어요. 지갑 창을 확인해 주세요",
+        unknown: "지갑에 연결하지 못했어요. 지갑이 잠겨 있지 않은지 확인해 주세요",
+    },
     // v3 화면 전용 에러 문구 (v1/v2 화면은 위 errors 를 그대로 쓴다)
     errorsV3: {
         NotVerified: "실명 인증이 필요해요",

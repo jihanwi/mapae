@@ -5,7 +5,9 @@
 // (max-h + overflow-y-auto) when taller than the viewport.
 import {createContext, ReactNode, useCallback, useContext, useState} from "react";
 import {Abi} from "viem";
-import {useAccount, useBalance, useConnect, useReadContracts, useSwitchChain, useWriteContract} from "wagmi";
+import {useAccount, useBalance, useReadContracts, useSwitchChain, useWriteContract} from "wagmi";
+import {useWalletConnect} from "../hooks/useWalletConnect";
+import {WalletPicker} from "./WalletPicker";
 import {useCopy} from "../copy";
 import {ADDR_V3} from "../contracts/addressesV3";
 import {MockDojangV3Abi, MockKRWV3Abi} from "../contracts/abisV3";
@@ -13,7 +15,7 @@ import {giwaSepolia} from "../config/chain";
 import {Address, CtaState, ZERO} from "../hooks/curves";
 import {fmt} from "../lib/format";
 import {faucetAmount} from "../lib/faucet";
-import {useToast, useTx} from "./tx";
+import {useTx} from "./tx";
 import {PrimaryBtn, SecondaryBtn} from "./ui";
 
 
@@ -68,10 +70,7 @@ function Step({n, title, done, children}: {n: number; title: string; done: boole
 function OnboardingModal({args, onClose}: {args: OpenArgs; onClose: () => void}) {
     const tr = useCopy();
     const {address, isConnected, chainId} = useAccount();
-    const push = useToast();
-    const {connect, connectors, isPending: connecting} = useConnect({
-        mutation: {onError: () => push({kind: "error", text: tr.errors.noWallet})},
-    });
+
     // wagmi's injected connector falls back to wallet_addEthereumChain (giwaSepolia config) when
     // the wallet does not know the chain yet.
     const {switchChain, isPending: switching} = useSwitchChain();
@@ -104,6 +103,7 @@ function OnboardingModal({args, onClose}: {args: OpenArgs; onClose: () => void})
         args.onProgress?.();
     };
 
+    const wc = useWalletConnect({onSuccess: progress});
     const allDone = onRightChain && verified === true && krwDone;
 
     return (
@@ -122,18 +122,7 @@ function OnboardingModal({args, onClose}: {args: OpenArgs; onClose: () => void})
 
                 <Step n={1} title={tr.onboardingV3.connectTitle} done={onRightChain}>
                     {!isConnected ? (
-                        <PrimaryBtn
-                            className="w-full"
-                            disabled={connecting}
-                            onClick={() => {
-                                const c = connectors[0];
-                                if (!c) {
-                                    push({kind: "error", text: tr.errors.noWallet});
-                                    return;
-                                }
-                                connect({connector: c, chainId: giwaSepolia.id}, {onSuccess: progress});
-                            }}
-                        >
+                        <PrimaryBtn className="w-full" disabled={wc.isPending} onClick={wc.connectWallet}>
                             {tr.connect}
                         </PrimaryBtn>
                     ) : (
@@ -195,6 +184,7 @@ function OnboardingModal({args, onClose}: {args: OpenArgs; onClose: () => void})
                 )}
                 {isConnected && readFailed && <p className="m-0 mt-2 text-[13px] text-error">{tr.onboardingV3.readError}</p>}
 
+                {wc.choices && <WalletPicker choices={wc.choices} onChoose={wc.choose} onClose={wc.closePicker} />}
                 {allDone && (
                     <div className="border-t border-ink-700 pt-4">
                         <p className="m-0 mb-3 text-[14px] text-success">{tr.onboardingV3.ready}</p>

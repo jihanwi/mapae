@@ -208,6 +208,12 @@ export const en = {
         userRejected: "You cancelled the request in your wallet.",
         default: "The transaction failed. Try again in a moment.",
     },
+    wallet: {
+        chooseTitle: "Choose a wallet",
+        rejected: "Connection was cancelled in your wallet.",
+        pending: "Your wallet has a pending request. Open your wallet to continue.",
+        unknown: "Couldn't connect. Check that your wallet is unlocked.",
+    },
     errorsV3: {
         NotVerified: "Verification required.",
         NotVerifiedCreator: "Verification required.",

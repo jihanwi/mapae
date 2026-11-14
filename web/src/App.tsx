@@ -1,5 +1,7 @@
 import {Link, NavLink, Outlet, useLocation} from "react-router-dom";
-import {useAccount, useConnect, useDisconnect, useReadContract, useSwitchChain, useWriteContract} from "wagmi";
+import {useAccount, useDisconnect, useReadContract, useSwitchChain, useWriteContract} from "wagmi";
+import {useWalletConnect} from "./hooks/useWalletConnect";
+import {WalletPicker} from "./components/WalletPicker";
 import {giwaSepolia} from "./config/chain";
 import {useCopy, useLang, copy} from "./copy";
 import {ADDR} from "./contracts/addresses";
@@ -7,7 +9,7 @@ import {MockKRWAbi, MockDojangAbi} from "./contracts/abis";
 import {ADDR_V3} from "./contracts/addressesV3";
 import {MockKRWV3Abi} from "./contracts/abisV3";
 import {useOnboarding} from "./hooks";
-import {useTx, useGlobalTxBusy, useToast} from "./components/tx";
+import {useTx, useGlobalTxBusy} from "./components/tx";
 import {fmt, shortAddr} from "./lib/format";
 import {OnboardingProvider} from "./components/OnboardingModal";
 
@@ -43,8 +45,7 @@ function Nav() {
     const {address, isConnected, chainId} = useAccount();
     const {pathname} = useLocation();
     const legacy = isOfferingSection(pathname);
-    const push = useToast();
-    const {connect, connectors} = useConnect({mutation: {onError: () => push({kind: "error", text: tr.errors.noWallet})}});
+    const wc = useWalletConnect();
     const {disconnect} = useDisconnect();
     const {switchChain} = useSwitchChain();
     const {krwBalance, ethBalance} = useOnboarding(); // legacy (ADDR) balances
@@ -113,12 +114,8 @@ function Nav() {
             </span>
         </button>
     ) : (
-        <button onClick={() => {
-            const c = connectors[0];
-            if (!c) { push({kind: "error", text: tr.errors.noWallet}); return; } // 4-a: 확장 없으면 무음 대신 안내
-            connect({connector: c});
-        }}
-            className="min-h-[44px] px-5 py-2.5 bg-brass-400 text-ink-950 rounded-input text-[14px] font-bold hover:bg-brass-500 active:bg-brass-600">
+        <button onClick={wc.connectWallet} disabled={wc.isPending}
+            className="min-h-[44px] px-5 py-2.5 bg-brass-400 text-ink-950 rounded-input text-[14px] font-bold hover:bg-brass-500 active:bg-brass-600 disabled:opacity-40">
             {tr.connect}
         </button>
     );
@@ -150,6 +147,7 @@ function Nav() {
                     <Link key={t.to} to={t.to} className={gridCls(t.active)}>{t.label}</Link>
                 ))}
             </nav>
+            {wc.choices && <WalletPicker choices={wc.choices} onChoose={wc.choose} onClose={wc.closePicker} />}
             {/* 공모 섹션 하위 탭 */}
             {legacy && (
                 <nav className="border-t border-ink-700">
