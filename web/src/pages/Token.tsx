@@ -6,8 +6,10 @@ import {Address, CurveDetail, useCurve, ZERO} from "../hooks/curves";
 import {CurveFactoryAbi, MapaePoolV3Abi} from "../contracts/abisV3";
 import {ADDR_V3} from "../contracts/addressesV3";
 import {costToSellOut, grossForNet, marketCapQuote, progressBps, spotPrice, TOTAL_SUPPLY, WAD} from "../lib/curveMath";
-import {fmtCeil, fmtRound, fmtSig, shortAddr} from "../lib/format";
-import {explorerAddr, giwaSepolia} from "../config/chain";
+import {fmt, fmtCeil, fmtRound, fmtSig, shortAddr} from "../lib/format";
+import {explorerAddr, explorerTx, giwaSepolia} from "../config/chain";
+import {useActivity} from "../hooks/activity";
+import {agoLabel, tradeAmount, tradeUnit, useNow} from "../components/feed";
 import {Badge, Gauge, Medallion, NetError, PrimaryBtn, Skeleton, Stat} from "../components/ui";
 import {CurveTradePanel} from "../components/CurveTradePanel";
 import {pctLabel, quoteUnit} from "./Curves";
@@ -78,6 +80,49 @@ function Progress({c}: {c: CurveDetail}) {
                 <span className="text-hanji-400">{tr.curve.progress(pctLabel(bps))}</span>
                 <span className="text-hanji-100">{tr.curve.toGraduate(fmtCeil(left, unit === "ETH" ? 6 : 0, tr.locale), unit)}</span>
             </div>
+        </div>
+    );
+}
+
+/** Curve trades and graduated pool swaps of this curve, newest first (max 30, from the activity window). */
+function RecentTrades({c}: {c: CurveDetail}) {
+    const tr = useCopy();
+    const {loaded, error, stats, tsOf, hours} = useActivity();
+    const now = useNow();
+    const rows = stats.get(c.address)?.recent ?? [];
+    return (
+        <div className="bg-ink-900 border border-ink-700 rounded-card p-4 sm:p-6 min-w-0">
+            <h3 className="m-0 mb-3 text-[15px] font-bold">{tr.feed.recentTitle}</h3>
+            {error != null && <p className="m-0 mb-2 text-[13px] text-error">{tr.feed.loadError}</p>}
+            {!loaded ? (
+                error == null && <p className="m-0 text-[13px] text-hanji-400">…</p>
+            ) : rows.length === 0 ? (
+                <p className="m-0 text-[13px] text-hanji-400">{tr.feed.noTrades(hours ?? 1)}</p>
+            ) : (
+                <ul className="m-0 p-0 list-none">
+                    {rows.map((t) => {
+                        const ts = tsOf(t.block);
+                        return (
+                            <li key={`${t.tx}:${t.logIndex}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 border-t border-ink-700 first:border-t-0 text-[13px] tabular-nums min-w-0">
+                                <span className="text-hanji-400 w-[72px] flex-none">{ts !== undefined ? agoLabel(tr, now, ts) : ""}</span>
+                                <span className="flex-none">
+                                    {t.isDev ? <Badge kind="partial">{tr.curve.dev}</Badge> : <span className="text-hanji-100">{shortAddr(t.trader)}</span>}
+                                </span>
+                                <span className={`flex-none font-semibold ${t.side === "buy" ? "text-success" : "text-error"}`}>{t.side === "buy" ? tr.feed.buy : tr.feed.sell}</span>
+                                <span className="text-hanji-100">
+                                    {fmt(t.tokenAmount, 2, tr.locale)} {c.symbol}
+                                </span>
+                                <span className="text-hanji-100">
+                                    {tradeAmount(t, c.isEth, tr.locale)} {tradeUnit(t, c.isEth)}
+                                </span>
+                                <span className="ml-auto flex-none">
+                                    <ExtLink href={explorerTx(t.tx)}>{tr.feed.txLink}</ExtLink>
+                                </span>
+                            </li>
+                        );
+                    })}
+                </ul>
+            )}
         </div>
     );
 }
@@ -161,7 +206,9 @@ export default function Token() {
             </div>
             {/* 6) trade panel */}
             <CurveTradePanel c={c} />
-            {/* 7) contract links */}
+            {/* 7) recent trades (curve + graduated pool) */}
+            <RecentTrades c={c} />
+            {/* 8) contract links */}
             <Contracts c={c} />
         </div>
     );

@@ -65,3 +65,13 @@ export function countdown(deadline: bigint, now: number): string {
 export function fmtDateTime(unixSeconds: bigint | number, locale: string): string {
     return new Date(Number(unixSeconds) * 1000).toLocaleString(locale);
 }
+
+/** Elapsed time bucket for "3 min ago" style labels (the copy layer renders it). */
+export type Ago = {unit: "now" | "min" | "hour" | "day"; n: number};
+export function agoOf(nowSec: number, tsSec: number): Ago {
+    const d = Math.max(0, nowSec - tsSec);
+    if (d < 60) return {unit: "now", n: 0};
+    if (d < 3600) return {unit: "min", n: Math.floor(d / 60)};
+    if (d < 86400) return {unit: "hour", n: Math.floor(d / 3600)};
+    return {unit: "day", n: Math.floor(d / 86400)};
+}

@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {fmt, fmtCeil, fmtRound, fmtSig} from "./format";
+import {agoOf, fmt, fmtCeil, fmtRound, fmtSig} from "./format";
 
 const E12 = 10n ** 12n;
 const E18 = 10n ** 18n;
@@ -41,5 +41,15 @@ describe("pay-side formatting rounds up", () => {
         expect(fmt(606060607n * 10n ** 16n, 0)).toBe("6,060,606");
         expect(fmtCeil(1n, 2)).toBe("0.01");
         expect(fmt(1n, 2)).toBe("0");
+    });
+});
+
+describe("agoOf", () => {
+    it("buckets elapsed seconds", () => {
+        expect(agoOf(1000, 990)).toEqual({unit: "now", n: 0});
+        expect(agoOf(1000, 1010)).toEqual({unit: "now", n: 0});
+        expect(agoOf(1000, 820)).toEqual({unit: "min", n: 3});
+        expect(agoOf(10_000, 2_000)).toEqual({unit: "hour", n: 2});
+        expect(agoOf(200_000, 0)).toEqual({unit: "day", n: 2});
     });
 });
