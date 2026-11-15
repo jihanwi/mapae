@@ -44,6 +44,10 @@ export type CurveRow = {
     symbol: string;
     createdBlock: string;
     createdTs: string;
+    /** v3.1: end of the real-name priority window (unix seconds, from CurveCreated). */
+    priorityUntil: string;
+    /** CurveFactory that emitted CurveCreated (lowercase). */
+    factory: Address;
 };
 export type GraduationRow = {curve: Address; pool: Address; block: string};
 export type TradeRow = {
@@ -54,6 +58,8 @@ export type TradeRow = {
     side: "buy" | "sell";
     trader: Address;
     isDev: boolean;
+    /** v3.1: real-name status at trade time; null when unknown. */
+    verified: boolean | null;
     quoteAmount: string;
     tokenAmount: string;
     priceWad: string;
@@ -87,7 +93,7 @@ export function toCurveRows(logs: readonly RawLog[], factory: string, a: BlockTi
         } catch {
             continue;
         }
-        const x = ev.args as {dev: string; curve: string; token: string; quote: string; virtualQuote: bigint; name: string; symbol: string};
+        const x = ev.args as {dev: string; curve: string; token: string; quote: string; virtualQuote: bigint; name: string; symbol: string; priorityUntil: bigint};
         out.push({
             curve: lc(x.curve),
             token: lc(x.token),
@@ -98,6 +104,8 @@ export function toCurveRows(logs: readonly RawLog[], factory: string, a: BlockTi
             symbol: x.symbol,
             createdBlock: l.blockNumber.toString(),
             createdTs: tsStr(l.blockNumber, a, b),
+            priorityUntil: x.priorityUntil.toString(),
+            factory: lc(factory),
         });
     }
     return out;
@@ -130,6 +138,8 @@ export function toTradeRows(logs: readonly RawLog[], known: readonly KnownCurve[
             side: t.side,
             trader: lc(t.trader),
             isDev: t.isDev,
+            // Buy carries it; sells and pool swaps are looked up per range (fillVerified).
+            verified: t.side === "buy" && t.venue === "curve" ? t.verified : null,
             quoteAmount: t.quoteAmount.toString(),
             tokenAmount: t.tokenAmount.toString(),
             priceWad: ((t.quoteAmount * WAD) / t.tokenAmount).toString(),
@@ -165,6 +175,17 @@ export function toTransferRows(logs: readonly RawLog[], tokens: ReadonlySet<stri
     return out;
 }
 
+/** Wallets whose verified status must be looked up for this range (sells and pool swaps), unique. */
+export function verifiedLookupTargets(rows: readonly TradeRow[]): Address[] {
+    return [...new Set(rows.filter((r) => r.verified === null).map((r) => r.trader))];
+}
+
+/** Rows with `verified` filled from a lookup (address -> status). Missing entries stay null. */
+export function fillVerified(rows: readonly TradeRow[], lookup: ReadonlyMap<string, boolean | null> | null): TradeRow[] {
+    if (!lookup) return [...rows];
+    return rows.map((r) => (r.verified === null ? {...r, verified: lookup.get(r.trader) ?? null} : r));
+}
+
 export function chunk<T>(xs: readonly T[], n: number): T[][] {
     const out: T[][] = [];
     for (let i = 0; i < xs.length; i += n) out.push(xs.slice(i, i + n));
@@ -181,6 +202,7 @@ export type CronDeps = {
     db: {
         ensureSchema(): Promise<void>;
         readNextBlock(): Promise<bigint | null>;
+        /** Curves of the current factory only (older factories' curves are not indexed). */
         loadCurves(): Promise<KnownCurve[]>;
         writeRange(w: RangeWrite): Promise<void>;
     };
@@ -188,6 +210,8 @@ export type CronDeps = {
         blockNumber(): Promise<bigint>;
         blockTime(n: bigint): Promise<BlockTime>;
         getLogs(q: {fromBlock: bigint; toBlock: bigint; address?: string | string[]; topics: (Hex | Hex[])[]}): Promise<RawLog[]>;
+        /** MockDojang.isVerified for many wallets in ONE Multicall3 aggregate3 call. null = that call failed. */
+        isVerifiedMany(wallets: readonly Address[]): Promise<Map<string, boolean | null>>;
     };
     nowMs(): number;
     factory: string;
@@ -240,7 +264,19 @@ export async function runCron(authorization: string | null, secret: string | und
             const created = toCurveRows(await deps.rpc.getLogs({fromBlock: from, toBlock: to, address: deps.factory, topics: [CURVE_CREATED_TOPIC]}), deps.factory, a, b);
             for (const c of created) if (!known.has(c.curve)) known.set(c.curve, {curve: c.curve, token: c.token, dev: c.dev, pool: null});
             // 6c) activity, no address filter, kept for known curves/pools only
-            const act = toTradeRows(await deps.rpc.getLogs({fromBlock: from, toBlock: to, topics: [ACTIVITY_TOPICS]}), [...known.values()], a, b);
+            const raw = toTradeRows(await deps.rpc.getLogs({fromBlock: from, toBlock: to, topics: [ACTIVITY_TOPICS]}), [...known.values()], a, b);
+            // 6e) only when the range has sells or pool swaps: their real-name status, one multicall.
+            //     A failed lookup leaves them null (logged) and indexing continues.
+            const targets = verifiedLookupTargets(raw.trades);
+            let lookup: Map<string, boolean | null> | null = null;
+            if (targets.length > 0) {
+                try {
+                    lookup = await deps.rpc.isVerifiedMany(targets);
+                } catch (e) {
+                    console.error("indexer verified lookup failed", {from: from.toString(), to: to.toString()}, e);
+                }
+            }
+            const act = {...raw, trades: fillVerified(raw.trades, lookup)};
             for (const g of act.graduations) {
                 const k = known.get(g.curve);
                 if (k) known.set(g.curve, {...k, pool: g.pool});

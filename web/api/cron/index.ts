@@ -24,7 +24,7 @@ export async function GET(request: Request): Promise<Response> {
             db: {
                 ensureSchema: () => db.ensureSchema(sql),
                 readNextBlock: () => db.readNextBlock(sql),
-                loadCurves: () => db.loadCurves(sql),
+                loadCurves: () => db.loadCurves(sql, ADDR_V3.curveFactory),
                 writeRange: (w) => db.writeRange(sql, w),
             },
             rpc: giwaRpc(),
