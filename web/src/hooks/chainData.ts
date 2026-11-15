@@ -36,6 +36,8 @@ export type FlowOut = {
     /** null when sells carry no verified status (the card then hides the sellers line) */
     verifiedSellers: number | null;
     devLaunched: number;
+    /** The Dev wallet's nickname (null when none or not indexed). */
+    devNickname: string | null;
 };
 
 /** Non-Dev 24 h buys and sells of one curve and the Dev's launch count. */

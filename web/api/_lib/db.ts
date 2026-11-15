@@ -241,17 +241,19 @@ export async function flow(sql: Sql, curve: string, sinceTs: number): Promise<Fl
     return rows[0];
 }
 
-/** Curves launched by this curve's Dev through the same factory (this one included); 0 when the
- *  curve is not indexed. */
-export async function devLaunched(sql: Sql, curve: string): Promise<number> {
+/** Curves launched by this curve's Dev through the same factory (this one included) and the Dev's
+ *  nickname, in one query; {0, null} when the curve is not indexed. Addresses are stored lowercase
+ *  on both sides (indexer and nickname writes), so the join needs no lower(). */
+export async function devInfo(sql: Sql, curve: string): Promise<{launched: number; nickname: string | null}> {
     const rows = (await sql.query(
-        `SELECT count(*)::int AS n
+        `SELECT (SELECT count(*)::int FROM mapae_curves m WHERE m.dev = me.dev AND m.factory = me.factory) AS n,
+                nk.nickname AS nickname
          FROM mapae_curves me
-         JOIN mapae_curves m ON m.dev = me.dev AND m.factory = me.factory
+         LEFT JOIN mapae_nicknames nk ON nk.address = me.dev
          WHERE me.curve = $1`,
         [curve]
-    )) as {n: number}[];
-    return rows[0]?.n ?? 0;
+    )) as {n: number; nickname: string | null}[];
+    return {launched: rows[0]?.n ?? 0, nickname: rows[0]?.nickname ?? null};
 }
 
 export async function curveRow(sql: Sql, curve: string): Promise<{token: string; dev: string; pool: string | null} | null> {

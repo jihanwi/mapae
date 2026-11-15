@@ -177,6 +177,15 @@ function DevLaunched({c}: {c: CurveDetail}) {
     return <Badge kind="neutral">{tr.tokenPage.devLaunched(f.data.devLaunched)}</Badge>;
 }
 
+/** The Dev's nickname next to the Dev address (owner decision: Dev only). Plain text, never a link;
+ *  nothing without a nickname or a server answer. */
+function DevNickname({c}: {c: CurveDetail}) {
+    const f = useFlow(c.address);
+    const nick = f.isSuccess ? f.data.devNickname : null;
+    if (!nick) return null;
+    return <span className="text-hanji-100 whitespace-nowrap">{nick}</span>;
+}
+
 /** Last 24 h of non-Dev buys and sells: counts, amounts, a buy/sell ratio bar, verified wallets.
  *  Not rendered when the server does not answer; a same-height skeleton while loading. */
 function FlowCard({c}: {c: CurveDetail}) {
@@ -244,8 +253,8 @@ function Header({c, imageUrl}: {c: CurveDetail; imageUrl?: string | null}) {
                 {!c.graduated && <PriorityBadge priorityUntil={c.priorityUntil} />}
                 <DevHolds c={c} />
                 <DevLaunched c={c} />
-                <span className="inline-flex items-center gap-1.5 text-hanji-400">
-                    {tr.curve.dev} <ExtLink href={explorerAddr(c.dev)}>{shortAddr(c.dev)}</ExtLink>
+                <span className="inline-flex flex-wrap items-center gap-x-1.5 text-hanji-400 min-w-0">
+                    {tr.curve.dev} <DevNickname c={c} /> <ExtLink href={explorerAddr(c.dev)}>{shortAddr(c.dev)}</ExtLink>
                 </span>
             </div>
         </div>
