@@ -86,6 +86,9 @@ const SCHEMA = [
     )`,
     `CREATE INDEX IF NOT EXISTS mapae_comments_curve_id ON mapae_comments (curve, id DESC)`,
     `CREATE INDEX IF NOT EXISTS mapae_comments_author_created ON mapae_comments (author, created_at DESC)`,
+    // wallet profile (/api/chain/wallet, /api/chain/wallet-trades)
+    `CREATE INDEX IF NOT EXISTS mapae_trades_trader_ts ON mapae_trades (trader, ts DESC)`,
+    `CREATE INDEX IF NOT EXISTS mapae_transfers_to ON mapae_transfers (to_addr)`,
 ];
 
 export async function ensureSchema(sql: Sql): Promise<void> {
@@ -298,6 +301,71 @@ export async function trades(sql: Sql, curve: string, before: bigint | undefined
          LIMIT $3`,
         [curve, before === undefined ? null : before.toString(), limit]
     )) as TradeOut[];
+}
+
+// ---------------------------------------------------------------------------------------------
+// Wallet profile (curves of `factory` only; addresses lowercase)
+// ---------------------------------------------------------------------------------------------
+
+export type WalletCurve = {curve: string; token: string; name: string; symbol: string};
+export type WalletLaunched = WalletCurve & {createdTs: string};
+export type WalletPosition = WalletCurve & {buyQuote: string; buyTokens: string; sellQuote: string; sellTokens: string};
+
+/** Curves this address launched (Dev), newest first, at most 50. */
+export async function walletLaunched(sql: Sql, address: string, factory: string): Promise<WalletLaunched[]> {
+    return (await sql.query(
+        `SELECT curve, token, name, symbol, created_ts::text AS "createdTs"
+         FROM mapae_curves
+         WHERE dev = $1 AND factory = $2
+         ORDER BY created_block DESC
+         LIMIT 50`,
+        [address, factory.toLowerCase()]
+    )) as WalletLaunched[];
+}
+
+/** Tokens this address ever received (any transfer to it), at most 200. Balances are read on chain. */
+export async function walletReceived(sql: Sql, address: string, factory: string): Promise<WalletCurve[]> {
+    return (await sql.query(
+        `SELECT m.curve, m.token, m.name, m.symbol
+         FROM mapae_curves m
+         WHERE m.factory = $2 AND m.token IN (SELECT DISTINCT t.token FROM mapae_transfers t WHERE t.to_addr = $1)
+         ORDER BY m.created_block DESC
+         LIMIT 200`,
+        [address, factory.toLowerCase()]
+    )) as WalletCurve[];
+}
+
+/** This address's trades summed per curve (curve and pool venues together, Dev trades included). */
+export async function walletPositions(sql: Sql, address: string, factory: string): Promise<WalletPosition[]> {
+    return (await sql.query(
+        `SELECT t.curve, m.token, m.name, m.symbol,
+                coalesce(sum(t.quote_amount) FILTER (WHERE t.side = 'buy'), 0)::text AS "buyQuote",
+                coalesce(sum(t.token_amount) FILTER (WHERE t.side = 'buy'), 0)::text AS "buyTokens",
+                coalesce(sum(t.quote_amount) FILTER (WHERE t.side = 'sell'), 0)::text AS "sellQuote",
+                coalesce(sum(t.token_amount) FILTER (WHERE t.side = 'sell'), 0)::text AS "sellTokens"
+         FROM mapae_trades t
+         JOIN mapae_curves m ON m.curve = t.curve AND m.factory = $2
+         WHERE t.trader = $1
+         GROUP BY t.curve, m.token, m.name, m.symbol`,
+        [address, factory.toLowerCase()]
+    )) as WalletPosition[];
+}
+
+export type WalletTradeOut = TradeOut & {curve: string; symbol: string};
+
+/** This address's trades, newest first, with the curve and its symbol (one page). */
+export async function walletTrades(sql: Sql, address: string, factory: string, before: bigint | undefined, limit: number): Promise<WalletTradeOut[]> {
+    return (await sql.query(
+        `SELECT t.tx, t.log_index AS "logIndex", t.side, t.venue, t.trader, t.is_dev AS "isDev",
+                t.quote_amount::text AS "quoteAmount", t.token_amount::text AS "tokenAmount", t.price_wad::text AS "priceWad",
+                t.ts::text AS ts, t.block::text AS block, t.verified, t.curve, m.symbol
+         FROM mapae_trades t
+         JOIN mapae_curves m ON m.curve = t.curve AND m.factory = $2
+         WHERE t.trader = $1 AND ($3::bigint IS NULL OR t.ts < $3::bigint)
+         ORDER BY t.ts DESC, t.block DESC, t.log_index DESC
+         LIMIT $4`,
+        [address, factory.toLowerCase(), before === undefined ? null : before.toString(), limit]
+    )) as WalletTradeOut[];
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -254,7 +254,7 @@ function Header({c, imageUrl}: {c: CurveDetail; imageUrl?: string | null}) {
                 <DevHolds c={c} />
                 <DevLaunched c={c} />
                 <span className="inline-flex flex-wrap items-center gap-x-1.5 text-hanji-400 min-w-0">
-                    {tr.curve.dev} <DevNickname c={c} /> <ExtLink href={explorerAddr(c.dev)}>{shortAddr(c.dev)}</ExtLink>
+                    {tr.curve.dev} <DevNickname c={c} /> <Link to={`/w/${c.dev}`} className="text-brass-400 hover:text-hanji-100">{shortAddr(c.dev)}</Link>
                 </span>
             </div>
         </div>
@@ -316,7 +316,7 @@ function TradeHistory({c}: {c: CurveDetail}) {
                         <li key={t.key} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 border-t border-ink-700 first:border-t-0 text-[13px] tabular-nums min-w-0">
                             <span className="text-hanji-400 w-[72px] flex-none">{t.ts !== undefined ? agoLabel(tr, now, t.ts) : ""}</span>
                             <span className="flex-none">
-                                {t.isDev ? <Badge kind="partial">{tr.curve.dev}</Badge> : <span className="text-hanji-100">{shortAddr(t.trader)}</span>}
+                                {t.isDev ? <Badge kind="partial">{tr.curve.dev}</Badge> : <Link to={`/w/${t.trader}`} className="text-hanji-100 hover:text-brass-400">{shortAddr(t.trader)}</Link>}
                             </span>
                             <span className={`flex-none font-semibold ${t.side === "buy" ? "text-success" : "text-error"}`}>{t.side === "buy" ? tr.feed.buy : tr.feed.sell}</span>
                             {/* v3.1: buys made by a verified wallet (server: indexed status, browser: Buy.verified) */}
@@ -372,7 +372,11 @@ function Holders({c}: {c: CurveDetail}) {
                         return (
                             <li key={h.address} className="flex items-center gap-3 py-1.5 text-[13px] tabular-nums min-w-0">
                                 <span className="text-hanji-400 w-6 flex-none text-right">{i + 1}</span>
-                                <ExtLink href={explorerAddr(h.address)}>{shortAddr(h.address)}</ExtLink>
+                                {h.label === "curve" || h.label === "pool" ? (
+                                    <ExtLink href={explorerAddr(h.address)}>{shortAddr(h.address)}</ExtLink>
+                                ) : (
+                                    <Link to={`/w/${h.address}`} className="text-brass-400 hover:text-hanji-100">{shortAddr(h.address)}</Link>
+                                )}
                                 {l && <Badge kind="neutral">{l}</Badge>}
                                 <span className="ml-auto flex-none text-hanji-100">{sharePct(BigInt(h.balance), TOTAL_SUPPLY)}%</span>
                             </li>
