@@ -1,3 +1,4 @@
 {
-  "crons": [{"path": "/api/cron/index", "schedule": "*/15 * * * *"}]
+  "crons": [{"path": "/api/cron/index", "schedule": "*/15 * * * *"}],
+  "rewrites": [{"source": "/t/:curve", "destination": "/api/meta?share=:curve"}]
 }

@@ -22,7 +22,7 @@ import {Comments} from "../components/Comments";
 import {agoLabel, prefersReducedMotion, tradeAmount, tradeUnit, useNow} from "../components/feed";
 import {Badge, Gauge, NetError, PrimaryBtn, SecondaryBtn, Skeleton, Stat, StaleBand} from "../components/ui";
 import {CurveAvatar, draftValid, linkDomain, MetaFields, SaveStatus} from "../components/MetaForm";
-import {CurveMeta, draftHasContent, emptyDraft, MetaDraft, useCurveMeta, useSaveMeta} from "../hooks/meta";
+import {API_BASE, CurveMeta, draftHasContent, emptyDraft, MetaDraft, useCurveMeta, useSaveMeta} from "../hooks/meta";
 import {CurveTradePanel} from "../components/CurveTradePanel";
 import {CopyAddress} from "../components/CopyAddress";
 import {DevFeeBand} from "../components/DevFees";
@@ -30,6 +30,8 @@ import {WalletLink} from "../components/WalletLink";
 import {useNicknames} from "../hooks/nicknames";
 import {Change, pctLabel, quoteUnit} from "./Curves";
 import {DEFAULT_TITLE, titleOf, useTitle} from "../lib/title";
+import {shareLink, xIntentUrl} from "../lib/share";
+import {useToast} from "../components/tx";
 
 // Layout note: below lg one column of full-width blocks (w-full / min-w-0, no fixed widths; the two
 // column wrappers are display:contents so `order-*` interleaves their blocks), metrics in 2 columns,
@@ -222,11 +224,40 @@ function Header({c, imageUrl}: {c: CurveDetail; imageUrl?: string | null}) {
                 {!c.graduated && <PriorityBadge priorityUntil={c.priorityUntil} />}
                 <DevHolds c={c} />
                 <DevLaunched c={c} />
+                <ShareButtons c={c} />
                 <span className="inline-flex flex-wrap items-center gap-x-1.5 text-hanji-400 min-w-0">
                     {tr.curve.dev} <DevNickname c={c} /> <Link to={`/w/${c.dev}`} className="text-brass-400 hover:text-hanji-100">{shortAddr(c.dev)}</Link>
                 </span>
             </div>
         </div>
+    );
+}
+
+/** Copy the preview link (/t/<curve>) and post it on X (web intent). */
+function ShareButtons({c}: {c: CurveDetail}) {
+    const tr = useCopy();
+    const push = useToast();
+    const link = shareLink(c.address, API_BASE, window.location.origin);
+    const copy = async () => {
+        try {
+            if (!navigator.clipboard) throw new Error("no clipboard");
+            await navigator.clipboard.writeText(link);
+            push({kind: "success", text: tr.tokenPage.linkCopied});
+        } catch (e) {
+            console.error("copy failed", e);
+            window.prompt(tr.tokenPage.copyLink, link);
+        }
+    };
+    const chip = "inline-flex items-center min-h-[36px] px-3 rounded-full border border-ink-700 text-[12px] text-hanji-100 no-underline hover:border-brass-600";
+    return (
+        <>
+            <button type="button" onClick={() => void copy()} className={chip}>
+                {tr.tokenPage.copyLink}
+            </button>
+            <a href={xIntentUrl(`${c.name} (${c.symbol}) | MAPAE`, link)} target="_blank" rel="noopener noreferrer" className={chip}>
+                {tr.tokenPage.shareX}
+            </a>
+        </>
     );
 }
 

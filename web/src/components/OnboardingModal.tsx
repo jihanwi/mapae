@@ -9,7 +9,7 @@ import {Abi} from "viem";
 import {useAccount, useBalance, useReadContracts, useWriteContract} from "wagmi";
 import {useWalletConnect} from "../hooks/useWalletConnect";
 import {useSwitchToGiwa} from "../hooks/useSwitchToGiwa";
-import {WalletPicker} from "./WalletPicker";
+import {OpenInWalletApp, WalletPicker} from "./WalletPicker";
 import {useCopy} from "../copy";
 import {ADDR_V3} from "../contracts/addressesV3";
 import {MockDojangV3Abi, MockKRWV3Abi} from "../contracts/abisV3";
@@ -207,6 +207,7 @@ function OnboardingModal({args, onClose}: {args: OpenArgs; onClose: () => void})
                 {isConnected && readFailed && <p className="m-0 mt-2 text-[13px] text-error">{tr.onboardingV3.readError}</p>}
 
                 {wc.choices && <WalletPicker choices={wc.choices} onChoose={wc.choose} onClose={wc.closePicker} />}
+            {wc.openInApp && <OpenInWalletApp onClose={wc.closeOpenInApp} />}
                 {allDone && (
                     <div className="border-t border-ink-700 pt-4">
                         <p className="m-0 mb-3 text-[14px] text-success">{tr.onboardingV3.ready}</p>

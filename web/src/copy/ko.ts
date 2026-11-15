@@ -361,6 +361,11 @@ export const ko = {
         pending: "지갑에 열려 있는 요청이 있어요. 지갑 창을 확인해 주세요",
         unknown: "지갑에 연결하지 못했어요. 지갑이 잠겨 있지 않은지 확인해 주세요",
         switchFailed: "네트워크를 바꾸지 못했어요. 지갑에서 GIWA Sepolia로 바꿔 주세요",
+        /** Mobile browser without a wallet (W-T17) */
+        openInAppTitle: "지갑 앱에서 열어 주세요",
+        openInAppNote: "모바일 브라우저에는 연결할 지갑이 없어요. 지갑 앱의 브라우저에서 이 주소를 열어 주세요",
+        copyPageLink: "주소 복사",
+        pageLinkCopied: "주소를 복사했어요",
     },
     // v3 화면 전용 에러 문구 (v1/v2 화면은 위 errors 를 그대로 쓴다)
     feed: {
@@ -601,6 +606,9 @@ export const ko = {
         copy: "복사",
         copied: "복사했어요",
         copyLabel: "토큰 컨트랙트 주소 복사",
+        copyLink: "링크 복사",
+        linkCopied: "링크를 복사했어요",
+        shareX: "X에 공유",
         devHolds: (n: string) => `Dev 보유 ${n}%`,
         quick: {k10: "1만", k50: "5만", k100: "10만", e001: "0.01", e005: "0.05", e01: "0.1", p25: "25%", p50: "50%", p75: "75%"},
         flowTitle: "24시간 흐름",

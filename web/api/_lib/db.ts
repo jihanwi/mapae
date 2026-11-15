@@ -542,3 +542,9 @@ export async function hideComment(sql: Sql, id: number, hidden: boolean): Promis
     const rows = (await sql.query(`UPDATE mapae_comments SET hidden = $2 WHERE id = $1 RETURNING id`, [id, hidden])) as unknown[];
     return rows.length > 0;
 }
+
+/** Name and symbol of one curve of `factory` (share page); null when unknown. */
+export async function curveName(sql: Sql, curve: string, factory: string): Promise<{name: string; symbol: string} | null> {
+    const rows = (await sql.query(`SELECT name, symbol FROM mapae_curves WHERE curve = $1 AND factory = $2`, [curve.toLowerCase(), factory.toLowerCase()])) as {name: string; symbol: string}[];
+    return rows[0] ?? null;
+}
