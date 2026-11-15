@@ -349,11 +349,13 @@ function WalletView({address}: {address: Address}) {
                     <h1 className="m-0 text-[24px] sm:text-[28px] font-bold break-all min-w-0">{nick ?? shortAddr(address)}</h1>
                     {verified.data === true && <Badge kind="neutral">{tr.priority.verifiedTag}</Badge>}
                     {own && official.data === true && <Badge kind="open">{tr.onboardingV3.dojangBadge}</Badge>}
-                    {own && (
+                    {/* only verified wallets can set a nickname: the button for them, a note otherwise */}
+                    {own && verified.data === true && (
                         <SecondaryBtn className="!py-2 !px-3 !text-[13px] min-h-[36px]" onClick={openNickname}>
                             {tr.social.nicknameButton}
                         </SecondaryBtn>
                     )}
+                    {own && verified.data === false && <span className="text-[12px] text-hanji-400">{tr.nickname.errors.not_verified}</span>}
                 </div>
                 <div className="flex items-center gap-x-3 gap-y-2 flex-wrap min-w-0 text-[13px]">
                     <CopyAddress address={address} label={`${shortAddr(address)} ${tr.tokenPage.copy}`} />
