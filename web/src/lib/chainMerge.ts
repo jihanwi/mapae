@@ -11,8 +11,10 @@ export type ServerCurveSummary = {
     volume24hExDev: string;
     lastTradeTs: string;
     lastPriceWad: string;
+    /** price_wad of the last trade before the window; null when there is none. */
+    refPriceWad: string | null;
 };
-export type ServerSummary = {indexedBlock: string | null; indexedTs: string | null; curves: Record<string, ServerCurveSummary>};
+export type ServerSummary = {indexedBlock: string | null; indexedTs: string | null; window?: number; curves: Record<string, ServerCurveSummary>};
 
 export type ServerTrade = {
     tx: `0x${string}`;
@@ -32,17 +34,19 @@ export type ServerTrade = {
 export const DAY = 86_400;
 const after = (b: bigint, indexed: bigint | null) => indexed === null || b > indexed;
 
-/** 24 h per-curve stats: server numbers plus browser trades after indexedBlock (and inside 24 h).
+/** Per-curve stats for the last `windowSec` (default 24 h): server numbers for the same window plus
+ *  browser trades after indexedBlock (and inside the window).
  *  Volumes use quote_amount on both sides (the server's definition). Trader counts are added, so a
  *  wallet that traded both before and after indexedBlock is counted twice (upper bound). */
 export function mergeStats(
     server: ServerSummary,
     browser: readonly Trade[],
     tsOf: (b: bigint) => number | undefined,
-    nowSec: number
+    nowSec: number,
+    windowSec: number = DAY
 ): Map<Address, CurveStats> {
     const indexed = server.indexedBlock === null ? null : BigInt(server.indexedBlock);
-    const since = nowSec - DAY;
+    const since = nowSec - windowSec;
     const out = new Map<Address, CurveStats>();
     for (const [curve, s] of Object.entries(server.curves)) {
         out.set(curve.toLowerCase() as Address, {

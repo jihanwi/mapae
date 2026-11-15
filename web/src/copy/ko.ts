@@ -359,7 +359,7 @@ export const ko = {
     feed: {
         tabsLabel: "토큰 정렬",
         tabs: {latest: "최근 거래", popular: "인기", mcap: "시가총액", almost: "졸업 임박", new: "신규", graduated: "졸업"},
-        popularNote: "최근 24시간 실명 매수 지갑 수와 거래대금을 함께 반영해요",
+        popularNote: (w: number) => `최근 ${w === 3600 ? "1시간" : "24시간"} 실명 매수 지갑 수와 거래대금을 함께 반영해요`,
         mcapNote: "통화가 다른 토큰은 시작가 대비 배수로 비교해요",
         window: (h: number) => `최근 약 ${h}시간 기준`,
         emptyTab: "이 기준에 맞는 토큰이 아직 없어요",
@@ -532,6 +532,21 @@ export const ko = {
         verifyNow: "실명 인증하고 바로 매수",
         stillWindow: "아직 실명 우선 구간이에요. 잠시 후 다시 시도해 주세요",
         verifiedTag: "실명",
+    },
+    // 홈 행 목록 (검색, 기간, 등락률, 실시간 거래 패널, 소개)
+    homeRows: {
+        tagline: "모두가 같은 출발선에서 시작하는 런치패드",
+        intro: [`첫 ${PRIORITY_MINUTES}분은 실명 지갑만 삽니다. 봇이 먼저 사는 런치가 없습니다.`, "발행자 물량은 0입니다. 유동성은 영구히 잠깁니다.", "모든 토큰이 같은 곡선에서 출발합니다."],
+        search: "이름, 티커, 컨트랙트 주소로 찾기",
+        searchEmpty: "찾는 토큰이 없어요",
+        periodLabel: "기간",
+        period: {h1: "1시간", d1: "24시간"},
+        periodNote: (w: number): string => (w === 3600 ? "최근 1시간 기준" : "최근 24시간 기준"),
+        cols: {token: "토큰", traders: "실명 거래자", mcap: "시가총액", progress: "졸업 진행", last: "마지막 거래"},
+        changeCol: (w: number) => `${w === 3600 ? "1시간" : "24시간"} 등락률`,
+        verifiedShort: (n: number) => `실명 ${n}명`,
+        featuredLabel: "졸업에 가장 가까운 토큰",
+        livePanel: "실시간 거래",
     },
     errorsV3: {
         NotVerified: "실명 인증이 필요해요",
