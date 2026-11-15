@@ -6,7 +6,8 @@ pragma solidity ^0.8.26;
 //
 //   forge script script/DemoCurve.s.sol --account deployer --sender <deployer-addr> --rpc-url $GIWA_SEPOLIA_RPC_URL --broadcast --slow
 //
-// Scenario A (KRWs curve): dev opens a MockKRW curve with a dev first buy → 12 distinct real-name
+// Scenario A (KRWs curve): dev opens a MockKRW curve with a dev first buy (under the v3.2 5% cap)
+//   and then buys more in a separate tx → 12 distinct real-name
 //   wallets split the rest and graduate it → one swapQuoteForToken + one swapTokenForQuote on the
 //   graduated pool → dev claimDevFees → sweepPlatformFees.
 // Scenario B (ETH curve): one wallet opens a WETH curve with createCurveWithETH and self-graduates
@@ -95,18 +96,23 @@ contract DemoCurve is Script {
         console.log("A curve / token / pool:", res.curve, res.token, res.pool);
     }
 
-    /// @dev dev: self-verify, faucet, open with a dev first buy (≈ 1/13 of the sell-out budget).
+    /// @dev dev: self-verify, faucet, open with a small dev first buy (1/200 of the sell-out budget,
+    ///      under the v3.2 cap of 5% of supply), then buy more in a separate tx (≈ 1/13 in total).
     function _openKrwCurve(Ctx memory c, uint256 devKey, uint256 vq) internal returns (CurveSale curve) {
         address dev = vm.addr(devKey);
         _topUp(c, dev, 0);
-        uint256 devBuy = _budget(vq, 0, 0, _curveFeeBps()) / 13;
+        uint256 total = _budget(vq, 0, 0, _curveFeeBps()) / 13;
+        uint256 firstBuy = _budget(vq, 0, 0, _curveFeeBps()) / 200;
+        uint256 more = total - firstBuy;
         vm.startBroadcast(devKey);
         c.dojang.selfVerify();
-        c.krw.faucet(devBuy);
-        c.krw.approve(address(c.curveFactory), devBuy);
-        (address ca,) = c.curveFactory.createCurve(IERC20(address(c.krw)), "MAPAE Demo Curve KRW", "DCK", devBuy, 1);
-        vm.stopBroadcast();
+        c.krw.faucet(total);
+        c.krw.approve(address(c.curveFactory), firstBuy);
+        (address ca,) = c.curveFactory.createCurve(IERC20(address(c.krw)), "MAPAE Demo Curve KRW", "DCK", firstBuy, 1);
         curve = CurveSale(ca);
+        c.krw.approve(address(curve), more);
+        curve.buy(more, 1);
+        vm.stopBroadcast();
         require(curve.token().balanceOf(dev) > 0 && curve.verifiedBuyerCount() == 0, "A: dev first buy");
     }
 

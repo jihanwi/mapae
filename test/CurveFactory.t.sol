@@ -12,6 +12,8 @@ import {CurveSale} from "../src/CurveSale.sol";
 import {CurvePresets as P} from "../src/CurvePresets.sol";
 import {CurveMath} from "../src/lib/CurveMath.sol";
 import {MapaePool} from "../src/MapaePool.sol";
+import {PoolFactory} from "../src/PoolFactory.sol";
+import {MapaeFactory} from "../src/MapaeFactory.sol";
 import {MembershipToken} from "../src/MembershipToken.sol";
 import {BuybackVault} from "../src/BuybackVault.sol";
 import {IFeeRouter} from "../src/interfaces/IFeeRouter.sol";
@@ -206,7 +208,7 @@ abstract contract CurveFactoryTestBase is MapaeFactoryTestBase {
         keccak256("Buy(address,bool,bool,uint256,uint256,uint256,uint256,uint256,uint256,uint256)");
 
     function test_K5_DevFirstBuy() public {
-        uint256 amount = 1000 * 10 ** _decimals();
+        uint256 amount = _vq() / 100; // v3.2: well under the 5% first-buy cap for every preset
         _fund(dev, address(cf), amount);
         uint256 before = quote.balanceOf(dev);
         vm.recordLogs();
@@ -234,23 +236,69 @@ abstract contract CurveFactoryTestBase is MapaeFactoryTestBase {
         assertFalse(c.countedVerifiedBuyer(dev));
     }
 
-    function test_K5_DevFirstBuyGraduatesInCreateTx() public {
-        // budget well above the sell-out cost from genesis
-        uint256 vq = _vq();
-        uint256 cost = Math.mulDiv(vq, P.CURVE_SUPPLY, P.VIRTUAL_TOKEN_RESERVE - P.CURVE_SUPPLY, Math.Rounding.Ceil);
-        uint256 amount = cost * 2;
-        _fund(dev, address(cf), amount);
-        uint256 before = quote.balanceOf(dev);
+    /// @dev Largest quoteIn whose fresh-curve quote stays within the cap (ref must be untraded).
+    function _maxFirstBuy(CurveSale ref) internal view returns (uint256 lo) {
+        uint256 hi = _vq() * 10;
+        while (lo < hi) {
+            uint256 mid = (lo + hi + 1) / 2;
+            if (ref.quoteBuy(mid).tokensOut <= P.DEV_FIRST_BUY_MAX_TOKENS) lo = mid;
+            else hi = mid - 1;
+        }
+    }
+
+    /// v3.2: the creation-tx first buy is capped at 5% of supply; just under passes, 1 wei more
+    /// of quote (the first amount that yields more than the cap) reverts the whole creation.
+    function test_K5_DevFirstBuyCapBoundary() public {
+        (CurveSale ref,) = _create(dev);
+        uint256 maxIn = _maxFirstBuy(ref);
+        uint256 atMax = ref.quoteBuy(maxIn).tokensOut;
+        emit log_named_uint("5% first buy, quoteIn (fee incl, raw)", maxIn);
+        emit log_named_uint("5% first buy, net to curve (raw)", maxIn - maxIn * ref.totalFeeBps() / BPS);
+        assertLe(atMax, P.DEV_FIRST_BUY_MAX_TOKENS);
+        assertGt(ref.quoteBuy(maxIn + 1).tokensOut, P.DEV_FIRST_BUY_MAX_TOKENS);
+
+        _fund(dev, address(cf), maxIn * 3);
         vm.prank(dev);
-        (address ca, address ta) = cf.createCurve(quote, "Curve Coin", "CC", amount, 0);
-        CurveSale c = CurveSale(ca);
-        assertTrue(c.graduated(), "graduated in create tx");
-        assertEq(MembershipToken(ta).balanceOf(dev), P.CURVE_SUPPLY);
-        uint256 paid = before - quote.balanceOf(dev);
-        assertLt(paid, amount, "unspent refunded");
-        assertApproxEqRel(paid, cost * BPS / (BPS - c.totalFeeBps()), 1e12);
+        (address ca, address ta) = cf.createCurve(quote, "Cap Ok", "CAPOK", maxIn, 0);
+        assertEq(MembershipToken(ta).balanceOf(dev), atMax);
         assertEq(quote.balanceOf(address(cf)), 0);
         assertEq(quote.allowance(address(cf), ca), 0);
+
+        uint256 bal = quote.balanceOf(dev);
+        uint256 n = cf.allCurves().length;
+        vm.prank(dev);
+        vm.expectPartialRevert(CurveFactory.DevFirstBuyTooLarge.selector);
+        cf.createCurve(quote, "Cap Over", "CAPX", maxIn + 1, 0);
+        assertEq(quote.balanceOf(dev), bal, "nothing pulled");
+        assertEq(cf.allCurves().length, n, "no curve registered");
+    }
+
+    /// v3.2: a first buy that would sell out the curve reverts (it used to graduate in the create tx)
+    function test_K5_DevFirstBuyCannotGraduateInCreateTx() public {
+        uint256 vq = _vq();
+        uint256 cost = Math.mulDiv(vq, P.CURVE_SUPPLY, P.VIRTUAL_TOKEN_RESERVE - P.CURVE_SUPPLY, Math.Rounding.Ceil);
+        _fund(dev, address(cf), cost * 2);
+        uint256 bal = quote.balanceOf(dev);
+        vm.prank(dev);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                CurveFactory.DevFirstBuyTooLarge.selector, P.CURVE_SUPPLY, P.DEV_FIRST_BUY_MAX_TOKENS
+            )
+        );
+        cf.createCurve(quote, "Curve Coin", "CC", cost * 2, 0);
+        assertEq(quote.balanceOf(dev), bal);
+        assertEq(cf.allCurves().length, 0);
+    }
+
+    /// v3.2: after creation the Dev buys like anyone, with no per-wallet limit (결정 19)
+    function test_K5_DevBuysPastCapAfterCreation() public {
+        (CurveSale c, MembershipToken t) = _create(dev);
+        uint256 budget = _sellOutBudget(c);
+        _fund(dev, address(c), budget);
+        vm.prank(dev);
+        c.buy(budget, 0);
+        assertTrue(c.graduated());
+        assertEq(t.balanceOf(dev), P.CURVE_SUPPLY);
     }
 
     function _findBuy(Vm.Log[] memory logs, address emitter)
@@ -428,5 +476,31 @@ contract CurveFactoryWethTest is CurveFactoryTestBase {
     function _quote() internal override returns (IERC20, uint256) {
         TestQuote w = new TestQuote("WETH", 18);
         return (IERC20(address(w)), P.VIRTUAL_QUOTE_RESERVE_WETH);
+    }
+}
+
+/// @dev Exposes the cap check so "exactly the cap passes" is tested directly (a quote amount
+///      that lands exactly on 50M tokens may not exist because tokensOut moves in steps).
+contract CapHarness is CurveFactory {
+    constructor(IDojang d, IFeeRouter f, PoolFactory p, MapaeFactory m)
+        CurveFactory(d, f, p, m, IWETH(address(0xEeeE)), msg.sender)
+    {}
+
+    function check(uint256 tokensOut) external pure {
+        _checkDevFirstBuy(tokensOut);
+    }
+}
+
+contract DevFirstBuyCapExactTest is MapaeFactoryTestBase {
+    function test_ExactCapPasses_OneWeiOverReverts() public {
+        CapHarness h = new CapHarness(IDojang(address(dojang)), feeRouter, poolFactory, factory);
+        h.check(P.DEV_FIRST_BUY_MAX_TOKENS);
+        assertEq(P.DEV_FIRST_BUY_MAX_TOKENS, 50_000_000e18);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                CurveFactory.DevFirstBuyTooLarge.selector, P.DEV_FIRST_BUY_MAX_TOKENS + 1, P.DEV_FIRST_BUY_MAX_TOKENS
+            )
+        );
+        h.check(P.DEV_FIRST_BUY_MAX_TOKENS + 1);
     }
 }

@@ -7,7 +7,9 @@ import {IEAS, IDojangScroll} from "./interfaces/IEAS.sol";
 /// @title DojangEASAdapter
 /// @notice IDojang backed by the real Dojang attestation stack on GIWA:
 ///         DojangScroll (official convenience lookup) resolves the account's
-///         Verified Address attestation UID, then the EAS predeploy provides
+///         Verified Address attestation UID for one ATTESTER ID (the issuer:
+///         UPBIT_KOREA on mainnet, TESTNET_FAUCET on the testnet), then the EAS
+///         predeploy provides
 ///         the attestation body for full independent validation — existence,
 ///         schema match, recipient match, not revoked, not expired, and
 ///         `bool isVerified` decoded true.
@@ -25,19 +27,25 @@ contract DojangEASAdapter is IDojang {
 
     IEAS public immutable eas;
     IDojangScroll public immutable scroll;
+    /// @notice Issuer whose attestation is looked up (DojangScroll lookup key).
+    bytes32 public immutable attesterId;
+    /// @notice Schema the attestation body must carry (body validation only).
     bytes32 public immutable schemaUid;
 
-    constructor(IEAS eas_, IDojangScroll scroll_, bytes32 schemaUid_) {
+    /// @dev v3.2: the scroll lookup takes the attester ID. v3.1 passed the schema UID
+    ///      there, which the live scroll rejects (0x6e7910da), so every account read false.
+    constructor(IEAS eas_, IDojangScroll scroll_, bytes32 attesterId_, bytes32 schemaUid_) {
         if (address(eas_) == address(0) || address(scroll_) == address(0)) revert ZeroAddress();
         eas = eas_;
         scroll = scroll_;
+        attesterId = attesterId_;
         schemaUid = schemaUid_;
     }
 
     /// @inheritdoc IDojang
     function isVerified(address account) external view returns (bool) {
         bytes32 uid;
-        try scroll.getVerifiedAddressAttestationUid(account, schemaUid) returns (bytes32 u) {
+        try scroll.getVerifiedAddressAttestationUid(account, attesterId) returns (bytes32 u) {
             uid = u;
         } catch {
             return false; // no attestation (live behavior: revert) or scroll down

@@ -223,25 +223,26 @@ contract CurveFactoryETHTest is MapaeFactoryTestBase {
         // with first buy
         uint256 before = buyer.balance;
         vm.prank(buyer);
-        (address c1, address t1) = cf.createCurveWithETH{value: 0.2 ether}("With Buy", "WB", 1);
+        (address c1, address t1) = cf.createCurveWithETH{value: 0.01 ether}("With Buy", "WB", 1);
         uint256 spent = before - buyer.balance;
         assertGt(MembershipToken(t1).balanceOf(buyer), 0);
-        assertLe(spent, 0.2 ether);
+        assertLe(spent, 0.01 ether);
         assertEq(CurveSale(c1).verifiedBuyerCount(), 0, "dev first buy not counted");
         assertFalse(CurveSale(c1).countedVerifiedBuyer(buyer), "dev never counted");
         _assertFactoryClean(c1);
 
-        // sells out inside the create tx; excess refunded
+        // v3.2: a first buy that would sell out (or pass 5%) reverts the whole tx, ETH stays
         uint256 cost = Math.mulDiv(
             P.VIRTUAL_QUOTE_RESERVE_WETH, P.CURVE_SUPPLY, P.VIRTUAL_TOKEN_RESERVE - P.CURVE_SUPPLY, Math.Rounding.Ceil
         );
         before = dev.balance;
+        uint256 n = cf.allCurves().length;
         vm.prank(dev);
-        (address c2, address t2) = cf.createCurveWithETH{value: cost * 2}("Grad", "GR", 0);
-        assertTrue(CurveSale(c2).graduated());
-        assertEq(MembershipToken(t2).balanceOf(dev), P.CURVE_SUPPLY);
-        assertLt(before - dev.balance, cost * 2, "excess refunded");
-        _assertFactoryClean(c2);
+        vm.expectPartialRevert(CurveFactory.DevFirstBuyTooLarge.selector);
+        cf.createCurveWithETH{value: cost * 2}("Grad", "GR", 0);
+        assertEq(dev.balance, before, "all ETH back");
+        assertEq(cf.allCurves().length, n, "no curve registered");
+        _assertFactoryClean(address(curve));
     }
 
     function test_W8_RateLimitSharedWithCreateCurve() public {
@@ -281,5 +282,84 @@ contract CurveFactoryETHTest is MapaeFactoryTestBase {
             assertEq(buyer.balance, before); // e.g. dust buy with zero tokens out
         }
         _assertFactoryClean(address(curve));
+    }
+
+    // ---------------------------------------------------------------------
+    // v3.2 Dev first-buy cap (5% of supply, creation tx only)
+    // ---------------------------------------------------------------------
+
+    /// @dev Largest quoteIn whose fresh-curve quote stays within the cap (ref must be untraded).
+    function _maxFirstBuy(CurveSale ref) internal view returns (uint256 lo) {
+        uint256 hi = 1000 ether;
+        while (lo < hi) {
+            uint256 mid = (lo + hi + 1) / 2;
+            if (ref.quoteBuy(mid).tokensOut <= P.DEV_FIRST_BUY_MAX_TOKENS) lo = mid;
+            else hi = mid - 1;
+        }
+    }
+
+    function _netOf(CurveSale ref, uint256 quoteIn) internal view returns (uint256) {
+        return quoteIn - quoteIn * ref.totalFeeBps() / BPS;
+    }
+
+    function test_W_DevFirstBuyCap_MainnetPreset() public {
+        uint256 maxIn = _maxFirstBuy(curve); // `curve` is untraded here
+        uint256 atMax = curve.quoteBuy(maxIn).tokensOut;
+        emit log_named_decimal_uint("5% first buy, ETH 0.6 preset, quoteIn (fee incl)", maxIn, 18);
+        emit log_named_decimal_uint("5% first buy, ETH 0.6 preset, net to curve", _netOf(curve, maxIn), 18);
+        assertLe(atMax, P.DEV_FIRST_BUY_MAX_TOKENS);
+        assertGt(curve.quoteBuy(maxIn + 1).tokensOut, P.DEV_FIRST_BUY_MAX_TOKENS, "1 wei more passes the cap");
+
+        // just under: succeeds
+        vm.prank(dev);
+        (address c1, address t1) = cf.createCurveWithETH{value: maxIn}("Cap Ok", "CAPOK", 0);
+        assertEq(MembershipToken(t1).balanceOf(dev), atMax);
+        _assertFactoryClean(c1);
+
+        // 1 wei more: the whole creation reverts, every wei comes back, nothing registered
+        uint256 before = dev.balance;
+        uint256 n = cf.allCurves().length;
+        vm.prank(dev);
+        vm.expectPartialRevert(CurveFactory.DevFirstBuyTooLarge.selector);
+        cf.createCurveWithETH{value: maxIn + 1}("Cap Over", "CAPX", 0);
+        assertEq(dev.balance, before, "ETH back");
+        assertEq(cf.allCurves().length, n, "no curve registered");
+    }
+
+    function test_W_DevFirstBuyCap_TestnetPreset() public {
+        // a factory whose WETH is registered at the testnet value 0.002 ETH (STATUS 결정 29)
+        TestWETH9 weth2 = new TestWETH9();
+        factory.allowQuote(IERC20(address(weth2)), 0.002 ether);
+        CurveFactory cf2 = new CurveFactory(
+            IDojang(address(dojang)), feeRouter, poolFactory, factory, IWETH(address(weth2)), address(this)
+        );
+        vm.prank(dev);
+        (address refA,) = cf2.createCurveWithETH("Ref", "REF", 0);
+        CurveSale ref = CurveSale(refA);
+        uint256 maxIn = _maxFirstBuy(ref);
+        emit log_named_decimal_uint("5% first buy, ETH 0.002 testnet, quoteIn (fee incl)", maxIn, 18);
+        emit log_named_decimal_uint("5% first buy, ETH 0.002 testnet, net to curve", _netOf(ref, maxIn), 18);
+
+        // the web's current default first buy (0.00005 ETH) passes
+        vm.prank(dev);
+        (, address t1) = cf2.createCurveWithETH{value: 0.000_05 ether}("Small", "SMALL", 0);
+        assertGt(MembershipToken(t1).balanceOf(dev), 0);
+        assertLe(MembershipToken(t1).balanceOf(dev), P.DEV_FIRST_BUY_MAX_TOKENS);
+
+        // 0.001 ETH is past 5% on the testnet preset: reverts, ETH back
+        uint256 before = dev.balance;
+        vm.prank(dev);
+        vm.expectPartialRevert(CurveFactory.DevFirstBuyTooLarge.selector);
+        cf2.createCurveWithETH{value: 0.001 ether}("Big", "BIG", 0);
+        assertEq(dev.balance, before, "ETH back");
+    }
+
+    function test_W_DevBuysPastCapAfterCreation() public {
+        // the cap is for the creation tx only: a later buy has no per-wallet limit (결정 19)
+        uint256 budget = _sellOutBudget(curve);
+        vm.prank(dev);
+        cf.buyWithETH{value: budget}(curve, 0);
+        assertTrue(curve.graduated());
+        assertEq(token.balanceOf(dev), P.CURVE_SUPPLY);
     }
 }

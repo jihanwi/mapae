@@ -19,6 +19,10 @@
 // uint32 priorityWindow (recovered as priorityUntil - creation block timestamp) and CurveCreated
 // gained a trailing uint64 priorityUntil.
 //
+// v3.2: event logs are read in windows of LOG_CHUNK (9,000) blocks from --from-block to --to-block
+// (default latest): the RPC rejects ranges over 10,000 blocks ("block range greater than 10000
+// max"). The deployment json defaults to giwa-sepolia-v3_2.json when present (same library).
+//
 //   node script/verify-children.js --rpc $GIWA_SEPOLIA_RPC_URL --verifier-url $BLOCKSCOUT_API_URL \
 //     --from-block <deployBlock> [--factory <MapaeFactory>] [--curve-factory <CurveFactory>] [--library <addr>]
 //
@@ -49,7 +53,9 @@ if (args["from-block"] === undefined) {
 // MembershipTokenDeployer (linked library) address: --library, else the deployment json.
 const V3_JSON =
     args.deployment ??
-    (existsSync("deployments/giwa-sepolia-v3_1.json") ? "deployments/giwa-sepolia-v3_1.json" : "deployments/giwa-sepolia-v3.json");
+    ["deployments/giwa-sepolia-v3_2.json", "deployments/giwa-sepolia-v3_1.json", "deployments/giwa-sepolia-v3.json"].find((f) =>
+        existsSync(f)
+    );
 const library =
     args.library ??
     (existsSync(V3_JSON) ? JSON.parse(readFileSync(V3_JSON, "utf8")).membershipTokenDeployer : undefined);
@@ -70,20 +76,30 @@ function num(v) {
 }
 
 // ---- event scan window ----
-// GIWA's RPC caps eth_getLogs at 100k blocks — the window is [--from-block, min(--to-block|latest,
-// from + 90k)]. Pass --to-block for older ranges.
+// [--from-block, --to-block|latest], read in LOG_CHUNK-block windows (the RPC caps one eth_getLogs
+// range at 10,000 blocks).
+const LOG_CHUNK = 9_000;
 const latestBlock = parseInt(cast("block-number", "--rpc-url", args.rpc), 10);
 const fromBlock = parseInt(args["from-block"], 10);
-const toBlock = Math.min(parseInt(args["to-block"] ?? String(latestBlock), 10), fromBlock + 90_000);
+const toBlock = parseInt(args["to-block"] ?? String(latestBlock), 10);
+
+/** [start, end] block windows of at most `size` blocks covering [from, to]. */
+export function chunks(from, to, size = LOG_CHUNK) {
+    const out = [];
+    for (let a = from; a <= to; a += size) out.push([a, Math.min(to, a + size - 1)]);
+    return out;
+}
 
 function scan(address, eventSig, label) {
     const topic0 = cast("keccak", eventSig);
-    const found = JSON.parse(
-        cast(
-            "logs", "--rpc-url", args.rpc, "--from-block", String(fromBlock), "--to-block", String(toBlock),
-            "--address", address, topic0, "--json"
-        )
-    );
+    const found = [];
+    for (const [a, b] of chunks(fromBlock, toBlock)) {
+        found.push(
+            ...JSON.parse(
+                cast("logs", "--rpc-url", args.rpc, "--from-block", String(a), "--to-block", String(b), "--address", address, topic0, "--json")
+            )
+        );
+    }
     // Hard-fail on an empty window so a missed range can never look like a pass.
     if (found.length === 0) {
         console.error(`no ${label} events in blocks ${fromBlock}–${toBlock} — check --from-block / --to-block`);
