@@ -6,13 +6,49 @@ export type Candle = {t: number; o: bigint; h: bigint; l: bigint; c: bigint; v: 
 export const parseCandles = (xs: readonly CandleIn[]): Candle[] =>
     xs.map((x) => ({t: Number(x.t), o: BigInt(x.o), h: BigInt(x.h), l: BigInt(x.l), c: BigInt(x.c), v: BigInt(x.v)}));
 
-/** Minimum horizontal room per candle (px). */
+/** Minimum horizontal room per candle in the default view (px). */
 export const MIN_SLOT = 8;
+/** Zoom limits for one candle slot (px), and the default view's upper bound. */
+export const SLOT_MIN = 3;
+export const SLOT_MAX = 48;
+export const SLOT_DEFAULT_MAX = 18;
+/** Empty space right of the newest candle (px). */
+export const RIGHT_PAD = 12;
 
-/** How many of the newest candles fit in `width` (at least 1 when there is any candle). */
+/** How many of the newest candles fit in `width` at MIN_SLOT (at least 1 when there is any candle). */
 export function visibleCount(total: number, width: number, minSlot = MIN_SLOT): number {
     if (total === 0) return 0;
     return Math.max(1, Math.min(total, Math.floor(width / minSlot)));
+}
+
+/** What part of the series is on screen: `slot` px per candle, `offset` newest candles hidden
+ *  past the right edge (0 = the newest candle is visible). */
+export type View = {slot: number; offset: number};
+
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+const clampOffset = (o: number, total: number) => clamp(Math.round(o), 0, Math.max(0, total - 1));
+
+/** Default view: fill the width, but never wider than SLOT_DEFAULT_MAX or narrower than MIN_SLOT. */
+export function defaultView(total: number, width: number): View {
+    return {slot: total === 0 ? SLOT_DEFAULT_MAX : clamp(width / total, MIN_SLOT, SLOT_DEFAULT_MAX), offset: 0};
+}
+
+/** Keep a view inside the series (after the data or the width changed). */
+export const fitView = (v: View, total: number): View => ({slot: clamp(v.slot, SLOT_MIN, SLOT_MAX), offset: clampOffset(v.offset, total)});
+
+/** Candles from the newest (offset-adjusted) at screen x: fractional, 0 = centre of the rightmost slot. */
+const slotsFromRight = (x: number, width: number, slot: number) => (width - RIGHT_PAD - x) / slot - 0.5;
+
+/** Zoom by `factor` keeping the candle under `cursorX` under the cursor. */
+export function zoomAt(view: View, factor: number, cursorX: number, width: number, total: number): View {
+    const slot = clamp(view.slot * factor, SLOT_MIN, SLOT_MAX);
+    const k = slotsFromRight(cursorX, width, view.slot) + view.offset;
+    return {slot, offset: clampOffset(k - slotsFromRight(cursorX, width, slot), total)};
+}
+
+/** Pan by a drag of `dxPx`: dragging right (dx > 0) reveals older candles. */
+export function panBy(view: View, dxPx: number, total: number): View {
+    return {slot: view.slot, offset: clampOffset(view.offset + dxPx / view.slot, total)};
 }
 
 /** Price range with 8% padding above and below; a flat range is widened by 1% (or 1 wei). */
@@ -32,53 +68,68 @@ export function priceRange(cs: readonly Candle[]): {lo: bigint; hi: bigint} {
 const ratio = (a: bigint, b: bigint) => (b === 0n ? 0 : Number((a * 1_000_000n) / b) / 1_000_000);
 
 export type Bar = {x: number; w: number; wickTop: number; wickBottom: number; bodyTop: number; bodyH: number; up: boolean; volTop: number; volH: number; candle: Candle};
-export type Layout = {bars: Bar[]; ticks: {y: number; price: bigint}[]; priceH: number; lo: bigint; hi: bigint};
+export type Layout = {bars: Bar[]; ticks: {y: number; price: bigint}[]; priceH: number; lo: bigint; hi: bigint; slot: number};
 
-/** Lay out the newest candles that fit: top `priceFrac` of the height for candles, the rest for volume. */
 /** Minimum space between the price area and the volume area (px). */
 export const AREA_GAP = 8;
 
-export function layoutCandles(all: readonly Candle[], width: number, height: number, priceFrac = 0.75, gapPx = AREA_GAP): Layout {
-    const n = visibleCount(all.length, width);
-    const cs = all.slice(all.length - n);
+/** Lay out the candles of `view` (default view when omitted), anchored to the right edge:
+ *  the k-th visible candle from the newest has its centre at width - RIGHT_PAD - slot * (k + 0.5).
+ *  Candles whose centre would fall left of slot / 2 are not drawn. Bodies are 70% of the slot,
+ *  so the gap between neighbours is always 30% of it. Top `priceFrac` of the height is the price
+ *  area, the rest (after `gapPx`) the volume area; both scale to the visible candles only. */
+export function layoutCandles(all: readonly Candle[], width: number, height: number, view?: View, priceFrac = 0.75, gapPx = AREA_GAP): Layout {
+    const v = fitView(view ?? defaultView(all.length, width), all.length);
+    const slot = v.slot;
     const priceH = Math.round(height * priceFrac);
     const volH = height - priceH - gapPx;
-    if (n === 0) return {bars: [], ticks: [], priceH, lo: 0n, hi: 0n};
+    const fit = Math.max(0, Math.floor((width - RIGHT_PAD - slot / 2) / slot + 0.5));
+    const end = all.length - v.offset;
+    const cs = all.slice(Math.max(0, end - fit), end);
+    if (cs.length === 0) return {bars: [], ticks: [], priceH, lo: 0n, hi: 0n, slot};
     const {lo, hi} = priceRange(cs);
     const span = hi - lo;
     const y = (p: bigint) => priceH * (1 - ratio(p - lo, span));
     let maxV = 0n;
     for (const c of cs) if (c.v > maxV) maxV = c.v;
-    const slot = width / n;
-    const w = Math.max(1, Math.min(slot * 0.6, 14));
-    const bars = cs.map((c, i): Bar => {
-        const top = y(c.o > c.c ? c.o : c.c);
-        const bottom = y(c.o > c.c ? c.c : c.o);
-        const vh = Math.max(maxV > 0n && c.v > 0n ? 1 : 0, volH * ratio(c.v, maxV));
-        return {
-            x: slot * (i + 0.5),
-            w,
-            wickTop: y(c.h),
-            wickBottom: y(c.l),
-            bodyTop: c.o === c.c ? top - 0.5 : top,
-            bodyH: c.o === c.c ? 1 : Math.max(1, bottom - top),
-            up: c.c >= c.o,
-            volTop: height - vh,
-            volH: vh,
-            candle: c,
-        };
-    });
+    const w = clamp(slot * 0.7, 1, 28);
+    const n = cs.length;
+    const bars = cs
+        .map((c, i): Bar => {
+            const k = n - 1 - i;
+            const top = y(c.o > c.c ? c.o : c.c);
+            const bottom = y(c.o > c.c ? c.c : c.o);
+            const vh = Math.max(maxV > 0n && c.v > 0n ? 1 : 0, volH * ratio(c.v, maxV));
+            return {
+                x: width - RIGHT_PAD - slot * (k + 0.5),
+                w,
+                wickTop: y(c.h),
+                wickBottom: y(c.l),
+                bodyTop: c.o === c.c ? top - 0.5 : top,
+                bodyH: c.o === c.c ? 1 : Math.max(1, bottom - top),
+                up: c.c >= c.o,
+                volTop: height - vh,
+                volH: vh,
+                candle: c,
+            };
+        })
+        .filter((b) => b.x >= slot / 2);
     const ticks = [0n, 1n, 2n, 3n].map((k) => {
         const price = lo + (span * k) / 3n;
         return {y: y(price), price};
     });
-    return {bars, ticks, priceH, lo, hi};
+    return {bars, ticks, priceH, lo, hi, slot};
 }
 
-/** Index of the visible candle under x (clamped). */
-export function barIndexAt(x: number, width: number, n: number): number {
-    if (n <= 0) return -1;
-    return Math.min(n - 1, Math.max(0, Math.floor(x / (width / n))));
+/** Index (in `bars`) of the candle nearest to x; -1 when there is none or x is a full slot or
+ *  more left of the leftmost candle. `slot` defaults to the spacing of the bars. */
+export function barIndexAt(x: number, bars: readonly Bar[], slot?: number): number {
+    if (bars.length === 0) return -1;
+    const s = slot ?? (bars.length > 1 ? bars[1].x - bars[0].x : bars[0].w / 0.7);
+    if (x <= bars[0].x - s) return -1;
+    let best = 0;
+    for (let i = 1; i < bars.length; i++) if (Math.abs(bars[i].x - x) < Math.abs(bars[best].x - x)) best = i;
+    return best;
 }
 
 // ---------------------------------------------------------------------------------------------
