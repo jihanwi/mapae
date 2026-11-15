@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {AREA_GAP, barIndexAt, Candle, connectOpens, defaultView, layoutCandles, LiveTrade, maxOffset, mergeLiveCandles, MIN_SLOT, panBy, parseCandles, priceRange, RIGHT_PAD, SLOT_DEFAULT_MAX, SLOT_MAX, SLOT_MIN, TIME_LABEL_W, timeLabels, View, visibleCount, zoomAt} from "./candles";
+import {AREA_GAP, barIndexAt, Candle, connectOpens, defaultView, layoutCandles, LiveTrade, liveFrom, maxOffset, mergeLiveCandles, MIN_SLOT, panBy, parseCandles, priceRange, RIGHT_PAD, SLOT_DEFAULT_MAX, SLOT_MAX, SLOT_MIN, TIME_LABEL_W, timeLabels, View, visibleCount, zoomAt} from "./candles";
 
 const E18 = 10n ** 18n;
 const c = (t: number, o: bigint, h: bigint, l: bigint, cl: bigint, v: bigint): Candle => ({t, o, h, l, c: cl, v});
@@ -219,5 +219,31 @@ describe("timeLabels", () => {
     it("one candle -> one label, none -> none", () => {
         expect(timeLabels([bar(300)], 606)).toEqual([{bar: "last", left: 300 - TIME_LABEL_W / 2, align: "center"}]);
         expect(timeLabels([], 606)).toEqual([]);
+    });
+});
+
+describe("liveFrom (which browser trades join the server candles)", () => {
+    it("candle API down: every browser trade", () => {
+        expect(liveFrom({candlesOk: false, serverCount: 0, indexedBlock: "100"})).toBeNull();
+    });
+    it("known position: trades after it", () => {
+        expect(liveFrom({candlesOk: true, serverCount: 3, indexedBlock: "100"})).toBe(100n);
+    });
+    it("position null (just after a version switch) and no server candles: every browser trade", () => {
+        expect(liveFrom({candlesOk: true, serverCount: 0, indexedBlock: null})).toBeNull();
+        expect(liveFrom({candlesOk: true, serverCount: 0, indexedBlock: undefined})).toBeNull();
+    });
+    it("position unknown but server candles exist: none (they could be counted twice)", () => {
+        expect(liveFrom({candlesOk: true, serverCount: 2, indexedBlock: null})).toBeUndefined();
+    });
+    it("null position + empty server builds candles from the browser trades", () => {
+        const live = [
+            {block: 10n, logIndex: 0, ts: 600, quoteAmount: 2n * E18, tokenAmount: E18},
+            {block: 11n, logIndex: 0, ts: 650, quoteAmount: 3n * E18, tokenAmount: E18},
+        ];
+        const from = liveFrom({candlesOk: true, serverCount: 0, indexedBlock: null});
+        const out = mergeLiveCandles([], live, from as bigint | null, 300);
+        expect(out).toHaveLength(1);
+        expect(out[0]).toMatchObject({t: 600, o: 2n * E18, c: 3n * E18});
     });
 });
