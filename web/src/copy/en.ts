@@ -87,6 +87,7 @@ export const en = {
         refund: "Unused amount returned",
         graduatesNow: "This buy sells out the supply, and the token graduates right away.",
         wethOut: "Selling an ETH-paired token pays out in WETH.",
+        wethUnwrapHint: "You can unwrap it in My wallet",
         slippage: "Slippage",
         quoting: "Getting a quote…",
         quoteError: "Couldn't get a quote",
@@ -440,6 +441,9 @@ export const en = {
         notFoundNote: "Check the address format",
         explorer: "View on explorer ↗",
         copyAddress: "Copy address",
+        wethHeld: (amount: string) => `${amount} WETH · Selling ETH-paired tokens pays out in WETH`,
+        unwrap: "Unwrap to ETH",
+        unwrapped: (amount: string) => `Unwrapped · ${amount} ETH`,
     },
     devFees: {
         title: "Dev fees",
