@@ -434,6 +434,15 @@ export const en = {
         notFoundNote: "Check the address format",
         explorer: "View on explorer ↗",
     },
+    devFees: {
+        title: "Dev fees",
+        unclaimed: (amount: string, unit: string) => `Unclaimed fees ${amount} ${unit}`,
+        none: "No fees to claim yet",
+        claim: "Claim",
+        claimed: (amount: string, unit: string) => `Fees claimed · ${amount} ${unit}`,
+        wethNote: "Fees on ETH-paired tokens are paid in WETH",
+        poolNote: "After graduation, pool royalties go to your wallet on every swap",
+    },
     tokenPage: {
         tabs: {comments: "Comments", trades: "Trades", holders: "Holders", info: "Info"},
         volume: "24h volume",
