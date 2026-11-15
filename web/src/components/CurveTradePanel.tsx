@@ -432,7 +432,11 @@ function CurveSell({c, amount, slip, onDone}: {c: CurveDetail; amount: bigint; s
                         <ImpactRows impactBps={impact} minOut={minOut(quote.quoteOut, slip.bps)} dp={dp} unit={unit} />
                     </>
                 )}
-                {c.isEth && <p className="text-[12px] text-hanji-400 m-0 mt-2">{tr.curve.wethOut}</p>}
+                {c.isEth && (
+                    <p className="text-[12px] text-hanji-400 m-0 mt-2">
+                        {tr.curve.wethOut} {tr.curve.wethUnwrapHint}
+                    </p>
+                )}
             </div>
             <CtaBlock state={effective} side="sell" action={(run) => execute(run)} payToken={c.token} amount={amount} refetch={refetch} blocked={slip.blocked} />
             <GuardPanel guard={g.guard} dp={dp} unit={unit} retry={execute} autoAvailable={!slip.isAuto} switchToAuto={slip.toAuto} autoBps={slip.autoBps} blocked={slip.blocked} />

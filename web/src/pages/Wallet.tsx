@@ -26,6 +26,7 @@ import {agoLabel, tradeAmount, tradeUnit, useNow} from "../components/feed";
 import {Badge, Gauge, PrimaryBtn, SecondaryBtn} from "../components/ui";
 import {CurveAvatar} from "../components/MetaForm";
 import {CopyAddress} from "../components/CopyAddress";
+import {UnwrapWethBand} from "../components/UnwrapWeth";
 import {ClaimDevFeesButton, fmtDevFee} from "../components/DevFees";
 import {devFeeUnit} from "../lib/devFees";
 import {CurveSaleAbi} from "../contracts/abisV3";
@@ -363,6 +364,8 @@ function WalletView({address}: {address: Address}) {
                     <ExtLink href={explorerAddr(address)}>{tr.walletPage.explorer}</ExtLink>
                 </div>
             </div>
+            {/* my profile only: WETH from selling ETH-paired tokens, and the unwrap button */}
+            {own && <UnwrapWethBand owner={address} />}
             {/* summary per quote unit */}
             {sums.size > 0 && (
                 <div className="flex flex-col gap-3 min-w-0">

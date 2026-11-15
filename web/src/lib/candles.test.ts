@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {AREA_GAP, barIndexAt, Candle, connectOpens, defaultView, layoutCandles, LiveTrade, liveFrom, maxOffset, mergeLiveCandles, MIN_SLOT, panBy, parseCandles, priceRange, RIGHT_PAD, SLOT_DEFAULT_MAX, SLOT_MAX, SLOT_MIN, TIME_LABEL_W, timeLabels, View, visibleCount, zoomAt} from "./candles";
+import {AREA_GAP, barIndexAt, Candle, connectOpens, defaultView, layoutCandles, LiveTrade, liveFrom, logY, maxOffset, mergeLiveCandles, MIN_SLOT, panBy, parseCandles, priceRange, RIGHT_PAD, SLOT_DEFAULT_MAX, SLOT_MAX, SLOT_MIN, TIME_LABEL_W, toMarketCap, TOKEN_SUPPLY_WHOLE, timeLabels, View, visibleCount, zoomAt} from "./candles";
 
 const E18 = 10n ** 18n;
 const c = (t: number, o: bigint, h: bigint, l: bigint, cl: bigint, v: bigint): Candle => ({t, o, h, l, c: cl, v});
@@ -245,5 +245,44 @@ describe("liveFrom (which browser trades join the server candles)", () => {
         const out = mergeLiveCandles([], live, from as bigint | null, 300);
         expect(out).toHaveLength(1);
         expect(out[0]).toMatchObject({t: 600, o: 2n * E18, c: 3n * E18});
+    });
+});
+
+describe("market cap axis", () => {
+    it("scales every price by the 1B supply and keeps each candle's ordering", () => {
+        const cs = [c(0, 3n, 5n, 1n, 2n, 7n), c(300, 2n, 2n, 2n, 4n, 9n)];
+        const m = toMarketCap(cs);
+        expect(m[0]).toEqual({t: 0, o: 3n * TOKEN_SUPPLY_WHOLE, h: 5n * TOKEN_SUPPLY_WHOLE, l: 1n * TOKEN_SUPPLY_WHOLE, c: 2n * TOKEN_SUPPLY_WHOLE, v: 7n});
+        for (const [a, b] of cs.map((x, i) => [x, m[i]] as const)) {
+            expect(a.c >= a.o).toBe(b.c >= b.o);
+            expect(b.h >= b.l && b.h >= b.o && b.l <= b.c).toBe(true);
+            expect(b.v).toBe(a.v);
+        }
+    });
+});
+
+describe("log axis", () => {
+    it("larger values sit higher, and equal ratios take equal heights", () => {
+        const a = Math.log(1), b = Math.log(1e6);
+        const y1 = logY(1n, a, b, 180), y10 = logY(10n, a, b, 180), y100 = logY(100n, a, b, 180), y1000 = logY(1000n, a, b, 180);
+        expect(y10).toBeLessThan(y1);
+        expect(y1000).toBeLessThan(y100);
+        expect(y1 - y10).toBeCloseTo(y10 - y100, 6);
+        expect(y10 - y100).toBeCloseTo(y100 - y1000, 6);
+    });
+    it("a graduation-sized jump still leaves the earlier candles room on the log layout", () => {
+        // 10 small candles around 1e6 wei, then one 16x higher
+        const cs = Array.from({length: 10}, (_, i) => c(i * 300, 1_000_000n + BigInt(i) * 10_000n, 1_100_000n + BigInt(i) * 10_000n, 950_000n, 1_050_000n + BigInt(i) * 10_000n, 1n));
+        cs.push(c(3000, 1_050_000n, 16_000_000n, 1_050_000n, 16_000_000n, 1n));
+        const lin = layoutCandles(cs, 400, 240);
+        const lg = layoutCandles(cs, 400, 240, undefined, 0.75, AREA_GAP, true);
+        const spread = (L: ReturnType<typeof layoutCandles>) => {
+            const ys = L.bars.slice(0, 10).map((x) => x.wickTop);
+            return Math.max(...ys) - Math.min(...ys);
+        };
+        expect(spread(lg)).toBeGreaterThan(spread(lin) * 3);
+        // ticks ascend in price from bottom to top
+        expect(lg.ticks[0].price).toBeLessThan(lg.ticks[3].price);
+        expect(lg.ticks[0].y).toBeGreaterThan(lg.ticks[3].y);
     });
 });

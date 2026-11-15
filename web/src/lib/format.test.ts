@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {agoOf, fmt, fmtCeil, fmtRound, fmtSig, sanitizeAmountInput} from "./format";
+import {agoOf, fmt, fmtAxisMcap, fmtAxisPrice, fmtCeil, fmtRound, fmtSig, sanitizeAmountInput} from "./format";
 
 const E12 = 10n ** 12n;
 const E18 = 10n ** 18n;
@@ -67,5 +67,31 @@ describe("sanitizeAmountInput", () => {
     it("keeps at most 18 fraction digits", () => {
         expect(sanitizeAmountInput("0." + "0".repeat(19))).toBe("0." + "0".repeat(18));
         expect(sanitizeAmountInput("1.1234567890123456789")).toBe("1.123456789012345678");
+    });
+});
+
+describe("chart axis labels", () => {
+    const W = (n: number) => BigInt(Math.round(n * 1e6)) * 10n ** 12n; // whole units with 6 decimals
+    it("KRWs market cap in 만 / 억 (ko)", () => {
+        expect(fmtAxisMcap(W(1_988_029), "KRWs", "ko-KR")).toBe("199만");
+        expect(fmtAxisMcap(W(30_040_000), "KRWs", "ko-KR")).toBe("3,004만");
+        expect(fmtAxisMcap(W(120_000_000), "KRWs", "ko-KR")).toBe("1.2억");
+        expect(fmtAxisMcap(W(9_876), "KRWs", "ko-KR")).toBe("9,876");
+    });
+    it("KRWs market cap in K / M / B (en)", () => {
+        expect(fmtAxisMcap(W(1_988_029), "KRWs", "en-US")).toBe("1.99M");
+        expect(fmtAxisMcap(W(120_000_000), "KRWs", "en-US")).toBe("120M");
+        expect(fmtAxisMcap(W(2_500), "KRWs", "en-US")).toBe("2.5K");
+    });
+    it("ETH market cap with 4 significant digits", () => {
+        expect(fmtAxisMcap(2_058_000_000_000_000n, "ETH", "en-US")).toBe("0.002058");
+        expect(fmtAxisMcap(1_234_000_000_000_000_000n, "WETH", "en-US")).toBe("1.234");
+    });
+    it("tiny prices write the leading zeros as a subscript count", () => {
+        expect(fmtAxisPrice(1_921_000n, "en-US")).toBe("0.0\u2081\u20811921"); // 0.000000000001921
+        expect(fmtAxisPrice(1_921_000n, "en-US")).toBe("0.0₁₁1921");
+        expect(fmtAxisPrice(10n ** 13n * 5n, "en-US")).toBe("0.0₄5"); // 0.00005
+        expect(fmtAxisPrice(10n ** 14n * 5n, "en-US")).toBe("0.0005"); // 3 zeros: plain
+        expect(fmtAxisPrice(12_345n * 10n ** 14n, "en-US")).toBe("1.235");
     });
 });
