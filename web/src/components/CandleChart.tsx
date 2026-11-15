@@ -1,15 +1,19 @@
 // Candle chart (SVG, no chart library) for the token page. Geometry is in lib/candles.ts.
 // The up/down colors (tailwind `up` / `down`) are used only here, for candles and volume bars.
-// Layout note (390px): the SVG is as wide as its container (measured), never wider; when the
-// candles don't fit, only the newest ones that fit are drawn. No horizontal scroll.
+// Layout note (390px): the SVG is as wide as its container (measured), never wider; candles are
+// right-anchored at a fixed slot (lib/candles View), so zooming and panning never widen the page.
+// Interaction: wheel zooms at the cursor (horizontal wheel pans), drag pans, two-finger pinch
+// zooms, double click / double tap resets. One finger shows the candle under it.
 import {useEffect, useRef, useState} from "react";
 import {useCopy} from "../copy";
 import {useCandles, useChainSummary} from "../hooks/chainData";
 import {useActivity} from "../hooks/activity";
-import {barIndexAt, connectOpens, layoutCandles, LiveTrade, mergeLiveCandles, parseCandles} from "../lib/candles";
+import {barIndexAt, connectOpens, fitView, layoutCandles, LiveTrade, mergeLiveCandles, panBy, parseCandles, View, zoomAt} from "../lib/candles";
 import {fmtRound, fmtSig} from "../lib/format";
 
 const HEIGHT = 240;
+const WHEEL_ZOOM = 1.15;
+const DOUBLE_TAP_MS = 300;
 const AXIS_W = 64; // right-hand price labels
 const INTERVALS = [
     {key: "m5", sec: 300},
@@ -53,14 +57,62 @@ export function CandleChart({curve, unit}: {curve: string; unit: string}) {
     // undefined: server candles loaded but the indexer position is unknown; don't add live trades
     // (they could already be counted).
     const candles = connectOpens(indexed === undefined ? server : mergeLiveCandles(server, live, indexed, interval));
-    const L = layoutCandles(candles, plotW, HEIGHT);
+    // null = default view (fits the width, newest at the right). Width changes keep the slot and
+    // only re-fit the offset (fitView); interval changes go back to the default view.
+    const [view, setView] = useState<View | null>(null);
+    const total = candles.length;
+    const shown = view ? fitView(view, total) : undefined;
+    const L = layoutCandles(candles, plotW, HEIGHT, shown);
     const dp = unit === "ETH" || unit === "WETH" ? 6 : 0;
     const hb = hover !== null ? L.bars[hover] : undefined;
 
+    // Keep the viewed range when new candles arrive while looking at the past (offset > 0).
+    const lastT = total > 0 ? candles[total - 1].t : null;
+    const prevLast = useRef<number | null>(lastT);
+    useEffect(() => {
+        const prev = prevLast.current;
+        prevLast.current = lastT;
+        if (prev === null || lastT === null || lastT <= prev) return;
+        const added = candles.filter((x) => x.t > prev).length;
+        setView((v) => (v && v.offset > 0 ? {...v, offset: v.offset + added} : v));
+    }, [lastT]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Latest values for the native wheel listener (attached once per plot element).
+    const live2 = useRef({view: shown ?? {slot: L.slot, offset: 0}, total, plotW});
+    live2.current = {view: shown ?? {slot: L.slot, offset: 0}, total, plotW};
+    const [plotEl, setPlotEl] = useState<SVGRectElement | null>(null);
+    useEffect(() => {
+        if (!plotEl) return;
+        // Non-passive so the page does not scroll while the cursor is over the plot. The listener
+        // sits on the plot itself, so outside it the page scrolls normally.
+        const onWheel = (e: WheelEvent) => {
+            e.preventDefault();
+            const {view: v, total: n, plotW: w} = live2.current;
+            if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+                setView(panBy(v, -e.deltaX, n));
+            } else if (e.deltaY !== 0) {
+                const x = e.clientX - plotEl.getBoundingClientRect().left;
+                setView(zoomAt(v, e.deltaY < 0 ? WHEEL_ZOOM : 1 / WHEEL_ZOOM, x, w, n));
+            }
+        };
+        plotEl.addEventListener("wheel", onWheel, {passive: false});
+        return () => plotEl.removeEventListener("wheel", onWheel);
+    }, [plotEl]);
+
+    const drag = useRef<{x: number; view: View} | null>(null);
+    const [dragging, setDragging] = useState(false);
+    const pinch = useRef<{dist: number; centre: number; view: View} | null>(null);
+    const lastTap = useRef(0);
+    const localX = (clientX: number, target: Element) => clientX - target.getBoundingClientRect().left;
+    const current = (): View => shown ?? {slot: L.slot, offset: 0};
+
     const onMove = (clientX: number, target: Element) => {
-        const x = clientX - target.getBoundingClientRect().left;
-        const i = barIndexAt(x, plotW, L.bars.length);
+        const i = barIndexAt(localX(clientX, target), L.bars, L.slot);
         setHover(i >= 0 ? i : null);
+    };
+    const resetView = () => {
+        setView(null);
+        setHover(null);
     };
 
     return (
@@ -74,6 +126,7 @@ export function CandleChart({curve, unit}: {curve: string; unit: string}) {
                             onClick={() => {
                                 setIv(it.sec);
                                 setHover(null);
+                                setView(null);
                             }}
                             className={`px-3 min-h-[32px] rounded-full border text-[12px] ${interval === it.sec ? "border-brass-400 text-brass-400" : "border-ink-700 text-hanji-400 hover:border-brass-600"}`}
                         >
@@ -122,15 +175,66 @@ export function CandleChart({curve, unit}: {curve: string; unit: string}) {
                                 </g>
                             ))}
                             <rect
+                                ref={setPlotEl}
                                 x={0}
                                 y={0}
                                 width={plotW}
                                 height={HEIGHT}
                                 fill="transparent"
-                                onMouseMove={(e) => onMove(e.clientX, e.currentTarget)}
-                                onMouseLeave={() => setHover(null)}
-                                onTouchStart={(e) => onMove(e.touches[0].clientX, e.currentTarget)}
-                                onTouchMove={(e) => onMove(e.touches[0].clientX, e.currentTarget)}
+                                // vertical swipes still scroll the page; pinch and horizontal moves are ours
+                                style={{touchAction: "pan-y", cursor: dragging ? "grabbing" : "grab"}}
+                                onMouseDown={(e) => {
+                                    drag.current = {x: e.clientX, view: current()};
+                                    setDragging(true);
+                                    setHover(null);
+                                }}
+                                onMouseMove={(e) => {
+                                    if (drag.current) setView(panBy(drag.current.view, e.clientX - drag.current.x, total));
+                                    else onMove(e.clientX, e.currentTarget);
+                                }}
+                                onMouseUp={() => {
+                                    drag.current = null;
+                                    setDragging(false);
+                                }}
+                                onMouseLeave={() => {
+                                    drag.current = null;
+                                    setDragging(false);
+                                    setHover(null);
+                                }}
+                                onDoubleClick={resetView}
+                                onTouchStart={(e) => {
+                                    if (e.touches.length === 2) {
+                                        const [a, b] = [e.touches[0], e.touches[1]];
+                                        pinch.current = {
+                                            dist: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY),
+                                            centre: localX((a.clientX + b.clientX) / 2, e.currentTarget),
+                                            view: current(),
+                                        };
+                                        setHover(null);
+                                        return;
+                                    }
+                                    const now = Date.now();
+                                    if (now - lastTap.current < DOUBLE_TAP_MS) {
+                                        lastTap.current = 0;
+                                        resetView();
+                                        return;
+                                    }
+                                    lastTap.current = now;
+                                    onMove(e.touches[0].clientX, e.currentTarget);
+                                }}
+                                onTouchMove={(e) => {
+                                    const p = pinch.current;
+                                    if (p && e.touches.length === 2 && p.dist > 0) {
+                                        const [a, b] = [e.touches[0], e.touches[1]];
+                                        const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+                                        setView(zoomAt(p.view, dist / p.dist, p.centre, plotW, total));
+                                        return;
+                                    }
+                                    if (!p) onMove(e.touches[0].clientX, e.currentTarget);
+                                }}
+                                onTouchEnd={(e) => {
+                                    if (e.touches.length < 2) pinch.current = null;
+                                }}
                             />
                         </svg>
                         <div className="flex justify-between text-[11px] text-hanji-400 tabular-nums mt-1" style={{width: plotW}}>
