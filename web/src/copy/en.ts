@@ -227,6 +227,8 @@ export const en = {
         switchFailed: "Couldn't switch networks. Switch to GIWA Sepolia in your wallet.",
         openInAppTitle: "Open in a wallet app",
         openInAppNote: "This mobile browser has no wallet to connect. Open this address in your wallet app's browser.",
+        openInMetaMask: "Open in MetaMask",
+        inAppBrowserNote: "If you opened this inside another app, reopen it in Safari or Chrome",
         copyPageLink: "Copy link",
         pageLinkCopied: "Link copied",
     },

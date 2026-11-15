@@ -56,3 +56,24 @@ describe("share page", () => {
         expect(r.headers.get("location")).toBe(`/#/t/${c}`);
     });
 });
+
+describe("HEAD /api/meta (share and index)", () => {
+    it("same status and headers as GET, no body", async () => {
+        const {GET, HEAD} = await import("../meta/index");
+        const url = "https://mapae.example/api/meta?share=nope";
+        const g = await GET(new Request(url));
+        const h = await HEAD(new Request(url, {method: "HEAD"}));
+        expect(h.status).toBe(302);
+        expect(h.status).toBe(g.status);
+        expect(h.headers.get("location")).toBe(g.headers.get("location"));
+        expect(h.headers.get("cache-control")).toBe(g.headers.get("cache-control"));
+        expect(await h.text()).toBe("");
+        // without share: the index GET (here the cross-origin 403) answers the same way
+        const other = {headers: {origin: "https://evil.example"}};
+        const g2 = await GET(new Request("https://mapae.example/api/meta", other));
+        const h2 = await HEAD(new Request("https://mapae.example/api/meta", {...other, method: "HEAD"}));
+        expect(h2.status).toBe(g2.status);
+        expect(h2.headers.get("content-type")).toBe(g2.headers.get("content-type"));
+        expect(await h2.text()).toBe("");
+    });
+});
