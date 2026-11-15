@@ -97,10 +97,13 @@ function Nav() {
         </button>
     ) : null;
 
-    // Top tabs: 커브 / 발행 / 공모. 공모 is active across the whole offering section.
+    // Top tabs: 토큰 / 발행 / (내 지갑, when connected) / 공모. 공모 is active across the whole
+    // offering section; 내 지갑 only on the connected wallet's own profile.
+    const ownWallet = isConnected && address ? address : undefined;
     const tabs = [
         {to: "/", label: tr.nav.curves, active: pathname === "/" || pathname.startsWith("/t/")},
         {to: "/create", label: tr.nav.create, active: pathname.startsWith("/create")},
+        ...(ownWallet ? [{to: `/w/${ownWallet}`, label: tr.nav.wallet, active: pathname.toLowerCase() === `/w/${ownWallet.toLowerCase()}`}] : []),
         {to: "/offerings", label: tr.nav.home, active: legacy},
     ];
     // Offering-section sub tabs (routes unchanged)
@@ -164,7 +167,7 @@ function Nav() {
                 </div>
             </div>
             {/* 2줄(모바일 전용): 상단 탭 3등분 풀폭 */}
-            <nav className="grid grid-cols-3 sm:hidden border-t border-ink-700">
+            <nav className={`grid ${tabs.length === 4 ? "grid-cols-4" : "grid-cols-3"} sm:hidden border-t border-ink-700`}>
                 {tabs.map((t) => (
                     <Link key={t.to} to={t.to} className={gridCls(t.active)}>{t.label}</Link>
                 ))}

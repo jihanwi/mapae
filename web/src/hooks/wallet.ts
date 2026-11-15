@@ -1,0 +1,79 @@
+// Wallet profile data: the server profile and trade pages, on-chain balances (one multicall) and
+// the real-name status (the same Dojang read as the comments composer).
+import {useInfiniteQuery, useQuery} from "@tanstack/react-query";
+import {Abi} from "viem";
+import {useReadContract, useReadContracts} from "wagmi";
+import {API_BASE} from "./meta";
+import {MembershipTokenV3Abi, MockDojangV3Abi} from "../contracts/abisV3";
+import {ADDR_V3} from "../contracts/addressesV3";
+import {giwaSepolia} from "../config/chain";
+import type {ServerTrade} from "../lib/chainMerge";
+import type {ServerPosition} from "../lib/wallet";
+
+type Address = `0x${string}`;
+export const WALLET_TRADES_PAGE = 50;
+
+export type WalletCurveOut = {curve: string; token: string; name: string; symbol: string};
+export type WalletOut = {
+    nickname: string | null;
+    launched: (WalletCurveOut & {createdTs: string})[];
+    received: WalletCurveOut[];
+    positions: ServerPosition[];
+};
+export type WalletTrade = ServerTrade & {curve: string; symbol: string; block: string};
+
+async function getJson<T>(path: string): Promise<T> {
+    const r = await fetch(`${API_BASE}${path}`);
+    if (!r.ok) throw new Error(`${path} ${r.status}`);
+    return (await r.json()) as T;
+}
+
+export const walletKey = (address: string) => ["chain", "wallet", address.toLowerCase()];
+
+export function useWalletProfile(address: string) {
+    return useQuery({
+        queryKey: walletKey(address),
+        queryFn: () => getJson<WalletOut>(`/api/chain/wallet?address=${address.toLowerCase()}`),
+        staleTime: 60_000,
+        retry: 1,
+    });
+}
+
+/** Trade pages, newest first; the next page starts before the oldest ts seen. */
+export function useWalletTrades(address: string) {
+    return useInfiniteQuery({
+        queryKey: ["chain", "wallet-trades", address.toLowerCase()],
+        initialPageParam: undefined as string | undefined,
+        queryFn: ({pageParam}) =>
+            getJson<{trades: WalletTrade[]}>(`/api/chain/wallet-trades?address=${address.toLowerCase()}&limit=${WALLET_TRADES_PAGE}${pageParam ? `&before=${pageParam}` : ""}`),
+        getNextPageParam: (last) => (last.trades.length === WALLET_TRADES_PAGE ? last.trades[last.trades.length - 1].ts : undefined),
+        staleTime: 60_000,
+        retry: 1,
+    });
+}
+
+/** balanceOf(address) for every token (deduped, lowercase keys) in one multicall, every 15 s. */
+export function useWalletBalances(address: Address, tokens: readonly string[]) {
+    const list = [...new Set(tokens.map((t) => t.toLowerCase()))] as Address[];
+    const q = useReadContracts({
+        contracts: list.map((t) => ({address: t, abi: MembershipTokenV3Abi as Abi, functionName: "balanceOf", args: [address], chainId: giwaSepolia.id})),
+        query: {enabled: list.length > 0, refetchInterval: 15_000},
+    });
+    const map = new Map<Address, bigint>();
+    q.data?.forEach((r, i) => {
+        if (r.status === "success") map.set(list[i], r.result as bigint);
+    });
+    return {balances: map, isLoading: q.isLoading && list.length > 0, isError: q.isError};
+}
+
+/** Dojang isVerified (ADDR_V3.mockDojang, MockDojangV3Abi), as Comments.tsx reads it. */
+export function useIsVerified(address: Address) {
+    return useReadContract({
+        address: ADDR_V3.mockDojang,
+        abi: MockDojangV3Abi,
+        functionName: "isVerified",
+        args: [address],
+        chainId: giwaSepolia.id,
+        query: {refetchInterval: 15_000},
+    });
+}

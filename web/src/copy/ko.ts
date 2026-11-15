@@ -23,7 +23,7 @@ export const ko = {
     nav: {
         disconnect: "연결 해제",
         logoAlt: "MAPAE 로고",
-        curves: "토큰", create: "발행", home: "공모", offeringList: "공모 목록", membership: "내 멤버십", redeem: "리딤 & 후원", trade: "거래",
+        curves: "토큰", create: "발행", wallet: "내 지갑", home: "공모", offeringList: "공모 목록", membership: "내 멤버십", redeem: "리딤 & 후원", trade: "거래",
         faucet: "KRWs 받기", // 상시 재충전 버튼 (데스크톱)
         faucetShort: "+ KRWs", // 모바일 축약
         faucetTitle: "테스트 KRWs 받기 (10만 KRWs)",
@@ -483,7 +483,7 @@ export const ko = {
     nickname: {
         title: "닉네임",
         current: (n: string) => `현재 닉네임: ${n}`,
-        rules: "2~16자, 한글·영문·숫자·밑줄(_)만 쓸 수 있어요. 화면에는 닉네임만 보이고 지갑 주소는 보이지 않아요. 다만 내가 발행한 토큰의 페이지에는 닉네임이 Dev 지갑 주소와 함께 보여요",
+        rules: "2~16자, 한글·영문·숫자·밑줄(_)만 쓸 수 있어요. 닉네임은 지갑 주소, 거래 내역과 함께 누구에게나 보여요",
         cooldown: "닉네임은 7일에 한 번 바꿀 수 있어요",
         placeholder: "닉네임",
         save: "저장하기",
@@ -547,6 +547,23 @@ export const ko = {
         verifiedShort: (n: number) => `실명 ${n}명`,
         featuredLabel: "졸업에 가장 가까운 토큰",
         livePanel: "실시간 거래",
+    },
+    // 지갑 프로필 (/w/:address). 닉네임은 공개 프로필 (오너 결정 2026-11-15)
+    walletPage: {
+        mine: "내 지갑",
+        value: "평가 금액",
+        unrealized: "평가 손익",
+        realized: "실현 손익",
+        counts: (held: number, launched: number) => `보유 토큰 ${held}개 · 발행한 토큰 ${launched}개`,
+        tabs: {holdings: "보유", launched: "발행", trades: "거래"},
+        cols: {token: "토큰", balance: "보유 수량", value: "평가 금액", unrealized: "평가 손익", share: "비율"},
+        groups: {holding: "보유 중", soldOut: "모두 판 토큰"},
+        note: "손익은 매수 평균가 기준이에요. 전송으로 받은 수량은 계산에서 빼고, 평가 금액은 지금 가격으로 계산해요. 실제로 팔 때는 수수료와 가격 영향만큼 달라질 수 있어요",
+        emptyHeld: "아직 보유한 토큰이 없어요",
+        emptyLaunched: "아직 발행한 토큰이 없어요",
+        notFoundTitle: "지갑을 찾을 수 없어요",
+        notFoundNote: "주소 형식을 확인해 주세요",
+        explorer: "익스플로러에서 보기 ↗",
     },
     // 토큰 페이지 (지표, 탭, 주소 복사, 빠른 금액)
     tokenPage: {
