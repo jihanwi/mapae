@@ -89,7 +89,47 @@ export const AREA_GAP = 8;
  *  Candles whose centre would fall left of slot / 2 are not drawn. Bodies are 70% of the slot,
  *  so the gap between neighbours is always 30% of it. Top `priceFrac` of the height is the price
  *  area, the rest (after `gapPx`) the volume area; both scale to the visible candles only. */
-export function layoutCandles(all: readonly Candle[], width: number, height: number, view?: View, priceFrac = 0.75, gapPx = AREA_GAP): Layout {
+/** Market cap candles: every price times the 1,000,000,000 total supply (prices are quote wei per
+ *  whole token, so the result is quote wei). Volume is unchanged. A positive factor keeps every
+ *  open / high / low / close ordering, so the candles keep their shape. */
+export const TOKEN_SUPPLY_WHOLE = 1_000_000_000n;
+export function toMarketCap(cs: readonly Candle[]): Candle[] {
+    const k = TOKEN_SUPPLY_WHOLE;
+    return cs.map((c) => ({...c, o: c.o * k, h: c.h * k, l: c.l * k, c: c.c * k}));
+}
+
+/** Log price axis: [ln lo, ln hi] with 8% padding in log space (a flat range is widened by 1%). */
+function logRange(cs: readonly Candle[]): {a: number; b: number} {
+    let lo = Infinity;
+    let hi = 0;
+    for (const c of cs) {
+        const l = Number(c.l);
+        const h = Number(c.h);
+        if (l > 0 && l < lo) lo = l;
+        if (h > hi) hi = h;
+    }
+    if (!(lo > 0) || !(hi > 0)) return {a: 0, b: 1};
+    let a = Math.log(lo);
+    let b = Math.log(hi);
+    if (b - a < 1e-12) {
+        a -= Math.log(1.01);
+        b += Math.log(1.01);
+    } else {
+        const pad = (b - a) * 0.08;
+        a -= pad;
+        b += pad;
+    }
+    return {a, b};
+}
+
+/** y of a price on a log axis of height h over [a, b] = [ln lo, ln hi] (larger values higher). */
+export function logY(p: bigint, a: number, b: number, h: number): number {
+    const v = Number(p);
+    const lv = v > 0 ? Math.log(v) : a;
+    return h * (1 - (lv - a) / (b - a));
+}
+
+export function layoutCandles(all: readonly Candle[], width: number, height: number, view?: View, priceFrac = 0.75, gapPx = AREA_GAP, log = false): Layout {
     const v = fitView(view ?? defaultView(all.length, width), all.length, width);
     const slot = v.slot;
     const priceH = Math.round(height * priceFrac);
@@ -98,9 +138,24 @@ export function layoutCandles(all: readonly Candle[], width: number, height: num
     const end = all.length - v.offset;
     const cs = all.slice(Math.max(0, end - fit), end);
     if (cs.length === 0) return {bars: [], ticks: [], priceH, lo: 0n, hi: 0n, slot};
-    const {lo, hi} = priceRange(cs);
+    let {lo, hi} = priceRange(cs);
     const span = hi - lo;
-    const y = (p: bigint) => priceH * (1 - ratio(p - lo, span));
+    let y = (p: bigint) => priceH * (1 - ratio(p - lo, span));
+    let ticks: {y: number; price: bigint}[] = [0n, 1n, 2n, 3n].map((k) => {
+        const price = lo + (span * k) / 3n;
+        return {y: y(price), price};
+    });
+    if (log) {
+        // log axis: heights and ticks from ln(price); equal ratios get equal heights
+        const {a, b} = logRange(cs);
+        y = (p: bigint) => logY(p, a, b, priceH);
+        lo = BigInt(Math.max(0, Math.round(Math.exp(a))));
+        hi = BigInt(Math.round(Math.exp(b)));
+        ticks = [0, 1, 2, 3].map((k) => {
+            const price = BigInt(Math.max(1, Math.round(Math.exp(a + ((b - a) * k) / 3))));
+            return {y: y(price), price};
+        });
+    }
     let maxV = 0n;
     for (const c of cs) if (c.v > maxV) maxV = c.v;
     const w = clamp(slot * 0.7, 1, 28);
@@ -125,10 +180,6 @@ export function layoutCandles(all: readonly Candle[], width: number, height: num
             };
         })
         .filter((b) => b.x >= slot / 2);
-    const ticks = [0n, 1n, 2n, 3n].map((k) => {
-        const price = lo + (span * k) / 3n;
-        return {y: y(price), price};
-    });
     return {bars, ticks, priceH, lo, hi, slot};
 }
 

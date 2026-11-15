@@ -80,3 +80,43 @@ export function agoOf(nowSec: number, tsSec: number): Ago {
     if (d < 86400) return {unit: "hour", n: Math.floor(d / 3600)};
     return {unit: "day", n: Math.floor(d / 86400)};
 }
+
+// ---------------------------------------------------------------------------------------------
+// Chart axis labels (STATUS 결정 48): market cap by default, price on request
+// ---------------------------------------------------------------------------------------------
+
+const SUBSCRIPT = "₀₁₂₃₄₅₆₇₈₉";
+const sub = (n: number) => [...String(n)].map((d) => SUBSCRIPT[Number(d)]).join("");
+
+/** A number in short form: below 1000 of the chosen unit 3 significant digits, otherwise a whole
+ *  number with grouping. */
+function compact(v: number, units: readonly [number, string][], locale: string): string {
+    for (const [size, suffix] of units) {
+        if (v >= size) {
+            const n = v / size;
+            const s = n >= 1000 ? n.toLocaleString(locale, {maximumFractionDigits: 0}) : n.toLocaleString(locale, {maximumSignificantDigits: 3});
+            return `${s}${suffix}`;
+        }
+    }
+    return v >= 1000 ? v.toLocaleString(locale, {maximumFractionDigits: 0}) : v.toLocaleString(locale, {maximumSignificantDigits: 3});
+}
+
+/** Market cap axis label. KRWs: ko in 만 / 억 ("199만", "3,004만", "1.2억"), other locales K / M / B
+ *  ("1.99M"). ETH / WETH: 4 significant digits ("0.002058"). */
+export function fmtAxisMcap(wei: bigint, unit: string, locale: string): string {
+    if (unit !== "KRWs") return fmtSig(wei, 4, locale);
+    const v = Number(wei) / 1e18;
+    return locale.startsWith("ko")
+        ? compact(v, [[1e8, "억"], [1e4, "만"]], locale)
+        : compact(v, [[1e9, "B"], [1e6, "M"], [1e3, "K"]], locale);
+}
+
+/** Price axis label: 4 significant digits; with 4 or more zeros after the decimal point the zeros
+ *  are written as a subscript count ("0.0₁₁1921" for 0.000000000001921). */
+export function fmtAxisPrice(wei: bigint, locale: string): string {
+    const s = fmtSig(wei, 4, locale);
+    const m = /^0[.,](0+)(\d+)$/.exec(s);
+    if (!m || m[1].length < 4) return s;
+    const dot = s[1];
+    return `0${dot}0${sub(m[1].length)}${m[2]}`;
+}

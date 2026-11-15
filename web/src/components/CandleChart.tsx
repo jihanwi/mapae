@@ -8,8 +8,8 @@ import {useEffect, useRef, useState} from "react";
 import {useCopy} from "../copy";
 import {useCandles, useChainSummary} from "../hooks/chainData";
 import {useActivity} from "../hooks/activity";
-import {barIndexAt, connectOpens, fitView, layoutCandles, liveFrom, LiveTrade, mergeLiveCandles, panBy, parseCandles, TIME_LABEL_W, timeLabels, View, zoomAt} from "../lib/candles";
-import {fmtRound, fmtSig} from "../lib/format";
+import {AREA_GAP, barIndexAt, connectOpens, fitView, layoutCandles, liveFrom, LiveTrade, mergeLiveCandles, panBy, parseCandles, TIME_LABEL_W, timeLabels, toMarketCap, View, zoomAt} from "../lib/candles";
+import {fmtAxisMcap, fmtAxisPrice, fmtRound} from "../lib/format";
 
 const HEIGHT = 240;
 const WHEEL_ZOOM = 1.15;
@@ -35,12 +35,47 @@ function useWidth<T extends HTMLElement>() {
     return [ref, w] as const;
 }
 
+type AxisUnit = "mcap" | "price";
+type AxisScale = "linear" | "log";
+const AXIS_KEY = "mapae.chart.axis";
+const SCALE_KEY = "mapae.chart.scale";
+
+function readPref<T extends string>(key: string, allowed: readonly T[]): T | null {
+    try {
+        const v = localStorage.getItem(key);
+        return v !== null && (allowed as readonly string[]).includes(v) ? (v as T) : null;
+    } catch {
+        return null;
+    }
+}
+function writePref(key: string, v: string): void {
+    try {
+        localStorage.setItem(key, v);
+    } catch {
+        // storage blocked (private mode): the choice lasts for this page only
+    }
+}
+
 const timeLabel = (t: number, locale: string, sec: number) =>
     new Date(t * 1000).toLocaleString(locale, sec >= 86400 ? {month: "short", day: "numeric"} : {month: "short", day: "numeric", hour: "2-digit", minute: "2-digit"});
 
-export function CandleChart({curve, unit}: {curve: string; unit: string}) {
+/** `graduated` picks the default scale (log after graduation, linear before) until the user
+ *  chooses one. The vertical axis shows market cap by default (STATUS 결정 48). */
+export function CandleChart({curve, unit, graduated = false}: {curve: string; unit: string; graduated?: boolean}) {
     const tr = useCopy();
     const [interval, setIv] = useState<300 | 3600 | 86400>(300);
+    const [axis, setAxisState] = useState<AxisUnit>(() => readPref<AxisUnit>(AXIS_KEY, ["mcap", "price"]) ?? "mcap");
+    const [chosenScale, setChosenScale] = useState<AxisScale | null>(() => readPref<AxisScale>(SCALE_KEY, ["linear", "log"]));
+    const scale: AxisScale = chosenScale ?? (graduated ? "log" : "linear");
+    const setAxis = (a: AxisUnit) => {
+        setAxisState(a);
+        writePref(AXIS_KEY, a);
+    };
+    const setScale = (sc: AxisScale) => {
+        setChosenScale(sc);
+        writePref(SCALE_KEY, sc);
+    };
+    const label = (v: bigint) => (axis === "mcap" ? fmtAxisMcap(v, unit, tr.locale) : fmtAxisPrice(v, tr.locale));
     const q = useCandles(curve, interval);
     const [boxRef, width] = useWidth<HTMLDivElement>();
     const [hover, setHover] = useState<number | null>(null);
@@ -55,13 +90,14 @@ export function CandleChart({curve, unit}: {curve: string; unit: string}) {
     const server = q.isSuccess ? parseCandles(q.data) : [];
     // see liveFrom: undefined = add no live trades (position unknown while server candles exist)
     const indexed = liveFrom({candlesOk: q.isSuccess, serverCount: server.length, indexedBlock: summary.isSuccess ? summary.data.indexedBlock : undefined});
-    const candles = connectOpens(indexed === undefined ? server : mergeLiveCandles(server, live, indexed, interval));
+    const priced = connectOpens(indexed === undefined ? server : mergeLiveCandles(server, live, indexed, interval));
+    const candles = axis === "mcap" ? toMarketCap(priced) : priced;
     // null = default view (fits the width, newest at the right). Width changes keep the slot and
     // only re-fit the offset (fitView); interval changes go back to the default view.
     const [view, setView] = useState<View | null>(null);
     const total = candles.length;
     const shown = view ? fitView(view, total, plotW) : undefined;
-    const L = layoutCandles(candles, plotW, HEIGHT, shown);
+    const L = layoutCandles(candles, plotW, HEIGHT, shown, 0.75, AREA_GAP, scale === "log");
     const dp = unit === "ETH" || unit === "WETH" ? 6 : 0;
     const hb = hover !== null ? L.bars[hover] : undefined;
 
@@ -116,22 +152,48 @@ export function CandleChart({curve, unit}: {curve: string; unit: string}) {
 
     return (
         <div className="bg-ink-900 border border-ink-700 rounded-card p-4 sm:p-6 min-w-0">
-            <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+            <div className="flex items-center justify-between gap-x-3 gap-y-2 flex-wrap mb-3">
                 <h3 className="m-0 text-[15px] font-bold">{tr.chain.chartTitle}</h3>
-                <div role="group" aria-label={tr.chain.intervalLabel} className="flex gap-1.5">
-                    {INTERVALS.map((it) => (
-                        <button
-                            key={it.key}
-                            onClick={() => {
-                                setIv(it.sec);
-                                setHover(null);
-                                setView(null);
-                            }}
-                            className={`px-3 min-h-[32px] rounded-full border text-[12px] ${interval === it.sec ? "border-brass-400 text-brass-400" : "border-ink-700 text-hanji-400 hover:border-brass-600"}`}
-                        >
-                            {tr.chain.intervals[it.key]}
-                        </button>
-                    ))}
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2 min-w-0">
+                    <div role="group" aria-label={tr.chain.axisLabel} className="flex gap-1.5">
+                        {(["mcap", "price"] as const).map((a) => (
+                            <button
+                                key={a}
+                                aria-pressed={axis === a}
+                                onClick={() => setAxis(a)}
+                                className={`px-3 min-h-[32px] rounded-full border text-[12px] whitespace-nowrap ${axis === a ? "border-brass-400 text-brass-400" : "border-ink-700 text-hanji-400 hover:border-brass-600"}`}
+                            >
+                                {a === "mcap" ? tr.chain.axisMcap : tr.chain.axisPrice}
+                            </button>
+                        ))}
+                    </div>
+                    <div role="group" aria-label={tr.chain.scaleLabel} className="flex gap-1.5">
+                        {(["linear", "log"] as const).map((sc) => (
+                            <button
+                                key={sc}
+                                aria-pressed={scale === sc}
+                                onClick={() => setScale(sc)}
+                                className={`px-3 min-h-[32px] rounded-full border text-[12px] whitespace-nowrap ${scale === sc ? "border-brass-400 text-brass-400" : "border-ink-700 text-hanji-400 hover:border-brass-600"}`}
+                            >
+                                {sc === "linear" ? tr.chain.scaleLinear : tr.chain.scaleLog}
+                            </button>
+                        ))}
+                    </div>
+                    <div role="group" aria-label={tr.chain.intervalLabel} className="flex gap-1.5">
+                        {INTERVALS.map((it) => (
+                            <button
+                                key={it.key}
+                                onClick={() => {
+                                    setIv(it.sec);
+                                    setHover(null);
+                                    setView(null);
+                                }}
+                                className={`px-3 min-h-[32px] rounded-full border text-[12px] ${interval === it.sec ? "border-brass-400 text-brass-400" : "border-ink-700 text-hanji-400 hover:border-brass-600"}`}
+                            >
+                                {tr.chain.intervals[it.key]}
+                            </button>
+                        ))}
+                    </div>
                 </div>
             </div>
             <div ref={boxRef} className="w-full min-w-0 select-none">
@@ -147,10 +209,10 @@ export function CandleChart({curve, unit}: {curve: string; unit: string}) {
                             {hb && (
                                 <>
                                     <span className="text-hanji-100">{timeLabel(hb.candle.t, tr.locale, interval)}</span>
-                                    <span>{tr.chain.open} {fmtSig(hb.candle.o, 4, tr.locale)}</span>
-                                    <span>{tr.chain.high} {fmtSig(hb.candle.h, 4, tr.locale)}</span>
-                                    <span>{tr.chain.low} {fmtSig(hb.candle.l, 4, tr.locale)}</span>
-                                    <span>{tr.chain.close} {fmtSig(hb.candle.c, 4, tr.locale)}</span>
+                                    <span>{tr.chain.open} {label(hb.candle.o)}</span>
+                                    <span>{tr.chain.high} {label(hb.candle.h)}</span>
+                                    <span>{tr.chain.low} {label(hb.candle.l)}</span>
+                                    <span>{tr.chain.close} {label(hb.candle.c)}</span>
                                     <span>
                                         {tr.chain.volume} {fmtRound(hb.candle.v, dp, tr.locale)} {unit}
                                     </span>
@@ -162,7 +224,7 @@ export function CandleChart({curve, unit}: {curve: string; unit: string}) {
                                 <g key={i}>
                                     <line x1={0} x2={plotW} y1={t.y} y2={t.y} stroke="#3A3126" strokeWidth={1} />
                                     <text x={plotW + 6} y={Math.min(Math.max(t.y + 4, 10), L.priceH)} fontSize={11} fill="#A89880" className="tabular-nums">
-                                        {fmtSig(t.price, 4, tr.locale)}
+                                        {label(t.price)}
                                     </text>
                                 </g>
                             ))}

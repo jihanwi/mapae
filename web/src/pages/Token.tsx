@@ -601,7 +601,7 @@ export default function Token() {
                 )}
                 {/* candle chart from the server index */}
                 <div className="order-5 lg:order-none min-w-0">
-                    <CandleChart curve={c.address} unit={c.graduated && c.isEth ? "WETH" : quoteUnit(c)} />
+                    <CandleChart curve={c.address} unit={c.graduated && c.isEth ? "WETH" : quoteUnit(c)} graduated={c.graduated} />
                 </div>
                 <div className="order-4 lg:order-none min-w-0">
                     <Progress c={c} />
