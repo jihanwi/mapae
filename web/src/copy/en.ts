@@ -433,6 +433,7 @@ export const en = {
         notFoundTitle: "Wallet not found",
         notFoundNote: "Check the address format",
         explorer: "View on explorer ↗",
+        copyAddress: "Copy address",
     },
     devFees: {
         title: "Dev fees",

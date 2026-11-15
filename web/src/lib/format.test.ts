@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {agoOf, fmt, fmtCeil, fmtRound, fmtSig} from "./format";
+import {agoOf, fmt, fmtCeil, fmtRound, fmtSig, sanitizeAmountInput} from "./format";
 
 const E12 = 10n ** 12n;
 const E18 = 10n ** 18n;
@@ -51,5 +51,21 @@ describe("agoOf", () => {
         expect(agoOf(1000, 820)).toEqual({unit: "min", n: 3});
         expect(agoOf(10_000, 2_000)).toEqual({unit: "hour", n: 2});
         expect(agoOf(200_000, 0)).toEqual({unit: "day", n: 2});
+    });
+});
+
+describe("sanitizeAmountInput", () => {
+    it("normalizes full-width digits and dots (NFKC)", () => {
+        expect(sanitizeAmountInput("１００")).toBe("100");
+        expect(sanitizeAmountInput("１．５")).toBe("1.5");
+    });
+    it("drops commas, signs and other characters, keeps one dot", () => {
+        expect(sanitizeAmountInput("1,000")).toBe("1000");
+        expect(sanitizeAmountInput("-5")).toBe("5");
+        expect(sanitizeAmountInput("1.2.3")).toBe("1.23");
+    });
+    it("keeps at most 18 fraction digits", () => {
+        expect(sanitizeAmountInput("0." + "0".repeat(19))).toBe("0." + "0".repeat(18));
+        expect(sanitizeAmountInput("1.1234567890123456789")).toBe("1.123456789012345678");
     });
 });

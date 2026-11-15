@@ -6,6 +6,7 @@ import {useEffect, useState} from "react";
 import {Link, useNavigate, useParams} from "react-router-dom";
 import {useQueryClient} from "@tanstack/react-query";
 import {useAccount, useReadContracts} from "wagmi";
+import {DEFAULT_TITLE, titleOf, useTitle} from "../lib/title";
 import {Abi} from "viem";
 import {useCopy} from "../copy";
 import {CurveInfo, useCurves} from "../hooks/curves";
@@ -19,7 +20,7 @@ import {marketCap} from "../lib/activity";
 import {progressBps, TOTAL_SUPPLY} from "../lib/curveMath";
 import {currentPrice} from "../lib/homeList";
 import {fmt, fmtDateTime, fmtRound, shortAddr} from "../lib/format";
-import {holdingValue, mergeBrowserTrades, parsePosition, pnl, Position, splitHoldings, totals, Unit} from "../lib/wallet";
+import {holdingValue, mergeBrowserTrades, signedPnl, walletAmount, parsePosition, pnl, Position, splitHoldings, totals, Unit} from "../lib/wallet";
 import {explorerAddr, explorerTx, giwaSepolia} from "../config/chain";
 import {agoLabel, tradeAmount, tradeUnit, useNow} from "../components/feed";
 import {Badge, Gauge, PrimaryBtn, SecondaryBtn} from "../components/ui";
@@ -33,7 +34,6 @@ import {pctLabel, quoteUnit} from "./Curves";
 
 type Address = `0x${string}`;
 const lc = (a: string) => a.toLowerCase() as Address;
-const dpOf = (u: Unit) => (u === "ETH" ? 4 : 0);
 
 function ExtLink({href, children}: {href: string; children: React.ReactNode}) {
     return (
@@ -43,26 +43,13 @@ function ExtLink({href, children}: {href: string; children: React.ReactNode}) {
     );
 }
 
-/** Signed P&L: "+" with text-success, "-" with text-error, 0 plain, "–" when unknown. */
+/** Signed P&L: "+" with text-success, "-" with text-error, a value that displays as 0 plain (never
+ *  "-0"), "–" when unknown. ETH amounts use 4 significant digits (signedPnl). */
 function Pnl({v, unit, bps}: {v: bigint | undefined; unit: Unit; bps?: bigint}) {
     const tr = useCopy();
     if (v === undefined) return <span className="text-hanji-400">–</span>;
-    const abs = v < 0n ? -v : v;
-    const sign = v > 0n ? "+" : v < 0n ? "-" : "";
-    const cls = v > 0n ? "text-success" : v < 0n ? "text-error" : "text-hanji-100";
-    let pct = "";
-    if (bps !== undefined) {
-        const b = bps < 0n ? -bps : bps;
-        const tenths = (b + 5n) / 10n;
-        pct = ` (${sign}${tenths / 10n}.${tenths % 10n}%)`;
-    }
-    return (
-        <span className={cls}>
-            {sign}
-            {fmtRound(abs, dpOf(unit), tr.locale)} {unit}
-            {pct}
-        </span>
-    );
+    const {text, tone} = signedPnl(v, unit, tr.locale, bps);
+    return <span className={tone === "up" ? "text-success" : tone === "down" ? "text-error" : "text-hanji-100"}>{text}</span>;
 }
 
 type Row = {
@@ -78,7 +65,7 @@ type Row = {
 
 function HoldingRow({r, imageUrl}: {r: Row; imageUrl?: string | null}) {
     const tr = useCopy();
-    const value = r.value !== undefined ? `${fmtRound(r.value, dpOf(r.unit), tr.locale)} ${r.unit}` : "–";
+    const value = r.value !== undefined ? `${walletAmount(r.value, r.unit, tr.locale)} ${r.unit}` : "–";
     return (
         <Link to={`/t/${r.c.address}`} className="block no-underline text-hanji-100 px-4 py-2.5 min-h-[56px] border-t border-ink-700 first:border-t-0 hover:bg-ink-900 min-w-0">
             <div className="flex items-center gap-3 min-w-0 lg:grid lg:grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.4fr)_minmax(0,0.6fr)] lg:gap-4">
@@ -351,6 +338,7 @@ function WalletView({address}: {address: Address}) {
     const sums = totals(rows);
     const launchedCount = serverOk ? profile.data.launched.length : curves.filter((c) => lc(c.dev) === lc(address)).length;
     const nick = profile.data?.nickname ?? null;
+    useTitle(titleOf(nick ?? shortAddr(address)));
 
     return (
         <div className="flex flex-col gap-5 sm:gap-6 min-w-0">
@@ -361,14 +349,17 @@ function WalletView({address}: {address: Address}) {
                     <h1 className="m-0 text-[24px] sm:text-[28px] font-bold break-all min-w-0">{nick ?? shortAddr(address)}</h1>
                     {verified.data === true && <Badge kind="neutral">{tr.priority.verifiedTag}</Badge>}
                     {own && official.data === true && <Badge kind="open">{tr.onboardingV3.dojangBadge}</Badge>}
-                    {own && (
+                    {/* only verified wallets can set a nickname: the button for them, a note otherwise */}
+                    {own && verified.data === true && (
                         <SecondaryBtn className="!py-2 !px-3 !text-[13px] min-h-[36px]" onClick={openNickname}>
                             {tr.social.nicknameButton}
                         </SecondaryBtn>
                     )}
+                    {own && verified.data === false && <span className="text-[12px] text-hanji-400">{tr.nickname.errors.not_verified}</span>}
                 </div>
                 <div className="flex items-center gap-x-3 gap-y-2 flex-wrap min-w-0 text-[13px]">
-                    <CopyAddress address={address} label={`${shortAddr(address)} ${tr.tokenPage.copy}`} />
+                    {/* without a nickname the h1 already shows the short address: the button just says "Copy address" */}
+                    <CopyAddress address={address} label={`${shortAddr(address)} ${tr.tokenPage.copy}`} text={nick ? undefined : tr.walletPage.copyAddress} />
                     <ExtLink href={explorerAddr(address)}>{tr.walletPage.explorer}</ExtLink>
                 </div>
             </div>
@@ -384,7 +375,7 @@ function WalletView({address}: {address: Address}) {
                                     {/* below lg the value takes a full row; numbers wrap, never cut */}
                                     <div className="col-span-2 lg:col-span-1 bg-ink-900 rounded-stat px-3.5 py-3 min-w-0">
                                         <div className="text-[12px] text-hanji-400 mb-1 truncate">{tr.walletPage.value}</div>
-                                        <div className="text-[15px] font-semibold tabular-nums break-words">{s.value !== undefined ? `${fmtRound(s.value, dpOf(u), tr.locale)} ${u}` : "–"}</div>
+                                        <div className="text-[15px] font-semibold tabular-nums break-words">{s.value !== undefined ? `${walletAmount(s.value, u, tr.locale)} ${u}` : "–"}</div>
                                     </div>
                                     <div className="bg-ink-900 rounded-stat px-3.5 py-3 min-w-0">
                                         <div className="text-[12px] text-hanji-400 mb-1 truncate">{tr.walletPage.unrealized}</div>
@@ -442,6 +433,7 @@ export default function Wallet() {
     const tr = useCopy();
     const {address: param} = useParams();
     const addr = normalizeAddressParam(param) ?? undefined;
+    useTitle(addr ? null : DEFAULT_TITLE); // a valid address: WalletView sets the title
     const navigate = useNavigate();
     useEffect(() => {
         if (addr && param !== addr) navigate(`/w/${addr}`, {replace: true});

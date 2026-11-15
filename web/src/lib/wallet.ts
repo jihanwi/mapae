@@ -3,6 +3,7 @@
 // P&L is moving-average: trades are applied in chain order (applyTrade, shared with the API in
 // api/_lib/positions.ts), so a settled sell never changes when more is bought later.
 import type {Trade} from "./activity";
+import {fmtRound, fmtSig} from "./format";
 import {applyTrade, EMPTY_POSITION, PositionState} from "../../api/_lib/positions";
 
 export {applyTrade, EMPTY_POSITION};
@@ -116,4 +117,28 @@ export function splitHoldings<T extends HoldingRow>(rows: readonly T[]): {holdin
     const holding = rows.filter((r) => r.balance > 0n).sort((a, b) => unitRank(a.unit) - unitRank(b.unit) || desc(a.value, b.value));
     const soldOut = rows.filter((r) => r.balance === 0n && r.traded).sort((a, b) => desc(abs(a.realized), abs(b.realized)));
     return {holding, soldOut};
+}
+
+/** Display amount: KRWs as a whole number, ETH / WETH with 4 significant digits (tiny ETH values
+ *  would otherwise round to "0"). Magnitude only; see signedPnl for the sign. */
+export function walletAmount(abs: bigint, unit: Unit | "WETH", locale: string): string {
+    return unit === "KRWs" ? fmtRound(abs, 0, locale) : fmtSig(abs, 4, locale);
+}
+
+/** Signed P&L text and tone. A value that DISPLAYS as zero gets no sign and the flat tone (never
+ *  "-0"); the same holds for the percentage. */
+export function signedPnl(v: bigint, unit: Unit | "WETH", locale: string, bps?: bigint): {text: string; tone: "up" | "down" | "flat"} {
+    const abs = v < 0n ? -v : v;
+    const amt = walletAmount(abs, unit, locale);
+    const zero = !/[1-9]/.test(amt);
+    const tone = zero || v === 0n ? "flat" : v > 0n ? "up" : "down";
+    const sign = tone === "up" ? "+" : tone === "down" ? "-" : "";
+    let pct = "";
+    if (bps !== undefined) {
+        const b = bps < 0n ? -bps : bps;
+        const tenths = (b + 5n) / 10n;
+        const pSign = tenths === 0n ? "" : bps > 0n ? "+" : "-";
+        pct = ` (${pSign}${tenths / 10n}.${tenths % 10n}%)`;
+    }
+    return {text: `${sign}${amt} ${unit}${pct}`, tone};
 }

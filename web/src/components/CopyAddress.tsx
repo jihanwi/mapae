@@ -4,7 +4,9 @@ import {useEffect, useState} from "react";
 import {useCopy} from "../copy";
 import {shortAddr} from "../lib/format";
 
-export function CopyAddress({address, label}: {address: string; label: string}) {
+/** `text` replaces the short address inside the button (e.g. "Copy address" where the address is
+ *  already shown right above). */
+export function CopyAddress({address, label, text}: {address: string; label: string; text?: string}) {
     const tr = useCopy();
     const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
     useEffect(() => {
@@ -32,8 +34,14 @@ export function CopyAddress({address, label}: {address: string; label: string}) 
             onClick={() => void copy()}
             className="inline-flex items-center gap-2 min-h-[36px] px-3 rounded-full border border-ink-700 text-[12px] text-hanji-100 tabular-nums hover:border-brass-600"
         >
-            <span>{shortAddr(address)}</span>
-            <span className={state === "copied" ? "text-brass-400" : "text-hanji-400"}>{state === "copied" ? tr.tokenPage.copied : tr.tokenPage.copy}</span>
+            {text === undefined ? (
+                <>
+                    <span>{shortAddr(address)}</span>
+                    <span className={state === "copied" ? "text-brass-400" : "text-hanji-400"}>{state === "copied" ? tr.tokenPage.copied : tr.tokenPage.copy}</span>
+                </>
+            ) : (
+                <span className={state === "copied" ? "text-brass-400" : "text-hanji-100"}>{state === "copied" ? tr.tokenPage.copied : text}</span>
+            )}
         </button>
     );
 }

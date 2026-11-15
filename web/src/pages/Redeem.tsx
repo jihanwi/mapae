@@ -10,6 +10,7 @@ import {RunFn, TxButton} from "../components/tx";
 import {fmt, sanitizeAmountInput, shortAddr} from "../lib/format";
 import {creatorOf} from "../lib/creators";
 import {giwaSepolia} from "../config/chain";
+import {DEFAULT_TITLE, useTitle} from "../lib/title";
 
 function usePeripherals(o: OfferingInfo | undefined) {
     const rm = useReadContract({
@@ -24,6 +25,7 @@ function usePeripherals(o: OfferingInfo | undefined) {
 }
 
 export default function Redeem() {
+    useTitle(DEFAULT_TITLE);
     const {offerings, isLoading, isError, refetch} = useOfferings();
     const settled = offerings.filter((o) => o.settled);
     const [sel, setSel] = useState(0);

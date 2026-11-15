@@ -9,8 +9,10 @@ import {creatorOf} from "../lib/creators";
 import {TIERS, tierIndex, toNextTier} from "../lib/tier";
 import {MembershipTokenAbi} from "../contracts/abis";
 import {explorerAddr} from "../config/chain";
+import {DEFAULT_TITLE, useTitle} from "../lib/title";
 
 export default function Membership() {
+    useTitle(DEFAULT_TITLE);
     const {address} = useAccount();
     const {offerings, isLoading, isError, refetch} = useOfferings();
     const zero = "0x0000000000000000000000000000000000000000" as const;

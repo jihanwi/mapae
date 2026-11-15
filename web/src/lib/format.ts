@@ -42,12 +42,17 @@ export function fmtSig(wei: bigint, sig = 4, locale = "en-US"): string {
 
 export const shortAddr = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
-/** 금액 입력 살균 — 쉼표·기타문자 제거, 소수점 1개만 허용. 표시값 = 전송값 (9-c) */
+/** Max fraction digits of an amount input: every quote asset and token here has 18 decimals. */
+export const AMOUNT_DECIMALS = 18;
+
+/** 금액 입력 살균: NFKC로 전각 숫자·마침표를 반각으로 바꾼 뒤 쉼표·기타문자 제거, 소수점 1개만 허용,
+ *  소수는 18자리까지. 표시값 = 전송값 (9-c) */
 export function sanitizeAmountInput(raw: string): string {
-    let s = raw.replace(/[^0-9.]/g, ""); // 숫자와 점만 (쉼표·부호·e·문자 제거)
+    let s = raw.normalize("NFKC").replace(/[^0-9.]/g, ""); // 숫자와 점만 (쉼표·부호·e·문자 제거)
     const firstDot = s.indexOf(".");
     if (firstDot !== -1) {
-        s = s.slice(0, firstDot + 1) + s.slice(firstDot + 1).replace(/\./g, "");
+        const frac = s.slice(firstDot + 1).replace(/\./g, "").slice(0, AMOUNT_DECIMALS);
+        s = s.slice(0, firstDot + 1) + frac;
     }
     return s;
 }

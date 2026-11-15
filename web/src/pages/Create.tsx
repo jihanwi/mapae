@@ -20,6 +20,7 @@ import {opensOnboarding, useOnboardingModal} from "../components/OnboardingModal
 import {modalLabel} from "../components/CurveTradePanel";
 import {draftValid, MetaFields, SaveStatus} from "../components/MetaForm";
 import {draftHasContent, emptyDraft, MetaDraft, useSaveMeta} from "../hooks/meta";
+import {titleOf, useTitle} from "../lib/title";
 
 type QuoteKind = "KRWs" | "ETH";
 type QuoteConfig = {registered: boolean; enabled: boolean; decimals: number; curveVirtualQuote: bigint};
@@ -75,6 +76,7 @@ const inputCls =
 
 export default function Create() {
     const tr = useCopy();
+    useTitle(titleOf(tr.create.title));
     const {address} = useAccount();
     const client = usePublicClient({chainId: giwaSepolia.id});
     const {writeContractAsync} = useWriteContract();
@@ -114,12 +116,16 @@ export default function Create() {
     // v3.2: the buy at launch may deliver at most 5% of supply; more would revert the whole creation
     const overCap = !!preview && exceedsDevFirstBuyCap(preview.tokensOut, ADDR_V3.devFirstBuyMaxTokens);
 
-    const nameBytes = utf8ByteLength(name);
-    const symbolBytes = utf8ByteLength(symbol);
+    // Leading / trailing spaces never reach the chain: validation, byte counts and tx args all use
+    // the trimmed values (the inputs keep what was typed).
+    const nameT = name.trim();
+    const symbolT = symbol.trim();
+    const nameBytes = utf8ByteLength(nameT);
+    const symbolBytes = utf8ByteLength(symbolT);
     const nowSec = BigInt(Math.floor(Date.now() / 1000));
     const rateLimited = r.nextAllowedAt > nowSec;
     const quoteOk = !!cfg && cfg.registered && cfg.enabled;
-    const formOk = r.loaded && withinByteLimit(name, r.maxName) && withinByteLimit(symbol, r.maxSymbol) && quoteOk;
+    const formOk = r.loaded && nameT !== "" && symbolT !== "" && withinByteLimit(nameT, r.maxName) && withinByteLimit(symbolT, r.maxSymbol) && quoteOk;
     const blocked = !r.curveEnabled || rateLimited || !formOk || !draftValid(draft) || overCap;
 
     const action = async (run: RunFn) => {
@@ -140,7 +146,7 @@ export default function Create() {
         }
         let hash: `0x${string}` | undefined;
         const ok = await run(
-            tr.create.txLabel(symbol),
+            tr.create.txLabel(symbolT),
             async () => {
                 hash =
                     kind === "KRWs"
@@ -148,14 +154,14 @@ export default function Create() {
                               address: ADDR_V3.curveFactory,
                               abi: CurveFactoryAbi,
                               functionName: "createCurve",
-                              args: [quote, name, symbol, devBuy, minTokensOut],
+                              args: [quote, nameT, symbolT, devBuy, minTokensOut],
                               chainId: giwaSepolia.id,
                           })
                         : await writeContractAsync({
                               address: ADDR_V3.curveFactory,
                               abi: CurveFactoryAbi,
                               functionName: "createCurveWithETH",
-                              args: [name, symbol, minTokensOut],
+                              args: [nameT, symbolT, minTokensOut],
                               value: devBuy,
                               chainId: giwaSepolia.id,
                           });
@@ -190,7 +196,7 @@ export default function Create() {
         return wrap(
             <div className="bg-ink-800 border border-ink-700 rounded-card p-5 sm:p-7 text-center">
                 <h1 className="m-0 mb-2 text-[22px] font-bold">{tr.create.doneTitle}</h1>
-                <p className="m-0 mb-5 text-[14px] text-hanji-400 break-all">{tr.create.doneNote(name, symbol)}</p>
+                <p className="m-0 mb-5 text-[14px] text-hanji-400 break-all">{tr.create.doneNote(nameT, symbolT)}</p>
                 {wantsMeta && (
                     <div className="mb-5 text-left flex flex-col gap-2">
                         {meta.state.phase === "failed" && <p className="m-0 text-[13px] text-brass-400">{tr.meta.notSaved}</p>}
@@ -292,7 +298,7 @@ export default function Create() {
                         <div className="mt-2 text-[13px] tabular-nums flex justify-between gap-3 flex-wrap">
                             <span className="text-hanji-400">{tr.create.devBuyReceive}</span>
                             <span>
-                                {fmt(preview.tokensOut, 2, tr.locale)} {symbol || tr.curve.tokenUnit} · {tr.curve.paid} {fmtCeil(preview.quoteSpent, kind === "ETH" ? 8 : 2, tr.locale)} {unit}
+                                {fmt(preview.tokensOut, 2, tr.locale)} {symbolT || tr.curve.tokenUnit} · {tr.curve.paid} {fmtCeil(preview.quoteSpent, kind === "ETH" ? 8 : 2, tr.locale)} {unit}
                             </span>
                         </div>
                     )}

@@ -55,6 +55,12 @@ export function parseCustomSlippage(raw: string): CustomParse {
     return {ok: true, bps: tenths * 10};
 }
 
+/** The custom field blocks trading while it is open with a non-empty value that does not parse
+ *  (out of range or malformed). Empty keeps the previous setting and does not block. */
+export function customSlippageBlocks(editing: boolean, raw: string): boolean {
+    return editing && raw.trim() !== "" && !parseCustomSlippage(raw).ok;
+}
+
 export function decodePref(raw: string | null): SlippagePref {
     if (!raw) return DEFAULT_PREF;
     try {

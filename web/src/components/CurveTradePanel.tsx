@@ -37,7 +37,8 @@ type Side = "buy" | "sell";
 const WAD = 10n ** 18n;
 
 /** Slippage props passed to each trade side. */
-type Slip = {bps: number; autoBps: number; isAuto: boolean; toAuto: () => void};
+/** `blocked`: the custom slippage field holds an invalid value, so no trade button may run. */
+type Slip = {bps: number; autoBps: number; isAuto: boolean; toAuto: () => void; blocked: boolean};
 
 function Row({label, value, strong}: {label: string; value: ReactNode; strong?: boolean}) {
     return (
@@ -106,7 +107,8 @@ export function CurveTradePanel({c, side: sideProp, onSideChange}: {c: CurveDeta
         .map((t) => ({ts: activity.tsOf(t.block) ?? 0, priceWad: (t.quoteAmount * WAD) / t.tokenAmount}));
     const autoBps = autoSlippageBps(points, nowSec);
     const {pref, setPref, bps} = useSlippagePref(autoBps);
-    const slip: Slip = {bps, autoBps, isAuto: pref.mode === "auto", toAuto: () => setPref({mode: "auto"})};
+    const [slipBlocked, setSlipBlocked] = useState(false);
+    const slip: Slip = {bps, autoBps, isAuto: pref.mode === "auto", toAuto: () => setPref({mode: "auto"}), blocked: slipBlocked};
     const amount = useAmount(raw);
     const unit = c.isEth ? "ETH" : "KRWs";
 
@@ -176,7 +178,7 @@ export function CurveTradePanel({c, side: sideProp, onSideChange}: {c: CurveDeta
             {address && balance !== undefined && (
                 <p className="m-0 text-[12px] text-hanji-400 mb-3 tabular-nums">{tr.curve.balance(fmt(balance, 4, tr.locale), balUnit)}</p>
             )}
-            <SlippagePicker pref={pref} setPref={setPref} autoBps={autoBps} />
+            <SlippagePicker pref={pref} setPref={setPref} autoBps={autoBps} onBlockedChange={setSlipBlocked} />
             {c.graduated ? (
                 <PoolSide c={c} side={side} amount={amount} slip={slip} onDone={clear} />
             ) : side === "buy" ? (
@@ -203,6 +205,7 @@ function CtaBlock({
     payToken,
     amount,
     refetch,
+    blocked = false,
 }: {
     state: CtaState;
     side: Side;
@@ -210,6 +213,8 @@ function CtaBlock({
     payToken: Address | "native";
     amount: bigint;
     refetch: () => void;
+    /** invalid custom slippage: the trade button stays disabled */
+    blocked?: boolean;
 }) {
     const tr = useCopy();
     const openModal = useOnboardingModal();
@@ -241,7 +246,7 @@ function CtaBlock({
     }
     const enabled = state.kind === "ready" || state.kind === "approve";
     return (
-        <TxButton className="w-full" disabled={!enabled} action={action}>
+        <TxButton className="w-full" disabled={!enabled || blocked} action={action}>
             {ctaLabel(tr, state, side)}
         </TxButton>
     );
@@ -369,8 +374,8 @@ function CurveBuy({c, amount, slip, onDone}: {c: CurveDetail; amount: bigint; sl
                     </>
                 )}
             </div>
-            <CtaBlock state={effective} side="buy" action={(run) => execute(run)} payToken={payToken} amount={amount} refetch={refetch} />
-            <GuardPanel guard={g.guard} dp={4} unit={c.symbol} retry={execute} autoAvailable={!slip.isAuto} switchToAuto={slip.toAuto} autoBps={slip.autoBps} />
+            <CtaBlock state={effective} side="buy" action={(run) => execute(run)} payToken={payToken} amount={amount} refetch={refetch} blocked={slip.blocked} />
+            <GuardPanel guard={g.guard} dp={4} unit={c.symbol} retry={execute} autoAvailable={!slip.isAuto} switchToAuto={slip.toAuto} autoBps={slip.autoBps} blocked={slip.blocked} />
         </>
     );
 }
@@ -429,8 +434,8 @@ function CurveSell({c, amount, slip, onDone}: {c: CurveDetail; amount: bigint; s
                 )}
                 {c.isEth && <p className="text-[12px] text-hanji-400 m-0 mt-2">{tr.curve.wethOut}</p>}
             </div>
-            <CtaBlock state={effective} side="sell" action={(run) => execute(run)} payToken={c.token} amount={amount} refetch={refetch} />
-            <GuardPanel guard={g.guard} dp={dp} unit={unit} retry={execute} autoAvailable={!slip.isAuto} switchToAuto={slip.toAuto} autoBps={slip.autoBps} />
+            <CtaBlock state={effective} side="sell" action={(run) => execute(run)} payToken={c.token} amount={amount} refetch={refetch} blocked={slip.blocked} />
+            <GuardPanel guard={g.guard} dp={dp} unit={unit} retry={execute} autoAvailable={!slip.isAuto} switchToAuto={slip.toAuto} autoBps={slip.autoBps} blocked={slip.blocked} />
         </>
     );
 }
@@ -498,8 +503,8 @@ function PoolSide({c, side, amount, slip, onDone}: {c: CurveDetail; side: Side; 
                     </>
                 )}
             </div>
-            <CtaBlock state={effective} side={side} action={(run) => execute(run)} payToken={payToken} amount={amount} refetch={refetch} />
-            <GuardPanel guard={g.guard} dp={outDp} unit={outUnit} retry={execute} autoAvailable={!slip.isAuto} switchToAuto={slip.toAuto} autoBps={slip.autoBps} />
+            <CtaBlock state={effective} side={side} action={(run) => execute(run)} payToken={payToken} amount={amount} refetch={refetch} blocked={slip.blocked} />
+            <GuardPanel guard={g.guard} dp={outDp} unit={outUnit} retry={execute} autoAvailable={!slip.isAuto} switchToAuto={slip.toAuto} autoBps={slip.autoBps} blocked={slip.blocked} />
         </>
     );
 }

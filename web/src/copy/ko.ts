@@ -568,6 +568,7 @@ export const ko = {
         notFoundTitle: "지갑을 찾을 수 없어요",
         notFoundNote: "주소 형식을 확인해 주세요",
         explorer: "익스플로러에서 보기 ↗",
+        copyAddress: "주소 복사",
     },
     // Dev 수수료 찾아가기 (CurveSale.claimDevFees)
     devFees: {

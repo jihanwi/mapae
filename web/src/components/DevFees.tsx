@@ -6,7 +6,7 @@ import {CurveSaleAbi} from "../contracts/abisV3";
 import {giwaSepolia} from "../config/chain";
 import {fmt, fmtSig} from "../lib/format";
 import {DevFeeUnit, devFeeState, devFeeUnit} from "../lib/devFees";
-import {TxButton, useToast} from "./tx";
+import {TxButton} from "./tx";
 
 type Address = `0x${string}`;
 
@@ -16,24 +16,21 @@ export function fmtDevFee(amount: bigint, unit: DevFeeUnit, locale: string): str
 }
 
 /** [Claim]: claimDevFees() on the curve. On success the tx runner refetches every query (devAccrued
- *  and balances drop to the new values) and a toast states what was received. */
+ *  and balances drop to the new values) and its single success toast states what was received. */
 export function ClaimDevFeesButton({curve, amount, unit, className = ""}: {curve: Address; amount: bigint; unit: DevFeeUnit; className?: string}) {
     const tr = useCopy();
-    const push = useToast();
     const {writeContractAsync} = useWriteContract();
     return (
         <TxButton
             variant="secondary"
             className={`!py-2 !px-4 min-h-[40px] ${className}`}
             disabled={amount === 0n}
-            action={async (run) => {
-                const ok = await run(
-                    tr.devFees.title,
-                    () => writeContractAsync({address: curve, abi: CurveSaleAbi, functionName: "claimDevFees", chainId: giwaSepolia.id}),
-                    {scope: "v3"}
-                );
-                if (ok) push({kind: "success", text: tr.devFees.claimed(fmtDevFee(amount, unit, tr.locale), unit)});
-            }}
+            action={(run) =>
+                run(tr.devFees.title, () => writeContractAsync({address: curve, abi: CurveSaleAbi, functionName: "claimDevFees", chainId: giwaSepolia.id}), {
+                    scope: "v3",
+                    successMessage: tr.devFees.claimed(fmtDevFee(amount, unit, tr.locale), unit),
+                })
+            }
         >
             {tr.devFees.claim}
         </TxButton>

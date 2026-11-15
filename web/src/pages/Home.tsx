@@ -5,6 +5,7 @@ import {useOfferings, useParticipantCount, OfferingInfo} from "../hooks";
 import {Badge, Card, CardSkeleton, Gauge, Medallion, NetError, Stat, TextSkeleton} from "../components/ui";
 import {countdown, fmt} from "../lib/format";
 import {creatorOf} from "../lib/creators";
+import {DEFAULT_TITLE, useTitle} from "../lib/title";
 
 function useNow() {
     const [now, setNow] = useState(Date.now());
@@ -102,6 +103,7 @@ export function computeBurned(o: OfferingInfo): bigint {
 }
 
 export default function Home() {
+    useTitle(DEFAULT_TITLE);
     const {offerings, isLoading, isError, refetch} = useOfferings();
     return (
         <div className="max-w-page mx-auto px-4 sm:px-8 pt-10 sm:pt-16 pb-16 sm:pb-20">

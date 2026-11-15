@@ -40,12 +40,16 @@ export const BODY_MAX = 280;
 export const TOO_FAST_SEC = 10;
 export const DAILY_LIMIT = 50;
 
-/** Control characters removed (newline and tab kept as text), at most 2 consecutive newlines, trimmed. */
+/** Control characters removed (newline and tab kept as text), bidi controls and zero-width spaces
+ *  removed (U+061C, U+200B, U+200E, U+200F, U+202A-U+202E, U+2060, U+2066-U+2069, U+FEFF; ZWNJ
+ *  U+200C and ZWJ U+200D are kept for emoji sequences), at most 2 consecutive newlines, trimmed.
+ *  Signatures are checked against the raw body; this only shapes what is stored and measured. */
 export function cleanBody(raw: string): string {
     return raw
         .replace(/\r\n?/g, "\n")
         // eslint-disable-next-line no-control-regex
         .replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, "")
+        .replace(/[\u061c\u200b\u200e\u200f\u202a-\u202e\u2060\u2066-\u2069\ufeff]/g, "")
         .replace(/\n{3,}/g, "\n\n")
         .trim();
 }
