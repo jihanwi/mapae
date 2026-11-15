@@ -15,6 +15,7 @@ export const ko = {
     common: {
         netError: "네트워크 응답이 없어요. 잠시 후 다시 시도해 주세요",
         retry: "다시 시도",
+        close: "닫기",
     },
     appTitle: "MAPAE",
     heroTitle: "사고팔 수 있는 팬 멤버십",
@@ -520,6 +521,7 @@ export const ko = {
         continueAtPrice: "이 가격으로 계속",
         sentFailed: "가격이 움직여서 체결되지 않았어요. 가스만 쓰였어요",
         retryAuto: "허용치를 자동으로 바꾸고 다시 시도",
+        approvalPending: "승인이 아직 반영되지 않았어요. 잠시 후 다시 눌러 주세요",
         retry: "다시 시도",
     },
     priority: {
