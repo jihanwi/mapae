@@ -196,22 +196,28 @@ describe("view: slot, zoom and pan", () => {
 
 describe("timeLabels", () => {
     const bar = (x: number) => ({x}) as unknown as Parameters<typeof timeLabels>[0][number];
-    it("centres each label on its candle and clamps it to the plot", () => {
-        expect(timeLabels([bar(200), bar(400)], 600, 80)).toEqual([
-            {bar: "first", left: 160},
-            {bar: "last", left: 360},
-        ]);
-        expect(timeLabels([bar(10), bar(590)], 600, 80)).toEqual([
-            {bar: "first", left: 0},
-            {bar: "last", left: 520},
+    it("centres each label on its candle when it fits", () => {
+        expect(timeLabels([bar(200), bar(400)], 606)).toEqual([
+            {bar: "first", left: 200 - 64, align: "center"},
+            {bar: "last", left: 400 - 64, align: "center"},
         ]);
     });
-    it("keeps only the last label when the two would overlap", () => {
-        expect(timeLabels([bar(300), bar(360)], 600, 80)).toEqual([{bar: "last", left: 320}]);
-        expect(timeLabels([bar(300), bar(380)], 600, 80)).toHaveLength(2);
+    it("left-aligns at the left edge and right-aligns at the right edge (text never cut)", () => {
+        // the default view: oldest near the left edge, newest at width - RIGHT_PAD - slot/2
+        expect(timeLabels([bar(9), bar(585)], 606)).toEqual([
+            {bar: "first", left: 0, align: "left"},
+            {bar: "last", left: 606 - TIME_LABEL_W, align: "right"},
+        ]);
+        const [lb] = timeLabels([bar(600)], 606);
+        expect(lb.left + TIME_LABEL_W).toBeLessThanOrEqual(606);
+    });
+    it("keeps only the last label when the two would overlap at the new width", () => {
+        expect(timeLabels([bar(300), bar(420)], 606)).toEqual([{bar: "last", left: 420 - 64, align: "center"}]);
+        expect(timeLabels([bar(300), bar(428)], 606)).toHaveLength(2);
+        expect(TIME_LABEL_W).toBeGreaterThanOrEqual(128);
     });
     it("one candle -> one label, none -> none", () => {
-        expect(timeLabels([bar(500)], 600)).toEqual([{bar: "last", left: 500 - TIME_LABEL_W / 2}]);
-        expect(timeLabels([], 600)).toEqual([]);
+        expect(timeLabels([bar(300)], 606)).toEqual([{bar: "last", left: 300 - TIME_LABEL_W / 2, align: "center"}]);
+        expect(timeLabels([], 606)).toEqual([]);
     });
 });

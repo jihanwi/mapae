@@ -133,18 +133,27 @@ export function layoutCandles(all: readonly Candle[], width: number, height: num
 }
 
 /** Estimated width of a time label under the chart (px, 11 px tabular text). */
-export const TIME_LABEL_W = 84;
+/** Room for the widest label ("11월 15일 오후 04:50", "Nov 15, 04:50 PM") at 11 px. */
+export const TIME_LABEL_W = 128;
 
-export type TimeLabel = {bar: "first" | "last"; left: number};
+export type TimeLabel = {bar: "first" | "last"; left: number; align: "left" | "center" | "right"};
 
 /** Time labels under the first and last visible candles, each centred on its candle and kept
- *  inside [0, plotW]. If they would overlap only the last one is kept; one candle -> one label. */
+ *  inside [0, plotW]. A label pushed against the left edge is left-aligned, against the right edge
+ *  right-aligned, so its text is never cut. If they would overlap only the last one is kept; one
+ *  candle -> one label. */
 export function timeLabels(bars: readonly Bar[], plotW: number, labelW = TIME_LABEL_W): TimeLabel[] {
     if (bars.length === 0) return [];
-    const place = (x: number) => clamp(x - labelW / 2, 0, Math.max(0, plotW - labelW));
-    const last: TimeLabel = {bar: "last", left: place(bars[bars.length - 1].x)};
+    const maxLeft = Math.max(0, plotW - labelW);
+    const place = (bar: TimeLabel["bar"], x: number): TimeLabel => {
+        const want = x - labelW / 2;
+        if (want <= 0) return {bar, left: 0, align: "left"};
+        if (want >= maxLeft) return {bar, left: maxLeft, align: "right"};
+        return {bar, left: want, align: "center"};
+    };
+    const last = place("last", bars[bars.length - 1].x);
     if (bars.length === 1) return [last];
-    const first: TimeLabel = {bar: "first", left: place(bars[0].x)};
+    const first = place("first", bars[0].x);
     return last.left - first.left < labelW ? [last] : [first, last];
 }
 

@@ -10,6 +10,17 @@ describe("English plurals", () => {
     });
 });
 
+describe("English flow plurals", () => {
+    it("uses the singular only for 1", () => {
+        expect(en.tokenPage.buys(1)).toBe("1 buy");
+        expect(en.tokenPage.sells(2)).toBe("2 sells");
+        expect(en.tokenPage.verifiedBuyers(1)).toBe("1 verified buyer");
+        expect(en.tokenPage.verifiedSellers(0)).toBe("0 verified sellers");
+        expect(en.tokenPage.devLaunched(1)).toBe("1 token launched by this Dev");
+        expect(en.tokenPage.devLaunched(3)).toBe("3 tokens launched by this Dev");
+    });
+});
+
 describe("English v3 copy guardrails", () => {
     const v3 = JSON.stringify([en.common, en.nav, en.curve, en.create, en.onboardingV3, en.tx, en.errorsV3, en.route404, en.feed, en.meta, en.chain, en.social, en.nickname, en.tradeGuard, en.priority]);
     it("has no return-expectation or safety-claim words and no em dash", () => {
