@@ -135,6 +135,12 @@ describe("comments", () => {
     it("cleans the body: trim, control characters, at most two newlines", () => {
         expect(cleanBody("  hi\u0007 there \r\n\r\n\r\n\nend  ")).toBe("hi there \n\nend");
         expect(cleanBody("a\tb")).toBe("a\tb");
+        // bidi controls and zero-width spaces go; ZWJ stays (emoji sequences)
+        expect(cleanBody("a\u202Eb")).toBe("ab");
+        expect(cleanBody("x\u200B\u2066y\uFEFF\u061C\u200E\u2060z")).toBe("xyz");
+        const family = "\u{1F468}\u200D\u{1F469}\u200D\u{1F467}";
+        expect(cleanBody(family)).toBe(family);
+        expect(cleanBody("a\u200Cb")).toBe("a\u200Cb");
     });
     it("posts for a verified wallet with a nickname", async () => {
         const {deps, calls} = fakeDeps();
@@ -145,6 +151,7 @@ describe("comments", () => {
     });
     it("length 1..280 after cleaning", async () => {
         expect((await handlePostComment(await commentBody("   "), fakeDeps().deps)).body).toEqual({error: "bad_body"});
+        expect((await handlePostComment(await commentBody("\u200B"), fakeDeps().deps)).body).toEqual({error: "bad_body"});
         expect((await handlePostComment(await commentBody("a".repeat(281)), fakeDeps().deps)).body).toEqual({error: "bad_body"});
         expect((await handlePostComment(await commentBody("가".repeat(280)), fakeDeps().deps)).status).toBe(201);
     });
