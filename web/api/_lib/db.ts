@@ -222,6 +222,38 @@ export async function candles(sql: Sql, curve: string, interval: Interval): Prom
     return rows.reverse();
 }
 
+export type FlowRow = {buyCount: number; buyVolume: string; sellCount: number; sellVolume: string; verifiedBuyers: number; verifiedSellers: number};
+
+/** Non-Dev buys and sells of one curve since sinceTs (quote_amount sums), plus distinct verified
+ *  buyers and sellers, in one aggregate. Addresses are stored lowercase. */
+export async function flow(sql: Sql, curve: string, sinceTs: number): Promise<FlowRow> {
+    const rows = (await sql.query(
+        `SELECT count(*) FILTER (WHERE side = 'buy')::int AS "buyCount",
+                coalesce(sum(quote_amount) FILTER (WHERE side = 'buy'), 0)::text AS "buyVolume",
+                count(*) FILTER (WHERE side = 'sell')::int AS "sellCount",
+                coalesce(sum(quote_amount) FILTER (WHERE side = 'sell'), 0)::text AS "sellVolume",
+                count(DISTINCT trader) FILTER (WHERE side = 'buy' AND verified IS TRUE)::int AS "verifiedBuyers",
+                count(DISTINCT trader) FILTER (WHERE side = 'sell' AND verified IS TRUE)::int AS "verifiedSellers"
+         FROM mapae_trades
+         WHERE curve = $1 AND ts >= $2 AND NOT is_dev`,
+        [curve, sinceTs]
+    )) as FlowRow[];
+    return rows[0];
+}
+
+/** Curves launched by this curve's Dev through the same factory (this one included); 0 when the
+ *  curve is not indexed. */
+export async function devLaunched(sql: Sql, curve: string): Promise<number> {
+    const rows = (await sql.query(
+        `SELECT count(*)::int AS n
+         FROM mapae_curves me
+         JOIN mapae_curves m ON m.dev = me.dev AND m.factory = me.factory
+         WHERE me.curve = $1`,
+        [curve]
+    )) as {n: number}[];
+    return rows[0]?.n ?? 0;
+}
+
 export async function curveRow(sql: Sql, curve: string): Promise<{token: string; dev: string; pool: string | null} | null> {
     const rows = (await sql.query(`SELECT token, dev, pool FROM mapae_curves WHERE curve = $1`, [curve])) as {token: string; dev: string; pool: string | null}[];
     return rows[0] ?? null;

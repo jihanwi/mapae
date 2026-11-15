@@ -28,6 +28,25 @@ export function useChainSummary(window: SummaryWindow = 86400) {
     });
 }
 
+export type FlowOut = {
+    window: number;
+    buys: {count: number; volume: string};
+    sells: {count: number; volume: string};
+    verifiedBuyers: number;
+    /** null when sells carry no verified status (the card then hides the sellers line) */
+    verifiedSellers: number | null;
+    devLaunched: number;
+};
+
+/** Non-Dev 24 h buys and sells of one curve and the Dev's launch count. */
+export function useFlow(curve: string) {
+    return useQuery({
+        queryKey: ["chain", "flow", curve.toLowerCase()],
+        queryFn: () => getJson<FlowOut>(`/api/chain/flow?curve=${curve.toLowerCase()}`),
+        ...opts,
+    });
+}
+
 export function useCandles(curve: string, interval: 300 | 3600 | 86400) {
     return useQuery({
         queryKey: ["chain", "candles", curve.toLowerCase(), interval],

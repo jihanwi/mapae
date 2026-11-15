@@ -9,11 +9,11 @@ import {ADDR_V3} from "../contracts/addressesV3";
 import {costToSellOut, grossForNet, marketCapQuote, progressBps, spotPrice, TOTAL_SUPPLY, WAD} from "../lib/curveMath";
 import {MembershipTokenV3Abi} from "../contracts/abisV3";
 import {changeBps, currentPrice, refPrice} from "../lib/homeList";
-import {sharePctOneDecimal} from "../lib/quickAmount";
+import {flowShare} from "../lib/flow";
 import {fmt, fmtCeil, fmtRound, fmtSig, shortAddr} from "../lib/format";
 import {explorerAddr, explorerTx, giwaSepolia} from "../config/chain";
 import {useActivity} from "../hooks/activity";
-import {useChainSummary, useHolders, useTradeHistory} from "../hooks/chainData";
+import {useChainSummary, useFlow, useHolders, useTradeHistory} from "../hooks/chainData";
 import {mergeHistory, sharePct} from "../lib/chainMerge";
 import {CandleChart} from "../components/CandleChart";
 import {tokenPageState} from "../lib/tokenPage";
@@ -152,7 +152,8 @@ function CopyAddress({token}: {token: Address}) {
     );
 }
 
-/** "Dev holds n%": the Dev wallet's token balance over the total supply (hidden when the read fails). */
+/** "Dev holds n%": the Dev wallet's token balance over the total supply, floored to 0.01% like the
+ *  holders tab (sharePct); exactly 0 -> "0%". Hidden when the read fails. */
 function DevHolds({c}: {c: CurveDetail}) {
     const tr = useCopy();
     const bal = useReadContract({
@@ -164,7 +165,65 @@ function DevHolds({c}: {c: CurveDetail}) {
         query: {refetchInterval: 10_000},
     });
     if (bal.isError || bal.data === undefined) return null;
-    return <Badge kind="neutral">{tr.tokenPage.devHolds(sharePctOneDecimal(bal.data as bigint, TOTAL_SUPPLY))}</Badge>;
+    const b = bal.data as bigint;
+    return <Badge kind="neutral">{tr.tokenPage.devHolds(b === 0n ? "0" : sharePct(b, TOTAL_SUPPLY))}</Badge>;
+}
+
+/** "n tokens launched by this Dev" from the flow endpoint; hidden without a server answer. */
+function DevLaunched({c}: {c: CurveDetail}) {
+    const tr = useCopy();
+    const f = useFlow(c.address);
+    if (!f.isSuccess) return null;
+    return <Badge kind="neutral">{tr.tokenPage.devLaunched(f.data.devLaunched)}</Badge>;
+}
+
+/** Last 24 h of non-Dev buys and sells: counts, amounts, a buy/sell ratio bar, verified wallets.
+ *  Not rendered when the server does not answer; a same-height skeleton while loading. */
+function FlowCard({c}: {c: CurveDetail}) {
+    const tr = useCopy();
+    const f = useFlow(c.address);
+    if (f.isError) return null;
+    if (!f.isSuccess) return <Skeleton h={148} />;
+    const unit = quoteUnit(c);
+    const dp = unit === "ETH" ? 4 : 0;
+    const buyVol = BigInt(f.data.buys.volume);
+    const sellVol = BigInt(f.data.sells.volume);
+    const share = flowShare(buyVol, sellVol);
+    const empty = f.data.buys.count + f.data.sells.count === 0;
+    return (
+        <section className="bg-ink-800 border border-ink-700 rounded-card p-4 sm:p-5 min-w-0 min-h-[148px]">
+            <div className="flex items-baseline justify-between gap-3 mb-3">
+                <h3 className="m-0 text-[15px] font-bold">{tr.tokenPage.flowTitle}</h3>
+                <span className="text-[12px] text-hanji-400">{tr.tokenPage.flowNote}</span>
+            </div>
+            {empty ? (
+                <p className="m-0 text-[13px] text-hanji-400">{tr.chain.chartEmpty}</p>
+            ) : (
+                <>
+                    <div className="flex flex-wrap justify-between gap-x-3 gap-y-1 text-[13px] tabular-nums mb-2">
+                        <span>
+                            <span className="text-success">{tr.tokenPage.buys(f.data.buys.count)}</span>
+                            <span className="text-hanji-100"> · {fmtRound(buyVol, dp, tr.locale)} {unit}</span>
+                        </span>
+                        <span>
+                            <span className="text-error">{tr.tokenPage.sells(f.data.sells.count)}</span>
+                            <span className="text-hanji-100"> · {fmtRound(sellVol, dp, tr.locale)} {unit}</span>
+                        </span>
+                    </div>
+                    {share !== null && (
+                        <div role="img" aria-label={tr.tokenPage.flowAria(share, 100 - share)} className="flex h-2 rounded-full overflow-hidden bg-ink-700 mb-3">
+                            <div className="bg-success" style={{width: `${share}%`}} />
+                            <div className="bg-error" style={{width: `${100 - share}%`}} />
+                        </div>
+                    )}
+                    <div className="flex flex-wrap justify-between gap-x-3 gap-y-1 text-[12px] text-hanji-400 tabular-nums">
+                        <span>{tr.tokenPage.verifiedBuyers(f.data.verifiedBuyers)}</span>
+                        {f.data.verifiedSellers !== null && <span>{tr.tokenPage.verifiedSellers(f.data.verifiedSellers)}</span>}
+                    </div>
+                </>
+            )}
+        </section>
+    );
 }
 
 function Header({c, imageUrl}: {c: CurveDetail; imageUrl?: string | null}) {
@@ -184,6 +243,7 @@ function Header({c, imageUrl}: {c: CurveDetail; imageUrl?: string | null}) {
                 <CopyAddress token={c.token} />
                 {!c.graduated && <PriorityBadge priorityUntil={c.priorityUntil} />}
                 <DevHolds c={c} />
+                <DevLaunched c={c} />
                 <span className="inline-flex items-center gap-1.5 text-hanji-400">
                     {tr.curve.dev} <ExtLink href={explorerAddr(c.dev)}>{shortAddr(c.dev)}</ExtLink>
                 </span>
@@ -526,7 +586,7 @@ export default function Token() {
     const m = meta.get(c.address);
     const isDev = !!account && account.toLowerCase() === c.dev.toLowerCase();
     // Below lg the two column wrappers are display:contents and `order-*` sets the one-column order:
-    // header, metrics, meta, progress, chart, banner, panel, fixed panel, tabs.
+    // header, metrics, meta, progress, chart, banner, panel, fixed panel, 24 h flow, tabs.
     return wrap(
         <div className="flex flex-col gap-5 sm:gap-6 lg:flex-row lg:items-start lg:gap-8 w-full min-w-0">
             <div className="contents lg:flex lg:flex-col lg:gap-6 lg:flex-1 lg:min-w-0">
@@ -551,7 +611,7 @@ export default function Token() {
                 <div className="order-4 lg:order-none min-w-0">
                     <Progress c={c} />
                 </div>
-                <div className="order-9 lg:order-none min-w-0">
+                <div className="order-10 lg:order-none min-w-0">
                     <TokenTabs c={c} />
                 </div>
             </div>
@@ -567,6 +627,9 @@ export default function Token() {
                 </div>
                 <div className="order-8 lg:order-none rounded-input px-4 py-3.5 text-[13px] text-hanji-100 border border-ink-700 bg-ink-900 text-center">
                     {tr.curve.fixedPanel}
+                </div>
+                <div className="order-9 lg:order-none min-w-0">
+                    <FlowCard c={c} />
                 </div>
             </div>
             <MobileTradeBar panel={panelRef} onPick={pick} />

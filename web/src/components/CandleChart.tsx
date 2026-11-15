@@ -243,7 +243,7 @@ export function CandleChart({curve, unit}: {curve: string; unit: string}) {
                             {timeLabels(L.bars, plotW).map((lb) => {
                                 const b = lb.bar === "first" ? L.bars[0] : L.bars[L.bars.length - 1];
                                 return (
-                                    <span key={lb.bar} className="absolute top-0 text-center whitespace-nowrap" style={{left: lb.left, width: TIME_LABEL_W}}>
+                                    <span key={lb.bar} className="absolute top-0 whitespace-nowrap" style={{left: lb.left, width: TIME_LABEL_W, textAlign: lb.align}}>
                                         {timeLabel(b.candle.t, tr.locale, interval)}
                                     </span>
                                 );
