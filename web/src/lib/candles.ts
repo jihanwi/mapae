@@ -26,7 +26,15 @@ export function visibleCount(total: number, width: number, minSlot = MIN_SLOT): 
 export type View = {slot: number; offset: number};
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
-const clampOffset = (o: number, total: number) => clamp(Math.round(o), 0, Math.max(0, total - 1));
+/** Candles that fit right of the left edge at `slot` px. */
+export const capacity = (width: number, slot: number) => Math.max(0, Math.floor((width - RIGHT_PAD) / slot));
+
+/** Upper bound for `offset`: never hide the newest candles to open empty space on the left.
+ *  When every candle fits (total <= capacity) the offset is always 0; otherwise panning stops
+ *  when the oldest candle reaches the left edge. */
+export const maxOffset = (total: number, width: number, slot: number) => Math.max(0, total - capacity(width, slot));
+
+const clampOffset = (o: number, total: number, width: number, slot: number) => clamp(Math.round(o), 0, maxOffset(total, width, slot));
 
 /** Default view: fill the width, but never wider than SLOT_DEFAULT_MAX or narrower than MIN_SLOT. */
 export function defaultView(total: number, width: number): View {
@@ -34,7 +42,10 @@ export function defaultView(total: number, width: number): View {
 }
 
 /** Keep a view inside the series (after the data or the width changed). */
-export const fitView = (v: View, total: number): View => ({slot: clamp(v.slot, SLOT_MIN, SLOT_MAX), offset: clampOffset(v.offset, total)});
+export function fitView(v: View, total: number, width: number): View {
+    const slot = clamp(v.slot, SLOT_MIN, SLOT_MAX);
+    return {slot, offset: clampOffset(v.offset, total, width, slot)};
+}
 
 /** Candles from the newest (offset-adjusted) at screen x: fractional, 0 = centre of the rightmost slot. */
 const slotsFromRight = (x: number, width: number, slot: number) => (width - RIGHT_PAD - x) / slot - 0.5;
@@ -43,12 +54,12 @@ const slotsFromRight = (x: number, width: number, slot: number) => (width - RIGH
 export function zoomAt(view: View, factor: number, cursorX: number, width: number, total: number): View {
     const slot = clamp(view.slot * factor, SLOT_MIN, SLOT_MAX);
     const k = slotsFromRight(cursorX, width, view.slot) + view.offset;
-    return {slot, offset: clampOffset(k - slotsFromRight(cursorX, width, slot), total)};
+    return {slot, offset: clampOffset(k - slotsFromRight(cursorX, width, slot), total, width, slot)};
 }
 
 /** Pan by a drag of `dxPx`: dragging right (dx > 0) reveals older candles. */
-export function panBy(view: View, dxPx: number, total: number): View {
-    return {slot: view.slot, offset: clampOffset(view.offset + dxPx / view.slot, total)};
+export function panBy(view: View, dxPx: number, total: number, width: number): View {
+    return {slot: view.slot, offset: clampOffset(view.offset + dxPx / view.slot, total, width, view.slot)};
 }
 
 /** Price range with 8% padding above and below; a flat range is widened by 1% (or 1 wei). */
@@ -79,7 +90,7 @@ export const AREA_GAP = 8;
  *  so the gap between neighbours is always 30% of it. Top `priceFrac` of the height is the price
  *  area, the rest (after `gapPx`) the volume area; both scale to the visible candles only. */
 export function layoutCandles(all: readonly Candle[], width: number, height: number, view?: View, priceFrac = 0.75, gapPx = AREA_GAP): Layout {
-    const v = fitView(view ?? defaultView(all.length, width), all.length);
+    const v = fitView(view ?? defaultView(all.length, width), all.length, width);
     const slot = v.slot;
     const priceH = Math.round(height * priceFrac);
     const volH = height - priceH - gapPx;
@@ -119,6 +130,22 @@ export function layoutCandles(all: readonly Candle[], width: number, height: num
         return {y: y(price), price};
     });
     return {bars, ticks, priceH, lo, hi, slot};
+}
+
+/** Estimated width of a time label under the chart (px, 11 px tabular text). */
+export const TIME_LABEL_W = 84;
+
+export type TimeLabel = {bar: "first" | "last"; left: number};
+
+/** Time labels under the first and last visible candles, each centred on its candle and kept
+ *  inside [0, plotW]. If they would overlap only the last one is kept; one candle -> one label. */
+export function timeLabels(bars: readonly Bar[], plotW: number, labelW = TIME_LABEL_W): TimeLabel[] {
+    if (bars.length === 0) return [];
+    const place = (x: number) => clamp(x - labelW / 2, 0, Math.max(0, plotW - labelW));
+    const last: TimeLabel = {bar: "last", left: place(bars[bars.length - 1].x)};
+    if (bars.length === 1) return [last];
+    const first: TimeLabel = {bar: "first", left: place(bars[0].x)};
+    return last.left - first.left < labelW ? [last] : [first, last];
 }
 
 /** Index (in `bars`) of the candle nearest to x; -1 when there is none or x is a full slot or

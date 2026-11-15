@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {AREA_GAP, barIndexAt, Candle, connectOpens, defaultView, layoutCandles, LiveTrade, mergeLiveCandles, MIN_SLOT, panBy, parseCandles, priceRange, RIGHT_PAD, SLOT_DEFAULT_MAX, SLOT_MAX, SLOT_MIN, View, visibleCount, zoomAt} from "./candles";
+import {AREA_GAP, barIndexAt, Candle, connectOpens, defaultView, layoutCandles, LiveTrade, maxOffset, mergeLiveCandles, MIN_SLOT, panBy, parseCandles, priceRange, RIGHT_PAD, SLOT_DEFAULT_MAX, SLOT_MAX, SLOT_MIN, TIME_LABEL_W, timeLabels, View, visibleCount, zoomAt} from "./candles";
 
 const E18 = 10n ** 18n;
 const c = (t: number, o: bigint, h: bigint, l: bigint, cl: bigint, v: bigint): Candle => ({t, o, h, l, c: cl, v});
@@ -154,14 +154,64 @@ describe("view: slot, zoom and pan", () => {
             expect(L1.bars[i].candle.t).toBe(target.candle.t);
         }
     });
-    it("panBy reveals older candles to the right and stops at both ends", () => {
+    it("panBy reveals older candles to the right and stops when the oldest reaches the left edge", () => {
         const all = series(50);
-        const v = panBy({slot: 10, offset: 0}, 30, all.length);
+        const v = panBy({slot: 10, offset: 0}, 30, all.length, 400);
         expect(v.offset).toBe(3);
         const L = layoutCandles(all, 400, 200, v);
         expect(L.bars.at(-1)!.candle.t).toBe(46 * 300);
-        expect(panBy({slot: 10, offset: 0}, -500, all.length).offset).toBe(0);
-        expect(panBy({slot: 10, offset: 0}, 100_000, all.length).offset).toBe(49);
-        expect(centreOf(layoutCandles(all, 400, 200, {slot: 10, offset: 49}), 0)).toBe(400 - RIGHT_PAD - 5);
+        expect(panBy({slot: 10, offset: 0}, -500, all.length, 400).offset).toBe(0);
+        // capacity floor(388 / 10) = 38, so the offset stops at 50 - 38 = 12
+        const end = panBy({slot: 10, offset: 0}, 100_000, all.length, 400);
+        expect(end.offset).toBe(12);
+        const Le = layoutCandles(all, 400, 200, end);
+        expect(Le.bars[0].candle.t).toBe(0);
+        expect(Le.bars.at(-1)!.candle.t).toBe(37 * 300);
+    });
+    it("few candles: zooming in at the centre never hides the newest one", () => {
+        const all = series(6);
+        let v: View = {slot: 18, offset: 0};
+        for (let i = 0; i < 5; i++) v = zoomAt(v, 1.15, 303, 606, all.length);
+        expect(v.offset).toBe(0);
+        const L = layoutCandles(all, 606, 200, v);
+        expect(L.bars.map((b) => b.candle.t)).toEqual(all.map((x) => x.t));
+    });
+    it("few candles: panning keeps the offset at 0", () => {
+        expect(panBy({slot: 18, offset: 0}, 60, 6, 606).offset).toBe(0);
+        expect(maxOffset(6, 606, 18)).toBe(0);
+    });
+    it("many candles: panning to the end stops at total - capacity", () => {
+        const cap = Math.floor((606 - RIGHT_PAD) / 8);
+        const v = panBy({slot: 8, offset: 0}, 1_000_000, 300, 606);
+        expect(v.offset).toBe(300 - cap);
+        const L = layoutCandles(series(300), 606, 200, v);
+        expect(L.bars[0].candle.t).toBe(0);
+    });
+    it("a narrower width or fewer candles pulls the offset back inside the bound", () => {
+        const v: View = {slot: 10, offset: 12};
+        expect(layoutCandles(series(50), 400, 200, v).bars.at(-1)!.candle.t).toBe(37 * 300);
+        expect(layoutCandles(series(30), 400, 200, v).bars.at(-1)!.candle.t).toBe(29 * 300);
+    });
+});
+
+describe("timeLabels", () => {
+    const bar = (x: number) => ({x}) as unknown as Parameters<typeof timeLabels>[0][number];
+    it("centres each label on its candle and clamps it to the plot", () => {
+        expect(timeLabels([bar(200), bar(400)], 600, 80)).toEqual([
+            {bar: "first", left: 160},
+            {bar: "last", left: 360},
+        ]);
+        expect(timeLabels([bar(10), bar(590)], 600, 80)).toEqual([
+            {bar: "first", left: 0},
+            {bar: "last", left: 520},
+        ]);
+    });
+    it("keeps only the last label when the two would overlap", () => {
+        expect(timeLabels([bar(300), bar(360)], 600, 80)).toEqual([{bar: "last", left: 320}]);
+        expect(timeLabels([bar(300), bar(380)], 600, 80)).toHaveLength(2);
+    });
+    it("one candle -> one label, none -> none", () => {
+        expect(timeLabels([bar(500)], 600)).toEqual([{bar: "last", left: 500 - TIME_LABEL_W / 2}]);
+        expect(timeLabels([], 600)).toEqual([]);
     });
 });
