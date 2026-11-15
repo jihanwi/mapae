@@ -17,7 +17,7 @@ import {BODY_MAX, bodyLength, cleanBody} from "../../api/_lib/social";
 import {agoLabel, useNow} from "./feed";
 import {useOnboardingModal} from "./OnboardingModal";
 import {useNicknameModal} from "./NicknameModal";
-import {WalletPicker} from "./WalletPicker";
+import {OpenInWalletApp, WalletPicker} from "./WalletPicker";
 import {Badge, PrimaryBtn} from "./ui";
 import {ZERO} from "../hooks/curves";
 
@@ -123,6 +123,7 @@ export function Comments({curve}: {curve: string}) {
             {cta === "sign" && <p className="m-0 mt-2 text-[12px] text-hanji-400">{tr.social.signNote}</p>}
             {error && <p className="m-0 mt-2 text-[13px] text-error">{error}</p>}
             {wc.choices && <WalletPicker choices={wc.choices} onChoose={wc.choose} onClose={wc.closePicker} />}
+            {wc.openInApp && <OpenInWalletApp onClose={wc.closeOpenInApp} />}
 
             <div className="mt-4">
                 {list.isError ? (

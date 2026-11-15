@@ -2,7 +2,7 @@ import {Link, NavLink, Outlet, useLocation} from "react-router-dom";
 import {useAccount, useDisconnect, useReadContract, useWriteContract} from "wagmi";
 import {useWalletConnect} from "./hooks/useWalletConnect";
 import {useSwitchToGiwa} from "./hooks/useSwitchToGiwa";
-import {WalletPicker} from "./components/WalletPicker";
+import {OpenInWalletApp, WalletPicker} from "./components/WalletPicker";
 import {giwaSepolia} from "./config/chain";
 import {useCopy, useLang, copy} from "./copy";
 import {ADDR} from "./contracts/addresses";
@@ -174,6 +174,7 @@ function Nav() {
                 ))}
             </nav>
             {wc.choices && <WalletPicker choices={wc.choices} onChoose={wc.choose} onClose={wc.closePicker} />}
+            {wc.openInApp && <OpenInWalletApp onClose={wc.closeOpenInApp} />}
             {/* 공모 섹션 하위 탭 */}
             {legacy && (
                 <nav className="border-t border-ink-700">

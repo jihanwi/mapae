@@ -2,7 +2,8 @@
 // - EIP-6963 discovery (wagmi multiInjectedProviderDiscovery): 1 wallet → connect directly,
 //   2+ wallets → let the user pick (name + icon).
 // - No discovered wallet but window.ethereum present → generic injected connector.
-// - Neither → "noWallet". Connect failures are classified (rejected / pending / unknown).
+// - Neither → "noWallet": a toast on desktop; on a mobile browser the "open in a wallet app" modal
+//   (W-T17). Connect failures are classified (rejected / pending / unknown).
 // - No chainId is passed to connect: the wallet connects on whatever chain it is on, and a wrong
 //   chain is handled afterwards by useSwitchToGiwa (nav button / onboarding step 1).
 import {useCallback, useState} from "react";
@@ -10,6 +11,9 @@ import {Connector, useConnect, useConnectors} from "wagmi";
 import {useCopy} from "../copy";
 import {useToast} from "../components/tx";
 import {classifyConnectError} from "../lib/connectError";
+import {isMobileBrowser} from "../lib/share";
+
+const onMobile = () => typeof navigator !== "undefined" && isMobileBrowser(navigator.userAgent, navigator.maxTouchPoints ?? 0);
 
 const GENERIC_INJECTED_ID = "injected";
 
@@ -19,21 +23,20 @@ export function useWalletConnect(opts?: {onSuccess?: () => void}) {
     const connectors = useConnectors();
     const {connect, isPending} = useConnect();
     const [choices, setChoices] = useState<readonly Connector[] | null>(null);
+    const [openInApp, setOpenInApp] = useState(false);
+    const noWallet = useCallback(() => {
+        if (onMobile()) setOpenInApp(true);
+        else push({kind: "error", text: tr.errors.noWallet});
+    }, [push, tr]);
 
     const fail = useCallback(
         (err: unknown) => {
             const kind = classifyConnectError(err);
-            const text =
-                kind === "noWallet"
-                    ? tr.errors.noWallet
-                    : kind === "rejected"
-                      ? tr.wallet.rejected
-                      : kind === "pending"
-                        ? tr.wallet.pending
-                        : tr.wallet.unknown;
+            if (kind === "noWallet") return noWallet();
+            const text = kind === "rejected" ? tr.wallet.rejected : kind === "pending" ? tr.wallet.pending : tr.wallet.unknown;
             push({kind: "error", text});
         },
-        [push, tr]
+        [push, tr, noWallet]
     );
 
     const connectWith = useCallback(
@@ -51,8 +54,8 @@ export function useWalletConnect(opts?: {onSuccess?: () => void}) {
         const generic = connectors.find((c) => c.id === GENERIC_INJECTED_ID);
         const hasEthereum = typeof window !== "undefined" && !!(window as {ethereum?: unknown}).ethereum;
         if (generic && hasEthereum) return connectWith(generic);
-        push({kind: "error", text: tr.errors.noWallet});
-    }, [connectors, connectWith, push, tr]);
+        noWallet();
+    }, [connectors, connectWith, noWallet]);
 
-    return {connectWallet, isPending, choices, choose: connectWith, closePicker: () => setChoices(null)};
+    return {connectWallet, isPending, choices, choose: connectWith, closePicker: () => setChoices(null), openInApp, closeOpenInApp: () => setOpenInApp(false)};
 }
