@@ -12,6 +12,7 @@ import {explorerAddr, explorerTx, giwaSepolia} from "../config/chain";
 import {Address, CtaState, useTradeCta, ZERO} from "../hooks/curves";
 import {CURVE_SUPPLY, DEX_SUPPLY, TOTAL_SUPPLY, costToSellOut, grossForNet, quoteBuyWithFees, spotPrice} from "../lib/curveMath";
 import {utf8ByteLength, withinByteLimit} from "../lib/bytes";
+import {exceedsDevFirstBuyCap} from "../lib/devFirstBuy";
 import {fmt, fmtCeil, fmtDateTime, fmtSig, sanitizeAmountInput} from "../lib/format";
 import {NetError, PrimaryBtn, Skeleton} from "../components/ui";
 import {RunFn, TxButton} from "../components/tx";
@@ -110,6 +111,8 @@ export default function Create() {
 
     const preview = vq > 0n && devBuy > 0n && r.fees ? quoteBuyWithFees(vq, 0n, 0n, devBuy, feeBps) : undefined;
     const minTokensOut = preview ? (preview.tokensOut * 99n) / 100n : 0n;
+    // v3.2: the buy at launch may deliver at most 5% of supply; more would revert the whole creation
+    const overCap = !!preview && exceedsDevFirstBuyCap(preview.tokensOut, ADDR_V3.devFirstBuyMaxTokens);
 
     const nameBytes = utf8ByteLength(name);
     const symbolBytes = utf8ByteLength(symbol);
@@ -117,7 +120,7 @@ export default function Create() {
     const rateLimited = r.nextAllowedAt > nowSec;
     const quoteOk = !!cfg && cfg.registered && cfg.enabled;
     const formOk = r.loaded && withinByteLimit(name, r.maxName) && withinByteLimit(symbol, r.maxSymbol) && quoteOk;
-    const blocked = !r.curveEnabled || rateLimited || !formOk || !draftValid(draft);
+    const blocked = !r.curveEnabled || rateLimited || !formOk || !draftValid(draft) || overCap;
 
     const action = async (run: RunFn) => {
         if (!address || !client) return;
@@ -293,7 +296,7 @@ export default function Create() {
                             </span>
                         </div>
                     )}
-                    {preview && preview.tokensOut === CURVE_SUPPLY && <p className="m-0 mt-2 text-[12px] text-brass-400">{tr.create.devBuyGraduates}</p>}
+                    {overCap && <p className="m-0 mt-2 text-[12px] text-error">{tr.create.devBuyCap}</p>}
                 </Field>
             </div>
 

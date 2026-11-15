@@ -34,7 +34,7 @@ export function Comments({curve}: {curve: string}) {
     const openOnboarding = useOnboardingModal();
     const openNickname = useNicknameModal();
     const verified = useReadContract({
-        address: ADDR_V3.mockDojang,
+        address: ADDR_V3.dojangAnyOf,
         abi: MockDojangV3Abi,
         functionName: "isVerified",
         args: [address ?? ZERO],

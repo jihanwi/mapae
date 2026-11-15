@@ -70,14 +70,28 @@ export function useWalletBalances(address: Address, tokens: readonly string[]) {
     return {balances: map, isLoading: q.isLoading && list.length > 0, isError: q.isError};
 }
 
-/** Dojang isVerified (ADDR_V3.mockDojang, MockDojangV3Abi), as Comments.tsx reads it. */
+/** Real-name check (v3.2: ADDR_V3.dojangAnyOf = official Dojang OR MockDojang; isVerified(address)). */
 export function useIsVerified(address: Address) {
     return useReadContract({
-        address: ADDR_V3.mockDojang,
+        address: ADDR_V3.dojangAnyOf,
         abi: MockDojangV3Abi,
         functionName: "isVerified",
         args: [address],
         chainId: giwaSepolia.id,
         query: {refetchInterval: 15_000},
+    });
+}
+
+/** Official GIWA Dojang only (ADDR_V3.dojangEASAdapter, TESTNET_FAUCET attester): the "GIWA Dojang"
+ *  badge. Read for the connected wallet only (pass undefined otherwise), so no extra request per
+ *  wallet shown on screen. */
+export function useOfficialDojang(address: Address | undefined) {
+    return useReadContract({
+        address: ADDR_V3.dojangEASAdapter,
+        abi: MockDojangV3Abi,
+        functionName: "isVerified",
+        args: [address ?? "0x0000000000000000000000000000000000000000"],
+        chainId: giwaSepolia.id,
+        query: {enabled: !!address, refetchInterval: 60_000},
     });
 }

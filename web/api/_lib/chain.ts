@@ -18,7 +18,7 @@ export function giwaChain(): Chain {
 export function socialChain(): import("./social.js").SocialChain {
     const client = createPublicClient({chain: giwaSepolia, transport: http(process.env.GIWA_RPC_URL || undefined)});
     return {
-        isVerified: (wallet) => client.readContract({address: ADDR_V3.mockDojang, abi: MockDojangV3Abi, functionName: "isVerified", args: [wallet]}) as Promise<boolean>,
+        isVerified: (wallet) => client.readContract({address: ADDR_V3.dojangAnyOf, abi: MockDojangV3Abi, functionName: "isVerified", args: [wallet]}) as Promise<boolean>,
         isCurve: (curve) => client.readContract({address: ADDR_V3.curveFactory, abi: CurveFactoryAbi, functionName: "isCurve", args: [curve]}) as Promise<boolean>,
     };
 }

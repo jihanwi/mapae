@@ -242,7 +242,7 @@ describe("v3.1 verified status", () => {
 });
 
 describe("db: v3.1 cursor row and factory filter", () => {
-    it("reads and writes indexer state id 31 and loads curves of one factory", async () => {
+    it("reads and writes indexer state id 32 (v3.2) and loads curves of one factory", async () => {
         const seen: {text: string; params: unknown[]}[] = [];
         const fake = {
             query: (text: string, params: unknown[] = []) => {
@@ -251,17 +251,17 @@ describe("db: v3.1 cursor row and factory filter", () => {
             },
             transaction: async (qs: unknown[]) => qs,
         } as unknown as Sql;
-        expect(INDEXER_STATE_ID).toBe(31);
+        expect(INDEXER_STATE_ID).toBe(32);
         await readNextBlock(fake);
         await readState(fake);
         await loadCurves(fake, "0xABC");
         await writeRange(fake, {curves: [], graduations: [], trades: [], transfers: [], nextBlock: 5n, indexedTs: 7});
-        expect(seen[0].params).toEqual([31]);
-        expect(seen[1].params).toEqual([31]);
+        expect(seen[0].params).toEqual([32]);
+        expect(seen[1].params).toEqual([32]);
         expect(seen[2]).toMatchObject({params: ["0xabc"]});
         expect(seen[2].text).toContain("WHERE factory = $1");
         const state = seen.find((q) => q.text.includes("mapae_indexer_state (id"))!;
-        expect(state.params).toEqual(["5", "7", 31]);
+        expect(state.params).toEqual(["5", "7", 32]);
     });
 });
 

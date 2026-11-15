@@ -96,8 +96,10 @@ export async function ensureSchema(sql: Sql): Promise<void> {
     await sql.transaction(SCHEMA.map((q) => sql.query(q)));
 }
 
-/** Indexer cursor row per contract version: id 1 = v3 (left untouched), id 31 = v3.1. */
-export const INDEXER_STATE_ID = 31;
+/** Indexer cursor row per contract version: id 1 = v3, id 31 = v3.1 (both left untouched),
+ *  id 32 = v3.2. A new row starts at ADDR_V3.deployBlock, so the new CurveFactory's events from its
+ *  deploy block on are read even though the v3.1 cursor is already past it. */
+export const INDEXER_STATE_ID = 32;
 
 export async function readNextBlock(sql: Sql): Promise<bigint | null> {
     const rows = (await sql.query(`SELECT next_block::text AS n FROM mapae_indexer_state WHERE id = $1`, [INDEXER_STATE_ID])) as {n: string}[];
