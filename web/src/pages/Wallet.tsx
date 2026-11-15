@@ -5,7 +5,8 @@
 import {useEffect, useState} from "react";
 import {Link, useNavigate, useParams} from "react-router-dom";
 import {useQueryClient} from "@tanstack/react-query";
-import {useAccount} from "wagmi";
+import {useAccount, useReadContracts} from "wagmi";
+import {Abi} from "viem";
 import {useCopy} from "../copy";
 import {CurveInfo, useCurves} from "../hooks/curves";
 import {useActivity} from "../hooks/activity";
@@ -19,11 +20,14 @@ import {progressBps, TOTAL_SUPPLY} from "../lib/curveMath";
 import {currentPrice} from "../lib/homeList";
 import {fmt, fmtDateTime, fmtRound, shortAddr} from "../lib/format";
 import {holdingValue, mergeBrowserTrades, parsePosition, pnl, Position, splitHoldings, totals, Unit} from "../lib/wallet";
-import {explorerAddr, explorerTx} from "../config/chain";
+import {explorerAddr, explorerTx, giwaSepolia} from "../config/chain";
 import {agoLabel, tradeAmount, tradeUnit, useNow} from "../components/feed";
 import {Badge, Gauge, PrimaryBtn, SecondaryBtn} from "../components/ui";
 import {CurveAvatar} from "../components/MetaForm";
 import {CopyAddress} from "../components/CopyAddress";
+import {ClaimDevFeesButton, fmtDevFee} from "../components/DevFees";
+import {devFeeUnit} from "../lib/devFees";
+import {CurveSaleAbi} from "../contracts/abisV3";
 import {useNicknameModal} from "../components/NicknameModal";
 import {pctLabel, quoteUnit} from "./Curves";
 
@@ -158,8 +162,23 @@ function HoldingsTab({holding, soldOut, meta, loading}: {holding: Row[]; soldOut
     );
 }
 
-function LaunchedTab({launched, byCurve, meta}: {launched: {curve: string; name: string; symbol: string; createdTs: string}[]; byCurve: Map<Address, CurveInfo>; meta: ReturnType<typeof useCurveMeta>}) {
+/** devAccrued of the launched curves in one multicall; only on my own profile (no read otherwise). */
+function useLaunchedDevFees(curves: readonly string[], own: boolean): Map<Address, bigint> {
+    const q = useReadContracts({
+        contracts: curves.map((c) => ({address: c as Address, abi: CurveSaleAbi as Abi, functionName: "devAccrued", chainId: giwaSepolia.id})),
+        query: {enabled: own && curves.length > 0, refetchInterval: 15_000},
+    });
+    const m = new Map<Address, bigint>();
+    if (own) q.data?.forEach((r, i) => r.status === "success" && m.set(lc(curves[i]), r.result as bigint));
+    return m;
+}
+
+function LaunchedTab({launched, byCurve, meta, own}: {launched: {curve: string; name: string; symbol: string; createdTs: string}[]; byCurve: Map<Address, CurveInfo>; meta: ReturnType<typeof useCurveMeta>; own: boolean}) {
     const tr = useCopy();
+    const fees = useLaunchedDevFees(
+        launched.map((l) => l.curve),
+        own
+    );
     if (launched.length === 0) return <p className="m-0 text-[14px] text-hanji-400">{tr.walletPage.emptyLaunched}</p>;
     return (
         <div className="bg-ink-800 border border-ink-700 rounded-card overflow-hidden min-w-0">
@@ -167,27 +186,40 @@ function LaunchedTab({launched, byCurve, meta}: {launched: {curve: string; name:
                 const c = byCurve.get(lc(l.curve));
                 const bps = c ? (c.graduated ? 10_000n : progressBps(c.virtualQuote, c.r)) : undefined;
                 const m = c ? marketCap(c, c.poolSpot) : undefined;
+                const accrued = fees.get(lc(l.curve));
+                const unit = c ? devFeeUnit(c.isEth) : undefined;
                 return (
-                    <Link key={l.curve} to={`/t/${c?.address ?? l.curve}`} className="flex items-center gap-3 no-underline text-hanji-100 px-4 py-2.5 min-h-[56px] border-t border-ink-700 first:border-t-0 hover:bg-ink-900 min-w-0">
-                        <CurveAvatar char={l.symbol.slice(0, 1) || "馬"} imageUrl={meta.get(c?.address ?? (l.curve as Address))?.imageUrl} size={36} />
-                        <div className="min-w-0 flex-1">
-                            <div className="font-semibold truncate text-[14px]">{l.name}</div>
-                            <div className="text-[12px] text-hanji-400 truncate tabular-nums">
-                                {l.symbol} · {fmtDateTime(BigInt(l.createdTs || "0"), tr.locale)}
-                            </div>
-                            {bps !== undefined && (
-                                <div className="mt-1.5 flex items-center gap-2">
-                                    <div className="flex-1 min-w-0">
-                                        <Gauge committed={bps} target={10_000n} height={3} />
-                                    </div>
-                                    <span className="text-[11px] text-hanji-400 tabular-nums flex-none">{pctLabel(bps)}%</span>
+                    <div key={l.curve} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 border-t border-ink-700 first:border-t-0 hover:bg-ink-900 min-w-0">
+                        <Link to={`/t/${c?.address ?? l.curve}`} className="flex flex-1 items-center gap-3 no-underline text-hanji-100 min-h-[36px] min-w-0">
+                            <CurveAvatar char={l.symbol.slice(0, 1) || "馬"} imageUrl={meta.get(c?.address ?? (l.curve as Address))?.imageUrl} size={36} />
+                            <div className="min-w-0 flex-1">
+                                <div className="font-semibold truncate text-[14px]">{l.name}</div>
+                                <div className="text-[12px] text-hanji-400 truncate tabular-nums">
+                                    {l.symbol} · {fmtDateTime(BigInt(l.createdTs || "0"), tr.locale)}
                                 </div>
-                            )}
-                        </div>
-                        <div className="flex-none text-right text-[13px] tabular-nums max-w-[45%] break-words">
-                            {c && m !== undefined ? `${fmtRound(m, c.isEth ? 4 : 0, tr.locale)} ${quoteUnit(c)}` : "–"}
-                        </div>
-                    </Link>
+                                {bps !== undefined && (
+                                    <div className="mt-1.5 flex items-center gap-2">
+                                        <div className="flex-1 min-w-0">
+                                            <Gauge committed={bps} target={10_000n} height={3} />
+                                        </div>
+                                        <span className="text-[11px] text-hanji-400 tabular-nums flex-none">{pctLabel(bps)}%</span>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="flex-none text-right text-[13px] tabular-nums max-w-[45%] break-words">
+                                {c && m !== undefined ? `${fmtRound(m, c.isEth ? 4 : 0, tr.locale)} ${quoteUnit(c)}` : "–"}
+                            </div>
+                        </Link>
+                        {/* my own profile only: unclaimed Dev fees (outside the row link: no button inside a link) */}
+                        {own && c && unit && accrued !== undefined && (
+                            <div className="flex items-center justify-end gap-3 w-full sm:w-auto min-w-0">
+                                <span className="text-[12px] text-hanji-400 tabular-nums break-words">
+                                    {accrued > 0n ? tr.devFees.unclaimed(fmtDevFee(accrued, unit, tr.locale), unit) : tr.devFees.unclaimed("–", "").trim()}
+                                </span>
+                                {accrued > 0n && <ClaimDevFeesButton curve={c.address} amount={accrued} unit={unit} />}
+                            </div>
+                        )}
+                    </div>
                 );
             })}
         </div>
@@ -393,7 +425,7 @@ function WalletView({address}: {address: Address}) {
                     {tab === "holdings" && <HoldingsTab holding={holding} soldOut={soldOut} meta={meta} loading={loading} />}
                     {tab === "launched" &&
                         (serverOk ? (
-                            <LaunchedTab launched={profile.data.launched} byCurve={byCurve} meta={meta} />
+                            <LaunchedTab launched={profile.data.launched} byCurve={byCurve} meta={meta} own={own} />
                         ) : profile.isError ? (
                             <p className="m-0 text-[13px] text-hanji-400">{tr.chain.unavailable}</p>
                         ) : (

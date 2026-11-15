@@ -569,6 +569,16 @@ export const ko = {
         notFoundNote: "주소 형식을 확인해 주세요",
         explorer: "익스플로러에서 보기 ↗",
     },
+    // Dev 수수료 찾아가기 (CurveSale.claimDevFees)
+    devFees: {
+        title: "Dev 수수료",
+        unclaimed: (amount: string, unit: string) => `찾아갈 수수료 ${amount} ${unit}`,
+        none: "아직 쌓인 수수료가 없어요",
+        claim: "찾아가기",
+        claimed: (amount: string, unit: string) => `수수료를 받았어요 · ${amount} ${unit}`,
+        wethNote: "ETH로 거래하는 토큰의 수수료는 WETH로 받아요",
+        poolNote: "졸업 뒤 풀 거래의 로열티는 거래마다 지갑으로 바로 들어와요",
+    },
     // 토큰 페이지 (지표, 탭, 주소 복사, 빠른 금액)
     tokenPage: {
         tabs: {comments: "댓글", trades: "거래", holders: "보유자", info: "정보"},

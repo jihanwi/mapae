@@ -25,6 +25,7 @@ import {CurveAvatar, draftValid, linkDomain, MetaFields, SaveStatus} from "../co
 import {CurveMeta, draftHasContent, emptyDraft, MetaDraft, useCurveMeta, useSaveMeta} from "../hooks/meta";
 import {CurveTradePanel} from "../components/CurveTradePanel";
 import {CopyAddress} from "../components/CopyAddress";
+import {DevFeeBand} from "../components/DevFees";
 import {WalletLink} from "../components/WalletLink";
 import {useNicknames} from "../hooks/nicknames";
 import {Change, pctLabel, quoteUnit} from "./Curves";
@@ -583,6 +584,12 @@ export default function Token() {
                 <div className="order-2 lg:order-none min-w-0">
                     <Metrics c={c} />
                 </div>
+                {/* Dev only: unclaimed curve fees and [Claim] (below the metrics, above the chart) */}
+                {isDev && (
+                    <div className="order-2 lg:order-none min-w-0">
+                        <DevFeeBand curve={c.address} isDev={isDev} accrued={c.devAccrued} isEth={c.isEth} graduated={c.graduated} />
+                    </div>
+                )}
                 {/* description and links (Vercel Blob metadata); the Dev can add them once */}
                 {(m || (meta.loaded && isDev)) && (
                     <div className="order-3 lg:order-none min-w-0">
