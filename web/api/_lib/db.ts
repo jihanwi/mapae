@@ -113,10 +113,12 @@ export type PokeClaim = "claimed" | "throttled" | "no_row";
  *  this version does not exist yet. A missing poke_ts column (schema not migrated yet) throws. */
 export async function claimPoke(sql: Sql, nowSec: number): Promise<PokeClaim> {
     const rows = (await sql.query(
-        `UPDATE mapae_indexer_state SET poke_ts = $1
-         WHERE id = $2 AND (poke_ts IS NULL OR poke_ts <= $1 - $3)
+        // Every parameter is cast and the cutoff (now - gap) is computed here: subtracting one bare
+        // parameter from another fails in Postgres ("operator is not unique: unknown - unknown", 42725).
+        `UPDATE mapae_indexer_state SET poke_ts = $1::bigint
+         WHERE id = $2::int AND (poke_ts IS NULL OR poke_ts <= $3::bigint)
          RETURNING id`,
-        [nowSec, INDEXER_STATE_ID, POKE_GAP_SEC]
+        [nowSec, INDEXER_STATE_ID, nowSec - POKE_GAP_SEC]
     )) as unknown[];
     if (rows.length > 0) return "claimed";
     const exists = (await sql.query(`SELECT 1 FROM mapae_indexer_state WHERE id = $1`, [INDEXER_STATE_ID])) as unknown[];
