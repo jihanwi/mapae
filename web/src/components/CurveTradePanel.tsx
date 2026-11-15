@@ -19,8 +19,9 @@ import {giwaSepolia} from "../config/chain";
 import {fmt, fmtCeil, sanitizeAmountInput} from "../lib/format";
 import {maxInput} from "../lib/maxInput";
 import {RunFn, RunOpts, TxButton} from "./tx";
-import {PrimaryBtn} from "./ui";
+import {PrimaryBtn, SecondaryBtn} from "./ui";
 import {opensOnboarding, useOnboardingModal} from "./OnboardingModal";
+import {minSec} from "../lib/priority";
 import {GuardPanel, ImpactRows, SlippagePicker, useGuardedSend, useSlippagePref} from "./TradeGuard";
 import {useNow} from "./feed";
 import {useActivity} from "../hooks/activity";
@@ -63,6 +64,10 @@ function ctaLabel(tr: Copy, state: CtaState, side: Side): string {
             return side === "buy" ? tr.curve.cta.approveBuy : tr.curve.cta.approveSell;
         case "ready":
             return side === "buy" ? tr.curve.cta.buy : tr.curve.cta.sell;
+        case "priorityWait": {
+            const {m, s} = minSec(state.remainingSec);
+            return tr.priority.wait(m, s);
+        }
     }
 }
 
@@ -198,10 +203,25 @@ function CtaBlock({
     if (opensOnboarding(state, payToken)) {
         return (
             <>
-                <PrimaryBtn className="w-full" onClick={() => openModal({krwNeeded, onProgress: refetch})}>
+                {/* trading: verification is not a step unless buying inside the priority window */}
+                <PrimaryBtn className="w-full" onClick={() => openModal({krwNeeded, onProgress: refetch, requireVerify: state.kind === "notVerified"})}>
                     {modalLabel(tr, state)}
                 </PrimaryBtn>
                 {state.kind === "notVerified" && <p className="text-[12px] text-brass-400 mt-2 mb-0">{tr.curve.cta.notVerifiedNote}</p>}
+            </>
+        );
+    }
+    if (state.kind === "priorityWait") {
+        // Inside the window with an unverified wallet: wait (the label counts down every second)
+        // or verify now through the onboarding modal.
+        return (
+            <>
+                <PrimaryBtn className="w-full" disabled>
+                    {ctaLabel(tr, state, side)}
+                </PrimaryBtn>
+                <SecondaryBtn className="w-full mt-2" onClick={() => openModal({krwNeeded, onProgress: refetch, requireVerify: true, reason: "priority"})}>
+                    {tr.priority.verifyNow}
+                </SecondaryBtn>
             </>
         );
     }
@@ -213,15 +233,11 @@ function CtaBlock({
     );
 }
 
-/** v3 run options: v3 error copy, and reopen onboarding when the tx reverts NotVerified. */
-function useRunOpts(refetch: () => void, krwNeeded: bigint): RunOpts {
-    const openModal = useOnboardingModal();
-    return {
-        scope: "v3",
-        onRevert: (name) => {
-            if (name === "NotVerified") openModal({krwNeeded, onProgress: refetch});
-        },
-    };
+/** v3 run options: v3 error copy. (v3.1: NotVerified before sending means the device clock is
+ *  ahead of the chain inside the priority window; TradeGuard shows that and sends nothing.) */
+function useRunOpts(refetch: () => void, _krwNeeded: bigint): RunOpts {
+    void refetch;
+    return {scope: "v3"};
 }
 
 function Fees({platform, dev, lp, unit}: {platform: bigint; dev: bigint; lp: bigint; unit: string}) {
@@ -247,6 +263,8 @@ function CurveBuy({c, amount, slip, onDone}: {c: CurveDetail; amount: bigint; sl
         payToken: c.isEth ? "native" : c.quote,
         amount,
         spender: c.isEth ? undefined : c.address,
+        // v3.1: verified only while the curve's priority window is open
+        verify: {priorityUntil: c.priorityUntil},
     });
     const quote = q.settled ? q.data : undefined;
     const effective: CtaState = state.kind === "ready" || state.kind === "approve" ? (quote && quote.tokensOut > 0n ? state : {kind: "loading"}) : state;
@@ -316,7 +334,7 @@ function CurveSell({c, amount, slip, onDone}: {c: CurveDetail; amount: bigint; s
     const q = useQuoteSell(c.address, amount);
     const unit = c.isEth ? "WETH" : "KRWs";
     const dp = c.isEth ? 8 : 2;
-    const {state, refetch} = useTradeCta({payToken: c.token, amount, spender: c.address});
+    const {state, refetch} = useTradeCta({payToken: c.token, amount, spender: c.address, verify: "none"});
     const quote = q.settled ? q.data : undefined;
     const effective: CtaState = state.kind === "ready" || state.kind === "approve" ? (quote ? state : {kind: "loading"}) : state;
     const opts = useRunOpts(refetch, 0n);
@@ -378,7 +396,7 @@ function PoolSide({c, side, amount, slip, onDone}: {c: CurveDetail; side: Side; 
     const pool = c.pool as Address;
     const q = usePoolQuote(pool, side, amount);
     const payToken = side === "buy" ? c.quote : c.token;
-    const {state, refetch} = useTradeCta({payToken, amount, spender: pool});
+    const {state, refetch} = useTradeCta({payToken, amount, spender: pool, verify: "none"});
     const quote = q.settled ? q.data : undefined;
     const effective: CtaState = state.kind === "ready" || state.kind === "approve" ? (quote && quote > 0n ? state : {kind: "loading"}) : state;
     const quoteUnitLabel = c.isEth ? "WETH" : "KRWs";

@@ -11,6 +11,7 @@ import {fmtRound, shortAddr} from "../lib/format";
 import {agoLabel, prefersReducedMotion, tradeAmount, tradeUnit, useNow} from "../components/feed";
 import {Badge, Card, CardSkeleton, Gauge, NetError} from "../components/ui";
 import {CurveAvatar} from "../components/MetaForm";
+import {PriorityBadge} from "../components/PriorityCountdown";
 import {useCurveMeta} from "../hooks/meta";
 
 // Layout note (390px): the page uses fluid padding and a minmax(min(100%, 300px), 1fr) grid, so a
@@ -60,7 +61,10 @@ function CurveCard({c, stats, tsOf, now, imageUrl}: {c: CurveInfo; stats: CurveS
                             {c.symbol} · {unit}
                         </div>
                     </div>
-                    <Badge kind={c.graduated ? "neutral" : "open"}>{c.graduated ? tr.curve.graduated : tr.curve.live}</Badge>
+                    <div className="flex flex-col items-end gap-1 flex-none">
+                        <Badge kind={c.graduated ? "neutral" : "open"}>{c.graduated ? tr.curve.graduated : tr.curve.live}</Badge>
+                        {!c.graduated && <PriorityBadge priorityUntil={c.priorityUntil} />}
+                    </div>
                 </div>
                 <div className="flex justify-between gap-3 text-[13px] mb-3 tabular-nums flex-wrap">
                     <span className="text-hanji-400">{tr.curve.marketCap}</span>

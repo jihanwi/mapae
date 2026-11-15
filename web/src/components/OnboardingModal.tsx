@@ -32,6 +32,11 @@ type OpenArgs = {
     krwNeeded?: bigint;
     /** Called after each completed step so the caller can refetch its CTA state. */
     onProgress?: () => void;
+    /** Whether real-name verification is a required step (default true: launch, comments).
+     *  v3.1 trading passes false unless the user is buying inside a curve's priority window. */
+    requireVerify?: boolean;
+    /** "priority": opened to buy inside a priority window (shows that waiting also works). */
+    reason?: "priority";
 };
 
 const Ctx = createContext<(a?: OpenArgs) => void>(() => {});
@@ -103,7 +108,8 @@ function OnboardingModal({args, onClose}: {args: OpenArgs; onClose: () => void})
 
     const wc = useWalletConnect({onSuccess: progress});
     const {switchToGiwa, isPending: switching} = useSwitchToGiwa({onSuccess: progress});
-    const allDone = onRightChain && verified === true && krwDone;
+    const requireVerify = args.requireVerify ?? true;
+    const allDone = onRightChain && (!requireVerify || verified === true) && krwDone;
 
     return (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-ink-950/80" role="dialog" aria-modal="true" onClick={onClose}>
@@ -131,8 +137,10 @@ function OnboardingModal({args, onClose}: {args: OpenArgs; onClose: () => void})
                     )}
                 </Step>
 
+                {requireVerify && (
                 <Step n={2} title={tr.onboardingV3.verifyTitle} done={verified === true}>
                     <p className="m-0 mb-3 text-[13px] text-hanji-400">{tr.onboardingV3.verifyNote}</p>
+                    {args.reason === "priority" && <p className="m-0 mb-3 text-[12px] text-hanji-400">{tr.onboardingV3.verifyOptional}</p>}
                     <SecondaryBtn
                         className="w-full"
                         disabled={!onRightChain || verified === undefined || busy || noGas}
@@ -146,9 +154,10 @@ function OnboardingModal({args, onClose}: {args: OpenArgs; onClose: () => void})
                         {tr.onboardingV3.verifyCta}
                     </SecondaryBtn>
                 </Step>
+                )}
 
                 {need > 0n && (
-                    <Step n={3} title={tr.onboardingV3.krwTitle} done={krwDone}>
+                    <Step n={requireVerify ? 3 : 2} title={tr.onboardingV3.krwTitle} done={krwDone}>
                         {krw !== undefined && cap !== undefined && (
                             <>
                                 <p className="m-0 mb-3 text-[13px] text-hanji-400 tabular-nums">
