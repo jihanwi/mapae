@@ -223,11 +223,12 @@ export function barIndexAt(x: number, bars: readonly Bar[], slot?: number): numb
 // Live merge and display adjustments
 // ---------------------------------------------------------------------------------------------
 
-const WAD = 10n ** 18n;
 export const MAX_CANDLES = 300;
 
-/** A browser RPC trade of this curve (Buy, Sell or Swapped), with its interpolated time. */
-export type LiveTrade = {block: bigint; logIndex: number; ts: number | undefined; quoteAmount: bigint; tokenAmount: bigint};
+/** A browser RPC trade of this curve (Buy, Sell or Swapped), with its interpolated time and its
+ *  price under the server's definition (activity.tradePriceWad: curve trades = post-trade spot,
+ *  pool trades = average executed price). */
+export type LiveTrade = {block: bigint; logIndex: number; ts: number | undefined; quoteAmount: bigint; tokenAmount: bigint; priceWad: bigint};
 
 /** Which browser trades to add on top of the server candles (the indexedBlock argument of
  *  mergeLiveCandles, or undefined = add none):
@@ -243,7 +244,7 @@ export function liveFrom(p: {candlesOk: boolean; serverCount: number; indexedBlo
 }
 
 /** Server candles plus browser trades after indexedBlock, bucketed at `interval` seconds with the
- *  server's price definition (quote * 1e18 / token, bigint). A trade at or below indexedBlock is
+ *  server's price definition (LiveTrade.priceWad, see activity.tradePriceWad). A trade at or below indexedBlock is
  *  already in the server candles and is skipped; with no server index (null) every trade counts.
  *  A trade in an existing bucket updates its h, l, c and v; otherwise it opens a new bucket. */
 export function mergeLiveCandles(server: readonly Candle[], live: readonly LiveTrade[], indexedBlock: bigint | null, interval: number): Candle[] {
@@ -252,7 +253,7 @@ export function mergeLiveCandles(server: readonly Candle[], live: readonly LiveT
         .filter((x) => (indexedBlock === null || x.block > indexedBlock) && x.tokenAmount > 0n && x.ts !== undefined)
         .sort((a, b) => (a.block === b.block ? a.logIndex - b.logIndex : a.block < b.block ? -1 : 1));
     for (const x of fresh) {
-        const price = (x.quoteAmount * WAD) / x.tokenAmount;
+        const price = x.priceWad;
         const t = Math.floor((x.ts as number) / interval) * interval;
         const c = byT.get(t);
         if (c) {

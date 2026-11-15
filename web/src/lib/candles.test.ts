@@ -79,7 +79,7 @@ describe("price and volume areas", () => {
     });
 });
 
-const live = (block: number, ts: number, quote: bigint, token: bigint, i = 0): LiveTrade => ({block: BigInt(block), logIndex: i, ts, quoteAmount: quote, tokenAmount: token});
+const live = (block: number, ts: number, quote: bigint, token: bigint, i = 0): LiveTrade => ({block: BigInt(block), logIndex: i, ts, quoteAmount: quote, tokenAmount: token, priceWad: token === 0n ? 0n : (quote * E18) / token});
 
 describe("mergeLiveCandles", () => {
     it("builds candles from browser trades alone (no server candles)", () => {
@@ -238,8 +238,8 @@ describe("liveFrom (which browser trades join the server candles)", () => {
     });
     it("null position + empty server builds candles from the browser trades", () => {
         const live = [
-            {block: 10n, logIndex: 0, ts: 600, quoteAmount: 2n * E18, tokenAmount: E18},
-            {block: 11n, logIndex: 0, ts: 650, quoteAmount: 3n * E18, tokenAmount: E18},
+            {block: 10n, logIndex: 0, ts: 600, quoteAmount: 2n * E18, tokenAmount: E18, priceWad: 2n * E18},
+            {block: 11n, logIndex: 0, ts: 650, quoteAmount: 3n * E18, tokenAmount: E18, priceWad: 3n * E18},
         ];
         const from = liveFrom({candlesOk: true, serverCount: 0, indexedBlock: null});
         const out = mergeLiveCandles([], live, from as bigint | null, 300);

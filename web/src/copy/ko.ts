@@ -431,7 +431,7 @@ export const ko = {
         },
     },
     chain: {
-        chartTitle: "가격 차트",
+        chartTitle: "차트",
         intervals: {m5: "5분", h1: "1시간", d1: "1일"},
         intervalLabel: "봉 간격",
         axisLabel: "세로축 단위",
