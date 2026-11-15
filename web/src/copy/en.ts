@@ -345,7 +345,7 @@ export const en = {
     nickname: {
         title: "Nickname",
         current: (n: string) => `Current nickname: ${n}`,
-        rules: "2 to 16 characters: Korean, English letters, numbers and underscores. Only your nickname is shown, never your wallet address.",
+        rules: "2 to 16 characters: Korean, English letters, numbers and underscores. Only your nickname is shown, never your wallet address, except on the page of a token you launched, where it is shown next to your Dev wallet address.",
         cooldown: "You can change your nickname once every 7 days.",
         placeholder: "Nickname",
         save: "Save",
