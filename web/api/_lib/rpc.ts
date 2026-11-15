@@ -24,7 +24,7 @@ export function giwaRpc(): CronDeps["rpc"] {
         // One eth_call: aggregate3 over isVerified(wallet); a failed sub-call reads as null.
         isVerifiedMany: async (wallets) => {
             const calls = wallets.map((w) => ({
-                target: ADDR_V3.mockDojang as `0x${string}`,
+                target: ADDR_V3.dojangAnyOf as `0x${string}`,
                 allowFailure: true,
                 callData: encodeFunctionData({abi: MockDojangV3Abi, functionName: "isVerified", args: [w]}),
             }));

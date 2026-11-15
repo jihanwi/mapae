@@ -11,7 +11,7 @@ import {CurveInfo, useCurves} from "../hooks/curves";
 import {useActivity} from "../hooks/activity";
 import {useCurveMeta} from "../hooks/meta";
 import {useNickname} from "../hooks/comments";
-import {useIsVerified, useWalletBalances, useWalletProfile, useWalletTrades, walletKey} from "../hooks/wallet";
+import {useIsVerified, useOfficialDojang, useWalletBalances, useWalletProfile, useWalletTrades, walletKey} from "../hooks/wallet";
 import {normalizeAddressParam} from "../lib/address";
 import {sharePct} from "../lib/chainMerge";
 import {marketCap} from "../lib/activity";
@@ -256,6 +256,8 @@ function WalletView({address}: {address: Address}) {
     const activity = useActivity();
     const meta = useCurveMeta();
     const verified = useIsVerified(address);
+    // official GIWA Dojang badge: my own profile only (one read for the connected wallet)
+    const official = useOfficialDojang(own ? address : undefined);
     const openNickname = useNicknameModal();
     const [tab, setTab] = useState<WalletTab>("holdings");
 
@@ -326,6 +328,7 @@ function WalletView({address}: {address: Address}) {
                 <div className="flex items-center gap-3 flex-wrap min-w-0">
                     <h1 className="m-0 text-[24px] sm:text-[28px] font-bold break-all min-w-0">{nick ?? shortAddr(address)}</h1>
                     {verified.data === true && <Badge kind="neutral">{tr.priority.verifiedTag}</Badge>}
+                    {own && official.data === true && <Badge kind="open">{tr.onboardingV3.dojangBadge}</Badge>}
                     {own && (
                         <SecondaryBtn className="!py-2 !px-3 !text-[13px] min-h-[36px]" onClick={openNickname}>
                             {tr.social.nicknameButton}

@@ -373,7 +373,7 @@ export function useTradeCta({payToken, amount, spender, verify = "required"}: Ct
                       {address: erc20, abi: tokenAbi, functionName: "allowance", args: [owner, spender ?? ZERO], chainId: giwaSepolia.id},
                   ]
                 : []),
-            ...(needsVerified ? [{address: ADDR_V3.mockDojang, abi: MockDojangV3Abi as Abi, functionName: "isVerified", args: [owner], chainId: giwaSepolia.id}] : []),
+            ...(needsVerified ? [{address: ADDR_V3.dojangAnyOf, abi: MockDojangV3Abi as Abi, functionName: "isVerified", args: [owner], chainId: giwaSepolia.id}] : []),
         ],
         query: {enabled: !!address, refetchInterval: 6_000},
     });

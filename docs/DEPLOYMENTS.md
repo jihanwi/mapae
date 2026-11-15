@@ -2,6 +2,32 @@
 
 체인: GIWA Sepolia (chain ID `91342`) · Explorer: https://sepolia-explorer.giwa.io
 
+## v3.2 배포 (공식 도장 인식, 둘 다 인정, Dev 첫 매수 5% 상한), 2026-11-16 완료
+
+- 규칙: 실명 판정은 `DojangAnyOf`. GIWA 공식 도장(TESTNET_FAUCET 발행자, `DojangEASAdapter`)과 MockDojang 중 하나라도 true면 실명이다
+  (결정 46). 발행 tx 안의 Dev 첫 매수는 받는 토큰이 5,000만 개(총공급의 5%)를 넘으면 `DevFirstBuyTooLarge`로 발행 전체가 되돌아간다
+  (결정 49). CurveSale, MapaePool, MembershipToken 코드는 v3.1과 같다. 자세한 내용은 [`docs/WORKLOG_v3.md`](WORKLOG_v3.md)의 v3.2 절.
+- 배포 절차: [`docs/DEPLOY_V3_2.md`](DEPLOY_V3_2.md). 주소 기록: [`deployments/giwa-sepolia-v3_2.json`](../deployments/giwa-sepolia-v3_2.json)
+- 배포 블록 `41419458` · 배포자 테스트 지갑 A [`0x45D52d167d22970f69dCd127dFc38D875A29EFb0`](https://sepolia-explorer.giwa.io/address/0x45D52d167d22970f69dCd127dFc38D875A29EFb0) · CurveFactory owner는 배포 뒤
+  [`0x67a29AE83f3320C5E9b81D8a1531dE8FcCBED00C`](https://sepolia-explorer.giwa.io/address/0x67a29AE83f3320C5E9b81D8a1531dE8FcCBED00C)로 이전 ([`0x12041a1f…`](https://sepolia-explorer.giwa.io/tx/0x12041a1fbea794d21484119536f776fd43d5f97fd37e270a6f1e2e79c9081e5c))
+- 우선 구간 `priorityWindow` 600초, 테스트넷 WETH 가상 호가 준비금 0.002 ETH(재사용 MapaeFactory에 등록된 값 그대로)
+- 새로 배포한 세 컨트랙트는 Blockscout에서 검증됐다. 재사용 6개(MockKRW, MockDojang, PoolFactory, FeeRouter, MapaeFactory(mock),
+  MembershipTokenDeployer)는 v3.1 주소 그대로이고 v3.1 때 검증돼 있다.
+
+| 컨트랙트 | 주소 | 비고 |
+|---|---|---|
+| DojangEASAdapter | [`0x6cADa83208B32c2Ee0D0dB0341cfD0BF7B1584a4`](https://sepolia-explorer.giwa.io/address/0x6cADa83208B32c2Ee0D0dB0341cfD0BF7B1584a4) | 신규. 발행자 ID TESTNET_FAUCET로 조회 · 배포 tx [`0x3b5dcebb…`](https://sepolia-explorer.giwa.io/tx/0x3b5dcebb94e022c3d4efbca2fab5f79ed8ac4693e331524c8cf18db27a9d86c9) |
+| DojangAnyOf | [`0x87326FbbF76e724bA2bA954dAc04c3B939999f84`](https://sepolia-explorer.giwa.io/address/0x87326FbbF76e724bA2bA954dAc04c3B939999f84) | 신규. 어댑터 또는 MockDojang · 배포 tx [`0x66b43898…`](https://sepolia-explorer.giwa.io/tx/0x66b43898edfe0add57f2f94d73b936f29941a62cb4a1df6c5eea60112fd44431) |
+| CurveFactory | [`0x9b8155C39cdB912557d8588157fC11e8D989e652`](https://sepolia-explorer.giwa.io/address/0x9b8155C39cdB912557d8588157fC11e8D989e652) | 신규. dojang = DojangAnyOf, 웹이 쓰는 팩토리 · 배포 tx [`0xa5eb7bc2…`](https://sepolia-explorer.giwa.io/tx/0xa5eb7bc204b915049a003fd30f0dc70140ae6057279031cccbae5b4aa5b5ab7a) |
+| MockKRW | [`0x74eC9141afAd51F346BA5B841Ba93D573e8786fD`](https://sepolia-explorer.giwa.io/address/0x74eC9141afAd51F346BA5B841Ba93D573e8786fD) | v3.1 주소 재사용 |
+| MockDojang | [`0xaf80C431813EC4d2Cb34B3EC5b064095256871f8`](https://sepolia-explorer.giwa.io/address/0xaf80C431813EC4d2Cb34B3EC5b064095256871f8) | v3.1 주소 재사용 (selfVerify 쓰기 대상) |
+| PoolFactory | [`0xf4E7Bf1ACe429400AC23E271E4409D212677e44F`](https://sepolia-explorer.giwa.io/address/0xf4E7Bf1ACe429400AC23E271E4409D212677e44F) | v3.1 주소 재사용 |
+| FeeRouter | [`0xAB665B7867080cd62Aa316717400f3Cc094E7bd6`](https://sepolia-explorer.giwa.io/address/0xAB665B7867080cd62Aa316717400f3Cc094E7bd6) | v3.1 주소 재사용 |
+| MapaeFactory (mock) | [`0xC0E22127A44266cCC56B2503504373777d0645A9`](https://sepolia-explorer.giwa.io/address/0xC0E22127A44266cCC56B2503504373777d0645A9) | v3.1 주소 재사용 (호가 자산 등록) |
+| MembershipTokenDeployer (라이브러리) | [`0x9F011858B85b93a73330B56319Dc76a6f3255279`](https://sepolia-explorer.giwa.io/address/0x9F011858B85b93a73330B56319Dc76a6f3255279) | v3.1 주소 재사용 (`--libraries`로 링크) |
+
+v3.1 CurveFactory(`0x06f0…205D`)와 그 토큰은 체인에 그대로 남지만 웹 목록에는 나오지 않는다(v3에서 v3.1로 갈 때와 같은 처리).
+
 ## v3.1 배포 (실명 우선 구간, 풀 스왑 개방), 2026-11-15 완료
 
 - 규칙: 커브 개설 후 `priorityWindow`(기본 10분) 동안만 실명 지갑이 매수, 그 뒤 누구나 매수. 매도와 졸업 풀 스왑은 누구나.

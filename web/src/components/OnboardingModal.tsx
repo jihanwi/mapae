@@ -1,5 +1,6 @@
 // v3 onboarding modal. Opened only from a trade / create CTA (never on page load). Three steps,
-// finished steps are skipped: connect + network, testnet real-name verification (ADDR_V3.mockDojang),
+// finished steps are skipped: connect + network, testnet real-name verification (read: ADDR_V3.dojangAnyOf,
+// self-verify write: ADDR_V3.mockDojang),
 // KRWs balance for KRWs curves (ADDR_V3.mockKRW faucet, capped by the contract's FAUCET_CAP).
 // Layout note (390px): the panel is w-full with a max width and mx-4 gutter; it scrolls inside
 // (max-h + overflow-y-auto) when taller than the viewport.
@@ -17,7 +18,8 @@ import {Address, CtaState, ZERO} from "../hooks/curves";
 import {fmt, fmtCeil} from "../lib/format";
 import {faucetAmount} from "../lib/faucet";
 import {useTx} from "./tx";
-import {PrimaryBtn, SecondaryBtn} from "./ui";
+import {Badge, PrimaryBtn, SecondaryBtn} from "./ui";
+import {useOfficialDojang} from "../hooks/wallet";
 
 
 /** CTA states that open the modal instead of rendering a disabled button. `insufficient` only
@@ -82,13 +84,15 @@ function OnboardingModal({args, onClose}: {args: OpenArgs; onClose: () => void})
     const owner = address ?? ZERO;
     const reads = useReadContracts({
         contracts: [
-            {address: ADDR_V3.mockDojang, abi: MockDojangV3Abi as Abi, functionName: "isVerified", args: [owner], chainId: giwaSepolia.id},
+            {address: ADDR_V3.dojangAnyOf, abi: MockDojangV3Abi as Abi, functionName: "isVerified", args: [owner], chainId: giwaSepolia.id},
             {address: ADDR_V3.mockKRW, abi: MockKRWV3Abi as Abi, functionName: "balanceOf", args: [owner], chainId: giwaSepolia.id},
             {address: ADDR_V3.mockKRW, abi: MockKRWV3Abi as Abi, functionName: "FAUCET_CAP", chainId: giwaSepolia.id},
         ],
         query: {enabled: !!address, refetchInterval: 5_000},
     });
     const eth = useBalance({address, chainId: giwaSepolia.id, query: {enabled: !!address, refetchInterval: 5_000}});
+    // v3.2: the official GIWA Dojang (adapter) alone, for the badge on this step
+    const official = useOfficialDojang(address);
 
     const onRightChain = isConnected && chainId === giwaSepolia.id;
     const [vR, bR, cR] = reads.data ?? [];
@@ -139,6 +143,11 @@ function OnboardingModal({args, onClose}: {args: OpenArgs; onClose: () => void})
 
                 {requireVerify && (
                 <Step n={2} title={tr.onboardingV3.verifyTitle} done={verified === true}>
+                    {official.data === true && (
+                        <div className="mb-2">
+                            <Badge kind="open">{tr.onboardingV3.dojangBadge}</Badge>
+                        </div>
+                    )}
                     <p className="m-0 mb-3 text-[13px] text-hanji-400">{tr.onboardingV3.verifyNote}</p>
                     {args.reason === "priority" && <p className="m-0 mb-3 text-[12px] text-hanji-400">{tr.onboardingV3.verifyOptional}</p>}
                     <SecondaryBtn
@@ -153,6 +162,11 @@ function OnboardingModal({args, onClose}: {args: OpenArgs; onClose: () => void})
                     >
                         {tr.onboardingV3.verifyCta}
                     </SecondaryBtn>
+                    {/* the official path: a GIWA Dojang from the Playground (DojangAnyOf accepts either) */}
+                    <a href="https://sepolia-playground.giwa.io/" target="_blank" rel="noopener noreferrer" className="inline-block mt-3 text-[13px] text-brass-400 hover:text-hanji-100">
+                        {tr.onboardingV3.playgroundLink} ↗
+                    </a>
+                    <p className="m-0 mt-1 text-[12px] text-hanji-400">{tr.onboardingV3.playgroundNote}</p>
                 </Step>
                 )}
 
