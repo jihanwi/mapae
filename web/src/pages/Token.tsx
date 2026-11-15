@@ -25,6 +25,8 @@ import {CurveAvatar, draftValid, linkDomain, MetaFields, SaveStatus} from "../co
 import {CurveMeta, draftHasContent, emptyDraft, MetaDraft, useCurveMeta, useSaveMeta} from "../hooks/meta";
 import {CurveTradePanel} from "../components/CurveTradePanel";
 import {CopyAddress} from "../components/CopyAddress";
+import {WalletLink} from "../components/WalletLink";
+import {useNicknames} from "../hooks/nicknames";
 import {Change, pctLabel, quoteUnit} from "./Curves";
 
 // Layout note: below lg one column of full-width blocks (w-full / min-w-0, no fixed widths; the two
@@ -266,6 +268,8 @@ function TradeHistory({c}: {c: CurveDetail}) {
     const serverOk = hist.isSuccess && summary.isSuccess;
     const server = serverOk ? hist.data.pages.flatMap((p) => p.trades) : [];
     const rows = mergeHistory(server, browser, serverOk ? summary.data.indexedBlock : null, activity.tsOf);
+    // one bulk lookup for the traders on screen
+    const nicks = useNicknames(rows.map((t) => t.trader));
     const loading = !serverOk && !hist.isError && !summary.isError && !activity.loaded;
     return (
         <div className="bg-ink-900 border border-ink-700 rounded-card p-4 sm:p-6 min-w-0">
@@ -281,7 +285,9 @@ function TradeHistory({c}: {c: CurveDetail}) {
                         <li key={t.key} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 border-t border-ink-700 first:border-t-0 text-[13px] tabular-nums min-w-0">
                             <span className="text-hanji-400 w-[72px] flex-none">{t.ts !== undefined ? agoLabel(tr, now, t.ts) : ""}</span>
                             <span className="flex-none">
-                                {t.isDev ? <Badge kind="partial">{tr.curve.dev}</Badge> : <Link to={`/w/${t.trader}`} className="text-hanji-100 hover:text-brass-400">{shortAddr(t.trader)}</Link>}
+                                {t.isDev && <Badge kind="partial">{tr.curve.dev}</Badge>}
+                                {t.isDev && " "}
+                                <WalletLink address={t.trader} nickname={nicks.get(addrKey(t.trader))} className="max-w-[160px] text-hanji-100 hover:text-brass-400" />
                             </span>
                             <span className={`flex-none font-semibold ${t.side === "buy" ? "text-success" : "text-error"}`}>{t.side === "buy" ? tr.feed.buy : tr.feed.sell}</span>
                             {/* v3.1: buys made by a verified wallet (server: indexed status, browser: Buy.verified) */}
@@ -317,6 +323,8 @@ function TradeHistory({c}: {c: CurveDetail}) {
 function Holders({c}: {c: CurveDetail}) {
     const tr = useCopy();
     const q = useHolders(c.address);
+    // one bulk lookup for the wallets listed (not the bonding curve or the pool)
+    const nicks = useNicknames((q.data?.holders ?? []).slice(0, 20).filter((h) => h.label !== "curve" && h.label !== "pool").map((h) => h.address));
     const label = (l: string | null) => (l === "curve" ? tr.chain.labelCurve : l === "pool" ? tr.chain.labelPool : l === "dev" ? tr.chain.labelDev : null);
     return (
         <div className="bg-ink-900 border border-ink-700 rounded-card p-4 sm:p-6 min-w-0">
@@ -340,7 +348,7 @@ function Holders({c}: {c: CurveDetail}) {
                                 {h.label === "curve" || h.label === "pool" ? (
                                     <ExtLink href={explorerAddr(h.address)}>{shortAddr(h.address)}</ExtLink>
                                 ) : (
-                                    <Link to={`/w/${h.address}`} className="text-brass-400 hover:text-hanji-100">{shortAddr(h.address)}</Link>
+                                    <WalletLink address={h.address} nickname={nicks.get(addrKey(h.address))} className="max-w-[160px] text-brass-400 hover:text-hanji-100" />
                                 )}
                                 {l && <Badge kind="neutral">{l}</Badge>}
                                 <span className="ml-auto flex-none text-hanji-100">{sharePct(BigInt(h.balance), TOTAL_SUPPLY)}%</span>

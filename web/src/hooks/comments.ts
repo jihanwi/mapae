@@ -3,7 +3,7 @@ import {InfiniteData, useInfiniteQuery, useQuery, useQueryClient} from "@tanstac
 import {API_BASE} from "./meta";
 import {actionPayload, rememberMine, signWithSession, useSession} from "./session";
 
-export type CommentView = {id: number; nickname: string; body: string; createdAt: string; holder: boolean; dev: boolean};
+export type CommentView = {id: number; nickname: string; body: string; author: string; createdAt: string; holder: boolean; dev: boolean};
 export type CommentPage = {comments: CommentView[]; nextBefore: number | null};
 type Pages = InfiniteData<CommentPage, number | undefined>;
 

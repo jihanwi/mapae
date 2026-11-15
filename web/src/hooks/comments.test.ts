@@ -3,7 +3,7 @@ import {commentCta, CommentView, prependComment, removeComment} from "./comments
 import {sessionUsable, StoredSession} from "./session";
 
 const base = {connected: true, rightChain: true, verified: true as boolean | undefined, nickname: "말발굽" as string | null | undefined, hasSession: true};
-const c = (id: number): CommentView => ({id, nickname: "n", body: "b", createdAt: "2026-11-14T00:00:00Z", holder: false, dev: false});
+const c = (id: number): CommentView => ({id, nickname: "n", body: "b", author: "0x00000000000000000000000000000000000000aa", createdAt: "2026-11-14T00:00:00Z", holder: false, dev: false});
 
 describe("commentCta follows the trade CTA order", () => {
     it("connect, switch, verify, nickname, sign, post", () => {

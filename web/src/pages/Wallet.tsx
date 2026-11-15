@@ -9,7 +9,6 @@ import {useAccount} from "wagmi";
 import {useCopy} from "../copy";
 import {CurveInfo, useCurves} from "../hooks/curves";
 import {useActivity} from "../hooks/activity";
-import {useChainSummary} from "../hooks/chainData";
 import {useCurveMeta} from "../hooks/meta";
 import {useNickname} from "../hooks/comments";
 import {useIsVerified, useWalletBalances, useWalletProfile, useWalletTrades, walletKey} from "../hooks/wallet";
@@ -255,7 +254,6 @@ function WalletView({address}: {address: Address}) {
     const profile = useWalletProfile(address);
     const {curves, isLoading: curvesLoading} = useCurves();
     const activity = useActivity();
-    const summary = useChainSummary();
     const meta = useCurveMeta();
     const verified = useIsVerified(address);
     const openNickname = useNicknameModal();
@@ -272,7 +270,9 @@ function WalletView({address}: {address: Address}) {
     const byCurve = new Map(curves.map((c) => [lc(c.address), c]));
     const byToken = new Map(curves.map((c) => [lc(c.token), c]));
     const serverOk = profile.isSuccess;
-    const indexedBlock = summary.isSuccess && summary.data.indexedBlock !== null ? BigInt(summary.data.indexedBlock) : null;
+    // The fold and its indexedBlock come from the same response, so browser trades after it are
+    // added exactly once.
+    const indexedBlock = serverOk && profile.data.indexedBlock ? BigInt(profile.data.indexedBlock) : null;
     const info = (curve: Address) => {
         const c = byCurve.get(curve);
         return c ? {token: c.token, name: c.name, symbol: c.symbol} : undefined;
