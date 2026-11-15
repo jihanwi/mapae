@@ -10,6 +10,7 @@ import {
     MIN_BPS,
     minOut,
     parseCustomSlippage,
+    customSlippageBlocks,
     pctOneDecimal,
     pctTwoDecimals,
     poolImpactBps,
@@ -120,5 +121,17 @@ describe("re-quote guard", () => {
         expect(s).toEqual({kind: "sentFailed"});
         expect(guardReducer({kind: "idle"}, {type: "sentFailed", reason: "other"})).toEqual({kind: "idle"});
         expect(guardReducer(s, {type: "reset"})).toEqual({kind: "idle"});
+    });
+});
+
+describe("customSlippageBlocks", () => {
+    it("blocks while the open field holds an invalid non-empty value", () => {
+        for (const bad of ["0", "51", "100", "abc", "0.05"]) expect(customSlippageBlocks(true, bad), bad).toBe(true);
+    });
+    it("does not block for a valid value, an empty field, or a closed field", () => {
+        expect(customSlippageBlocks(true, "2.5")).toBe(false);
+        expect(customSlippageBlocks(true, "")).toBe(false);
+        expect(customSlippageBlocks(true, "   ")).toBe(false);
+        expect(customSlippageBlocks(false, "100")).toBe(false); // auto or a preset was picked
     });
 });

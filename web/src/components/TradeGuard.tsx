@@ -1,6 +1,6 @@
 // Slippage picker, price impact rows and the re-quote guard used by CurveTradePanel.
 // Layout note (390px): the picker wraps (flex-wrap); the custom input is a small fixed-size field.
-import {ReactNode, useCallback, useReducer, useState} from "react";
+import {ReactNode, useCallback, useEffect, useReducer, useState} from "react";
 import {useCopy} from "../copy";
 import {humanError, revertName} from "../lib/errors";
 import {fmt} from "../lib/format";
@@ -9,6 +9,7 @@ import {
     guardReducer,
     HIGH_WARN_BPS,
     IMPACT_WARN_BPS,
+    customSlippageBlocks,
     loadPref,
     parseCustomSlippage,
     pctOneDecimal,
@@ -34,11 +35,25 @@ export function useSlippagePref(autoBps: number) {
     return {pref, setPref, bps: effectiveBps(pref, autoBps)};
 }
 
-export function SlippagePicker({pref, setPref, autoBps}: {pref: SlippagePref; setPref: (p: SlippagePref) => void; autoBps: number}) {
+/** `onBlockedChange(true)` while the custom field holds an invalid non-empty value: the trade
+ *  buttons must not run with the last valid setting in that state. */
+export function SlippagePicker({
+    pref,
+    setPref,
+    autoBps,
+    onBlockedChange,
+}: {
+    pref: SlippagePref;
+    setPref: (p: SlippagePref) => void;
+    autoBps: number;
+    onBlockedChange?: (blocked: boolean) => void;
+}) {
     const tr = useCopy();
     const [custom, setCustom] = useState(pref.mode === "custom" ? pctOneDecimal(pref.bps) : "");
     const [editing, setEditing] = useState(pref.mode === "custom");
     const parsed = parseCustomSlippage(custom);
+    const blocked = customSlippageBlocks(editing, custom);
+    useEffect(() => onBlockedChange?.(blocked), [blocked, onBlockedChange]);
     const chip = (active: boolean) =>
         `px-3 min-h-[32px] rounded-full border ${active ? "border-brass-400 text-brass-400" : "border-ink-700 text-hanji-400 hover:border-brass-600"}`;
     return (
@@ -200,6 +215,7 @@ export function GuardPanel({
     autoAvailable,
     switchToAuto,
     autoBps,
+    blocked = false,
 }: {
     guard: ReturnType<typeof useGuardedSend>["guard"];
     dp: number;
@@ -208,6 +224,8 @@ export function GuardPanel({
     autoAvailable: boolean;
     switchToAuto: () => void;
     autoBps: number;
+    /** invalid custom slippage: retries are disabled like the main button */
+    blocked?: boolean;
 }) {
     const tr = useCopy();
     if (guard.kind === "idle") return null;
@@ -218,7 +236,7 @@ export function GuardPanel({
             <div className={box} style={style}>
                 <p className="m-0 mb-2 text-brass-400">{tr.tradeGuard.moved}</p>
                 <Line label={tr.tradeGuard.movedQuote} value={`${fmt(guard.fresh, dp, tr.locale)} ${unit}`} />
-                <TxButton className="w-full mt-2" variant="secondary" action={(run) => retry(run, guard.fresh)}>
+                <TxButton className="w-full mt-2" variant="secondary" disabled={blocked} action={(run) => retry(run, guard.fresh)}>
                     {tr.tradeGuard.continueAtPrice}
                 </TxButton>
             </div>
@@ -230,6 +248,7 @@ export function GuardPanel({
             <TxButton
                 className="w-full"
                 variant="secondary"
+                disabled={blocked}
                 action={(run) => {
                     if (!autoAvailable) return retry(run);
                     switchToAuto();
