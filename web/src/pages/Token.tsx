@@ -1,12 +1,15 @@
 import {Link, useNavigate, useParams} from "react-router-dom";
 import {addrKey, normalizeAddressParam} from "../lib/address";
 import {useAccount, useReadContract, useReadContracts} from "wagmi";
-import {useEffect, useState} from "react";
+import {useEffect, useRef, useState} from "react";
 import {useCopy} from "../copy";
 import {Address, CurveDetail, useCurve, ZERO} from "../hooks/curves";
 import {CurveFactoryAbi, MapaePoolV3Abi} from "../contracts/abisV3";
 import {ADDR_V3} from "../contracts/addressesV3";
 import {costToSellOut, grossForNet, marketCapQuote, progressBps, spotPrice, TOTAL_SUPPLY, WAD} from "../lib/curveMath";
+import {MembershipTokenV3Abi} from "../contracts/abisV3";
+import {changeBps, currentPrice, refPrice} from "../lib/homeList";
+import {sharePctOneDecimal} from "../lib/quickAmount";
 import {fmt, fmtCeil, fmtRound, fmtSig, shortAddr} from "../lib/format";
 import {explorerAddr, explorerTx, giwaSepolia} from "../config/chain";
 import {useActivity} from "../hooks/activity";
@@ -14,17 +17,19 @@ import {useChainSummary, useHolders, useTradeHistory} from "../hooks/chainData";
 import {mergeHistory, sharePct} from "../lib/chainMerge";
 import {CandleChart} from "../components/CandleChart";
 import {tokenPageState} from "../lib/tokenPage";
-import {PriorityBanner} from "../components/PriorityCountdown";
+import {PriorityBadge, PriorityBanner} from "../components/PriorityCountdown";
 import {Comments} from "../components/Comments";
-import {agoLabel, tradeAmount, tradeUnit, useNow} from "../components/feed";
+import {agoLabel, prefersReducedMotion, tradeAmount, tradeUnit, useNow} from "../components/feed";
 import {Badge, Gauge, NetError, PrimaryBtn, SecondaryBtn, Skeleton, Stat} from "../components/ui";
 import {CurveAvatar, draftValid, linkDomain, MetaFields, SaveStatus} from "../components/MetaForm";
 import {CurveMeta, draftHasContent, emptyDraft, MetaDraft, useCurveMeta, useSaveMeta} from "../hooks/meta";
 import {CurveTradePanel} from "../components/CurveTradePanel";
-import {pctLabel, quoteUnit} from "./Curves";
+import {Change, pctLabel, quoteUnit} from "./Curves";
 
-// Layout note (390px): single column of full-width blocks (w-full / min-w-0, no fixed widths);
-// addresses are shortened, long values wrap via break-all, stat grids are 2 columns.
+// Layout note: below lg one column of full-width blocks (w-full / min-w-0, no fixed widths; the two
+// column wrappers are display:contents so `order-*` interleaves their blocks), metrics in 2 columns,
+// four tabs that fit 390px, and a bottom buy/sell bar. From lg: left column (header, metrics, meta,
+// chart, progress, tabs) and a sticky 360px right column (banner, trade panel, fixed panel).
 
 function ExtLink({href, children}: {href: string; children: React.ReactNode}) {
     return (
@@ -45,9 +50,8 @@ function usePoolSpot(pool: Address | undefined, enabled: boolean) {
     });
 }
 
-function PriceStats({c}: {c: CurveDetail}) {
-    const tr = useCopy();
-    const unit = quoteUnit(c);
+/** Spot (quote per token) and market cap: curve reserves before graduation, the pool spot after. */
+function usePrice(c: CurveDetail) {
     const poolSpot = usePoolSpot(c.pool, c.graduated);
     let spot: bigint | undefined;
     let mcap: bigint | undefined;
@@ -58,10 +62,132 @@ function PriceStats({c}: {c: CurveDetail}) {
         spot = poolSpot.data as bigint;
         mcap = (spot * TOTAL_SUPPLY) / WAD;
     }
+    return {spot, mcap, poolSpot: poolSpot.data as bigint | undefined, spotError: poolSpot.isError};
+}
+
+function Metric({label, children, big}: {label: string; children: React.ReactNode; big?: boolean}) {
     return (
-        <div className="grid grid-cols-2 gap-3">
-            <Stat label={tr.curve.spot} value={spot !== undefined ? fmtSig(spot, 4, tr.locale) : poolSpot.isError ? tr.curve.quoteError : "…"} unit={`${unit}${tr.curve.perToken}`} />
-            <Stat label={tr.curve.marketCap} value={mcap !== undefined ? fmtRound(mcap, unit === "ETH" ? 4 : 0, tr.locale) : "…"} unit={unit} />
+        <div className="bg-ink-900 rounded-stat px-3.5 py-3 min-w-0">
+            <div className="text-[12px] text-hanji-400 mb-1 truncate">{label}</div>
+            <div className={`font-semibold tabular-nums truncate ${big ? "text-[20px]" : "text-[15px]"}`}>{children}</div>
+        </div>
+    );
+}
+
+/** Market cap, 24 h change, 24 h volume, holders, verified traders. */
+function Metrics({c}: {c: CurveDetail}) {
+    const tr = useCopy();
+    const unit = quoteUnit(c);
+    const {mcap, poolSpot} = usePrice(c);
+    const summary = useChainSummary();
+    const holders = useHolders(c.address);
+    const server = summary.isSuccess ? summary.data : undefined;
+    const change = changeBps(currentPrice({...c, poolSpot}), refPrice(c, server));
+    const row = server?.curves[addrKey(c.address)];
+    const dp = unit === "ETH" ? 4 : 0;
+    const small = <span className="text-hanji-400 font-normal text-[12px]"> {unit}</span>;
+    return (
+        <div className="grid grid-cols-2 lg:grid-cols-[1.4fr_1fr_1.2fr_0.8fr_1fr] gap-3 min-w-0">
+            <div className="col-span-2 lg:col-span-1 min-w-0">
+                <Metric label={tr.curve.marketCap} big>
+                    {mcap !== undefined ? fmtRound(mcap, dp, tr.locale) : "…"}
+                    {small}
+                </Metric>
+            </div>
+            <Metric label={tr.homeRows.changeCol(86400)}>
+                <Change bps={change} />
+            </Metric>
+            <Metric label={tr.tokenPage.volume}>
+                {server ? (
+                    <>
+                        {fmtRound(BigInt(row?.volume24h ?? "0"), dp, tr.locale)}
+                        {small}
+                    </>
+                ) : (
+                    <span className="text-hanji-400">–</span>
+                )}
+            </Metric>
+            <Metric label={tr.tokenPage.holders}>{holders.isSuccess ? holders.data.total.toLocaleString(tr.locale) : <span className="text-hanji-400">–</span>}</Metric>
+            <Metric label={tr.homeRows.cols.traders}>
+                {c.verifiedBuyerCount}
+                <span className="text-hanji-400 font-normal text-[12px]"> ({tr.curve.verifiedTradersNote})</span>
+            </Metric>
+        </div>
+    );
+}
+
+/** Token contract address with a copy button; without a working clipboard the full address is shown
+ *  as selectable text instead. */
+function CopyAddress({token}: {token: Address}) {
+    const tr = useCopy();
+    const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
+    useEffect(() => {
+        if (state !== "copied") return;
+        const id = setTimeout(() => setState("idle"), 2000);
+        return () => clearTimeout(id);
+    }, [state]);
+    const copy = async () => {
+        try {
+            if (!navigator.clipboard) throw new Error("no clipboard");
+            await navigator.clipboard.writeText(token);
+            setState("copied");
+        } catch (e) {
+            console.error("copy failed", e);
+            setState("failed");
+        }
+    };
+    if (state === "failed") {
+        return <span className="inline-flex items-center min-h-[36px] px-3 rounded-full border border-ink-700 text-[12px] text-hanji-100 tabular-nums break-all select-all">{token}</span>;
+    }
+    return (
+        <button
+            type="button"
+            aria-label={tr.tokenPage.copyLabel}
+            onClick={() => void copy()}
+            className="inline-flex items-center gap-2 min-h-[36px] px-3 rounded-full border border-ink-700 text-[12px] text-hanji-100 tabular-nums hover:border-brass-600"
+        >
+            <span>{shortAddr(token)}</span>
+            <span className={state === "copied" ? "text-brass-400" : "text-hanji-400"}>{state === "copied" ? tr.tokenPage.copied : tr.tokenPage.copy}</span>
+        </button>
+    );
+}
+
+/** "Dev holds n%": the Dev wallet's token balance over the total supply (hidden when the read fails). */
+function DevHolds({c}: {c: CurveDetail}) {
+    const tr = useCopy();
+    const bal = useReadContract({
+        address: c.token,
+        abi: MembershipTokenV3Abi,
+        functionName: "balanceOf",
+        args: [c.dev],
+        chainId: giwaSepolia.id,
+        query: {refetchInterval: 10_000},
+    });
+    if (bal.isError || bal.data === undefined) return null;
+    return <Badge kind="neutral">{tr.tokenPage.devHolds(sharePctOneDecimal(bal.data as bigint, TOTAL_SUPPLY))}</Badge>;
+}
+
+function Header({c, imageUrl}: {c: CurveDetail; imageUrl?: string | null}) {
+    const tr = useCopy();
+    return (
+        <div className="flex flex-col gap-3 min-w-0">
+            <div className="flex items-center gap-4 min-w-0">
+                <CurveAvatar char={c.symbol.slice(0, 1) || "馬"} imageUrl={imageUrl} size={64} />
+                <div className="min-w-0 flex-1">
+                    <h1 className="m-0 text-[24px] sm:text-[28px] font-bold break-all">{c.name}</h1>
+                    <div className="text-[13px] text-hanji-400 truncate">
+                        {c.symbol} · {quoteUnit(c)}
+                    </div>
+                </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 min-w-0 text-[12px]">
+                <CopyAddress token={c.token} />
+                {!c.graduated && <PriorityBadge priorityUntil={c.priorityUntil} />}
+                <DevHolds c={c} />
+                <span className="inline-flex items-center gap-1.5 text-hanji-400">
+                    {tr.curve.dev} <ExtLink href={explorerAddr(c.dev)}>{shortAddr(c.dev)}</ExtLink>
+                </span>
+            </div>
         </div>
     );
 }
@@ -269,6 +395,85 @@ function Contracts({c}: {c: CurveDetail}) {
     );
 }
 
+type TokenTab = "comments" | "trades" | "holders" | "info";
+const TOKEN_TABS: TokenTab[] = ["comments", "trades", "holders", "info"];
+
+/** Current price, contracts and the paired asset. */
+function InfoTab({c}: {c: CurveDetail}) {
+    const tr = useCopy();
+    const unit = quoteUnit(c);
+    const {spot, spotError} = usePrice(c);
+    return (
+        <div className="flex flex-col gap-3 min-w-0">
+            <div className="grid grid-cols-2 gap-3">
+                <Stat label={tr.curve.spot} value={spot !== undefined ? fmtSig(spot, 4, tr.locale) : spotError ? tr.curve.quoteError : "…"} unit={`${unit}${tr.curve.perToken}`} />
+                <Stat label={tr.curve.quoteAsset} value={c.graduated && c.isEth ? "WETH" : unit} />
+            </div>
+            <Contracts c={c} />
+        </div>
+    );
+}
+
+/** Comments | Trades | Holders | Info. Only the selected tab is rendered (react-query keeps the data). */
+function TokenTabs({c}: {c: CurveDetail}) {
+    const tr = useCopy();
+    const [tab, setTab] = useState<TokenTab>("comments");
+    const holders = useHolders(c.address);
+    return (
+        <section className="min-w-0">
+            <div role="tablist" className="grid grid-cols-4 border-b border-ink-700 mb-4">
+                {TOKEN_TABS.map((t) => (
+                    <button
+                        key={t}
+                        role="tab"
+                        id={`token-tab-${t}`}
+                        aria-selected={tab === t}
+                        aria-controls={`token-panel-${t}`}
+                        onClick={() => setTab(t)}
+                        className={`min-h-[44px] px-1 text-[14px] whitespace-nowrap border-b-2 -mb-px ${tab === t ? "border-brass-400 text-hanji-100 font-semibold" : "border-transparent text-hanji-400 hover:text-hanji-100"}`}
+                    >
+                        {tr.tokenPage.tabs[t]}
+                        {t === "holders" && holders.isSuccess && <span className="tabular-nums"> {holders.data.total}</span>}
+                    </button>
+                ))}
+            </div>
+            <div role="tabpanel" id={`token-panel-${tab}`} aria-labelledby={`token-tab-${tab}`} className="min-w-0">
+                {tab === "comments" && <Comments curve={c.address} />}
+                {tab === "trades" && <TradeHistory c={c} />}
+                {tab === "holders" && <Holders c={c} />}
+                {tab === "info" && <InfoTab c={c} />}
+            </div>
+        </section>
+    );
+}
+
+/** Below lg: a bottom bar with buy / sell that jumps to the trade panel (hidden while it is on screen). */
+function MobileTradeBar({panel, onPick}: {panel: React.RefObject<HTMLDivElement>; onPick: (s: "buy" | "sell") => void}) {
+    const tr = useCopy();
+    const [panelVisible, setPanelVisible] = useState(false);
+    useEffect(() => {
+        const el = panel.current;
+        if (!el || typeof IntersectionObserver === "undefined") return;
+        const io = new IntersectionObserver(([e]) => setPanelVisible(e.isIntersecting), {threshold: 0.15});
+        io.observe(el);
+        return () => io.disconnect();
+    }, [panel]);
+    if (panelVisible) return null;
+    return (
+        <div
+            className="lg:hidden fixed inset-x-0 bottom-0 z-30 bg-ink-900 border-t border-ink-700 px-4 pt-3 grid grid-cols-2 gap-3"
+            style={{paddingBottom: "calc(12px + env(safe-area-inset-bottom))"}}
+        >
+            <PrimaryBtn className="w-full" onClick={() => onPick("buy")}>
+                {tr.curve.buy}
+            </PrimaryBtn>
+            <SecondaryBtn className="w-full" onClick={() => onPick("sell")}>
+                {tr.curve.sell}
+            </SecondaryBtn>
+        </div>
+    );
+}
+
 export default function Token() {
     const tr = useCopy();
     const {curve: param} = useParams();
@@ -288,8 +493,22 @@ export default function Token() {
     const {curve: c, isLoading, isError, refetch} = useCurve(isCurve ? addr : undefined);
     const meta = useCurveMeta();
     const {address: account} = useAccount();
+    // Trade side shared by the panel and the mobile bottom bar.
+    const [side, setSide] = useState<"buy" | "sell">("buy");
+    const panelRef = useRef<HTMLDivElement>(null);
+    const pick = (s: "buy" | "sell") => {
+        setSide(s);
+        const el = panelRef.current;
+        if (!el) return;
+        el.scrollIntoView({behavior: prefersReducedMotion() ? "auto" : "smooth", block: "start"});
+        // the amount input is the panel's first decimal input
+        el.querySelector<HTMLInputElement>('input[inputmode="decimal"]')?.focus({preventScroll: true});
+    };
 
-    const wrap = (node: React.ReactNode) => <div className="max-w-page mx-auto px-4 sm:px-8 pt-8 sm:pt-10 pb-16 sm:pb-20">{node}</div>;
+    // below lg the bottom padding leaves room for the fixed buy / sell bar (plus the iOS home indicator)
+    const wrap = (node: React.ReactNode) => (
+        <div className="max-w-page mx-auto px-4 sm:px-8 pt-8 sm:pt-10 pb-[calc(96px+env(safe-area-inset-bottom))] lg:pb-20">{node}</div>
+    );
 
     const page = tokenPageState({validAddress: valid, isCurve, registryError: reg.isError, curveError: isError, curveLoaded: !isLoading && !!c});
     if (page === "notFound") {
@@ -306,51 +525,51 @@ export default function Token() {
 
     const m = meta.get(c.address);
     const isDev = !!account && account.toLowerCase() === c.dev.toLowerCase();
+    // Below lg the two column wrappers are display:contents and `order-*` sets the one-column order:
+    // header, metrics, meta, progress, chart, banner, panel, fixed panel, tabs.
     return wrap(
-        <div className="flex flex-col gap-5 sm:gap-6 max-w-[720px] mx-auto w-full min-w-0">
-            <Link to="/" className="text-[14px]">← {tr.curve.backToList}</Link>
-            {/* 1) header */}
-            <div className="flex items-center gap-4 min-w-0">
-                <CurveAvatar char={c.symbol.slice(0, 1) || "馬"} imageUrl={m?.imageUrl} size={64} />
-                <div className="min-w-0 flex-1">
-                    <h1 className="m-0 text-[24px] sm:text-[28px] font-bold break-all">{c.name}</h1>
-                    <div className="text-[13px] text-hanji-400 flex flex-wrap gap-x-3 gap-y-1">
-                        <span>{c.symbol}</span>
-                        <span>{tr.curve.quoteAsset} {quoteUnit(c)}</span>
-                        <span>
-                            {tr.curve.dev} <ExtLink href={explorerAddr(c.dev)}>{shortAddr(c.dev)}</ExtLink>
-                        </span>
+        <div className="flex flex-col gap-5 sm:gap-6 lg:flex-row lg:items-start lg:gap-8 w-full min-w-0">
+            <div className="contents lg:flex lg:flex-col lg:gap-6 lg:flex-1 lg:min-w-0">
+                <Link to="/" className="order-0 text-[14px]">← {tr.curve.backToList}</Link>
+                <div className="order-1 lg:order-none min-w-0">
+                    <Header c={c} imageUrl={m?.imageUrl} />
+                </div>
+                <div className="order-2 lg:order-none min-w-0">
+                    <Metrics c={c} />
+                </div>
+                {/* description and links (Vercel Blob metadata); the Dev can add them once */}
+                {(m || (meta.loaded && isDev)) && (
+                    <div className="order-3 lg:order-none min-w-0">
+                        {m && <MetaInfo m={m} />}
+                        {!m && meta.loaded && isDev && <AddMeta c={c} />}
                     </div>
+                )}
+                {/* candle chart from the server index */}
+                <div className="order-5 lg:order-none min-w-0">
+                    <CandleChart curve={c.address} unit={c.graduated && c.isEth ? "WETH" : quoteUnit(c)} />
+                </div>
+                <div className="order-4 lg:order-none min-w-0">
+                    <Progress c={c} />
+                </div>
+                <div className="order-9 lg:order-none min-w-0">
+                    <TokenTabs c={c} />
                 </div>
             </div>
-            {/* 1b) description and links (Vercel Blob metadata); the Dev can add them once */}
-            {m && <MetaInfo m={m} />}
-            {!m && meta.loaded && isDev && <AddMeta c={c} />}
-            {/* 2) people counter */}
-            <div className="text-[15px] tabular-nums">
-                <span className="font-semibold">{tr.curve.verifiedTraders(c.verifiedBuyerCount)}</span>
-                <span className="text-hanji-400 text-[13px]"> ({tr.curve.verifiedTradersNote})</span>
+            <div className="contents lg:flex lg:flex-col lg:gap-4 lg:w-[360px] lg:flex-none lg:sticky lg:top-6 lg:max-h-[calc(100vh-48px)] lg:overflow-y-auto">
+                {/* v3.1: verified-only notice while the priority window is open */}
+                {!c.graduated && (
+                    <div className="order-6 lg:order-none min-w-0">
+                        <PriorityBanner priorityUntil={c.priorityUntil} />
+                    </div>
+                )}
+                <div ref={panelRef} className="order-7 lg:order-none min-w-0 scroll-mt-4">
+                    <CurveTradePanel c={c} side={side} onSideChange={setSide} />
+                </div>
+                <div className="order-8 lg:order-none rounded-input px-4 py-3.5 text-[13px] text-hanji-100 border border-ink-700 bg-ink-900 text-center">
+                    {tr.curve.fixedPanel}
+                </div>
             </div>
-            {/* 3) graduation progress */}
-            <Progress c={c} />
-            {/* 4) price / market cap */}
-            <PriceStats c={c} />
-            {/* 4b) candle chart from the server index */}
-            <CandleChart curve={c.address} unit={c.graduated && c.isEth ? "WETH" : quoteUnit(c)} />
-            {/* 5) fixed panel */}
-            <div className="rounded-input px-4 py-3.5 text-[13px] text-hanji-100 border border-ink-700 bg-ink-900 text-center">
-                {tr.curve.fixedPanel}
-            </div>
-            {/* 6) trade panel (v3.1: verified-only notice while the priority window is open) */}
-            {!c.graduated && <PriorityBanner priorityUntil={c.priorityUntil} />}
-            <CurveTradePanel c={c} />
-            {/* 7) trade history (server index + browser RPC), holders */}
-            {/* 6b) comments (verified wallets, nicknames only) */}
-            <Comments curve={c.address} />
-            <TradeHistory c={c} />
-            <Holders c={c} />
-            {/* 8) contract links */}
-            <Contracts c={c} />
+            <MobileTradeBar panel={panelRef} onPick={pick} />
         </div>
     );
 }
