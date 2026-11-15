@@ -221,7 +221,7 @@ export const en = {
     feed: {
         tabsLabel: "Sort curves",
         tabs: {latest: "Latest", popular: "Popular", mcap: "Market cap", almost: "Almost graduated", new: "New", graduated: "Graduated"},
-        popularNote: "Ranked by verified wallets that bought in the last 24 hours, together with trading volume.",
+        popularNote: (w: number) => `Ranked by verified wallets that bought in the ${w === 3600 ? "last hour" : "last 24 hours"}, together with trading volume.`,
         mcapNote: "Curves with different paired assets are compared by how far they've moved from the start.",
         window: (h: number) => `Based on about the last ${h} hour${h === 1 ? "" : "s"}`,
         emptyTab: "No curves match this view yet.",
@@ -394,6 +394,24 @@ export const en = {
         verifyNow: "Verify and buy now",
         stillWindow: "It's still the verified-only window. Try again in a moment.",
         verifiedTag: "Verified",
+    },
+    homeRows: {
+        tagline: "Every launch starts from the same line.",
+        intro: [
+            `For the first ${PRIORITY_MINUTES} minutes, only verified wallets can buy. No bot gets in first.`,
+            "No creator allocation. Liquidity is locked for good.",
+            "Every token starts on the same curve.",
+        ],
+        search: "Search by name, ticker, or contract address",
+        searchEmpty: "No match found",
+        periodLabel: "Period",
+        period: {h1: "1h", d1: "24h"},
+        periodNote: (w: number): string => (w === 3600 ? "Based on the last hour" : "Based on the last 24 hours"),
+        cols: {token: "Curve", traders: "Verified traders", mcap: "Market cap", progress: "Progress", last: "Last trade"},
+        changeCol: (w: number) => `${w === 3600 ? "1h" : "24h"} change`,
+        verifiedShort: (n: number) => `${n} verified`,
+        featuredLabel: "Closest to graduation",
+        livePanel: "Live trades",
     },
     errorsV3: {
         NotVerified: "Verification required.",

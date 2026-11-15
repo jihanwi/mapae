@@ -172,6 +172,8 @@ export type SummaryRow = {
     volume24hExDev: string;
     lastTradeTs: string;
     lastPriceWad: string;
+    /** price_wad of the last trade before the window (sinceTs); null when there is none. */
+    refPriceWad: string | null;
 };
 
 export async function readState(sql: Sql): Promise<{indexedBlock: string | null; indexedTs: string | null}> {
@@ -179,8 +181,9 @@ export async function readState(sql: Sql): Promise<{indexedBlock: string | null;
     return {indexedBlock: rows[0]?.b ?? null, indexedTs: rows[0]?.ts ?? null};
 }
 
-/** Per-curve 24 h numbers and the last trade, in one GROUP BY. */
-/** Curves of `factory` only (v3.1). traders24h = distinct non-Dev wallets with a verified BUY in 24 h. */
+/** Per-curve numbers for the window starting at sinceTs (the *24h field names are kept for any
+ *  window), the last trade, and the reference price before the window, in one GROUP BY.
+ *  Curves of `factory` only (v3.1). traders24h = distinct non-Dev wallets with a verified BUY. */
 export async function summary(sql: Sql, sinceTs: number, factory: string): Promise<SummaryRow[]> {
     return (await sql.query(
         `SELECT t.curve,
@@ -189,7 +192,8 @@ export async function summary(sql: Sql, sinceTs: number, factory: string): Promi
                 coalesce(sum(t.quote_amount) FILTER (WHERE t.ts >= $1), 0)::text AS "volume24h",
                 coalesce(sum(t.quote_amount) FILTER (WHERE t.ts >= $1 AND NOT t.is_dev), 0)::text AS "volume24hExDev",
                 max(t.ts)::text AS "lastTradeTs",
-                ((array_agg(t.price_wad ORDER BY t.ts DESC, t.block DESC, t.log_index DESC))[1])::text AS "lastPriceWad"
+                ((array_agg(t.price_wad ORDER BY t.ts DESC, t.block DESC, t.log_index DESC))[1])::text AS "lastPriceWad",
+                ((array_agg(t.price_wad ORDER BY t.ts DESC, t.block DESC, t.log_index DESC) FILTER (WHERE t.ts < $1))[1])::text AS "refPriceWad"
          FROM mapae_trades t
          JOIN mapae_curves m ON m.curve = t.curve AND m.factory = $2
          GROUP BY t.curve`,

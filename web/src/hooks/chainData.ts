@@ -17,8 +17,15 @@ async function getJson<T>(path: string): Promise<T> {
 
 const opts = {staleTime: 60_000, retry: 1} as const;
 
-export function useChainSummary() {
-    return useQuery({queryKey: ["chain", "summary"], queryFn: () => getJson<ServerSummary>("/api/chain/summary"), ...opts});
+export type SummaryWindow = 3600 | 86400;
+
+/** Per-curve numbers for the last `window` seconds (default 24 h, the token page's choice). */
+export function useChainSummary(window: SummaryWindow = 86400) {
+    return useQuery({
+        queryKey: ["chain", "summary", window],
+        queryFn: () => getJson<ServerSummary>(window === 86400 ? "/api/chain/summary" : `/api/chain/summary?window=${window}`),
+        ...opts,
+    });
 }
 
 export function useCandles(curve: string, interval: 300 | 3600 | 86400) {

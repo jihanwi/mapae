@@ -20,7 +20,7 @@ const server: ServerSummary = {
     indexedBlock: String(NOW - 100),
     indexedTs: String(NOW - 100),
     curves: {
-        [C1]: {trades24h: 3, traders24h: 2, volume24h: "300", volume24hExDev: "200", lastTradeTs: String(NOW - 500), lastPriceWad: "1"},
+        [C1]: {trades24h: 3, traders24h: 2, volume24h: "300", volume24hExDev: "200", lastTradeTs: String(NOW - 500), lastPriceWad: "1", refPriceWad: null},
     },
 };
 
@@ -61,6 +61,15 @@ describe("mergeStats", () => {
     it("without an indexedBlock every browser trade counts", () => {
         const m = mergeStats({indexedBlock: null, indexedTs: null, curves: {}}, [trade(C1, addr(0xa1), NOW - 10, 4n)], tsOf, NOW);
         expect(m.get(C1)!.tradeCount).toBe(1);
+    });
+    it("window = 3600: browser trades older than an hour only move the last trade, not the numbers", () => {
+        const hourServer: ServerSummary = {indexedBlock: String(NOW - 5000), indexedTs: String(NOW - 5000), window: 3600, curves: {}};
+        const browser = [trade(C1, addr(0xa1), NOW - 4000, 50n), trade(C1, addr(0xa2), NOW - 100, 3n)];
+        const h = mergeStats(hourServer, browser, tsOf, NOW, 3600).get(C1)!;
+        expect(h).toMatchObject({tradeCount: 1, uniqueTraders: 1, volumeQuote: 3n, lastTradeTs: NOW - 100});
+        // the same trades over 24 h (default) count both
+        const d = mergeStats(hourServer, browser, tsOf, NOW).get(C1)!;
+        expect(d).toMatchObject({tradeCount: 2, uniqueTraders: 2, volumeQuote: 53n});
     });
 });
 
