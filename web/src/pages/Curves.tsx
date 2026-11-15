@@ -15,6 +15,8 @@ import {CurveAvatar} from "../components/MetaForm";
 import {addrKey} from "../lib/address";
 import {PriorityBadge} from "../components/PriorityCountdown";
 import {useCurveMeta} from "../hooks/meta";
+import {useNicknames} from "../hooks/nicknames";
+import {WalletLink} from "../components/WalletLink";
 
 // Layout note (390px): fluid padding, every text block is min-w-0 + truncate, and below lg each row
 // is a two-line flex row (no table), so nothing asks for more width than the viewport. The sort tabs
@@ -219,11 +221,14 @@ function useLiveRows(curves: CurveInfo[], n: number): LiveRow[] {
         .map((t) => ({t, c: byAddr.get(addrKey(t.curve))!, ts: tsOf(t.block)}));
 }
 
-function LiveLine({row, now, compact}: {row: LiveRow; now: number; compact?: boolean}) {
+type Nicks = Map<`0x${string}`, string>;
+
+function LiveLine({row, now, compact, nicks}: {row: LiveRow; now: number; compact?: boolean; nicks: Nicks}) {
     const tr = useCopy();
     const {t, c, ts} = row;
     const side = t.side === "buy" ? tr.feed.buy : tr.feed.sell;
-    const wallet = t.isDev ? tr.curve.dev : shortAddr(t.trader);
+    // the whole line links to the token page, so the wallet is plain text (no link inside a link)
+    const wallet = t.isDev ? tr.curve.dev : <WalletLink address={t.trader} nickname={nicks.get(addrKey(t.trader))} link={false} className="max-w-[140px]" />;
     const amount = `${tradeAmount(t, c.isEth, tr.locale)} ${tradeUnit(t, c.isEth)}`;
     const ago = ts !== undefined ? agoLabel(tr, now, ts) : "";
     return (
@@ -238,29 +243,27 @@ function LiveLine({row, now, compact}: {row: LiveRow; now: number; compact?: boo
     );
 }
 
-function LivePanel({curves, now}: {curves: CurveInfo[]; now: number}) {
+function LivePanel({rows, now, nicks}: {rows: LiveRow[]; now: number; nicks: Nicks}) {
     const tr = useCopy();
-    const rows = useLiveRows(curves, 8);
     return (
         <section aria-label={tr.homeRows.livePanel} className="bg-ink-800 border border-ink-700 rounded-card px-4 py-3 min-w-0">
             <h2 className="m-0 mb-2 text-[14px] font-semibold">{tr.homeRows.livePanel}</h2>
             {rows.length === 0 ? (
                 <p className="m-0 text-[12px] text-hanji-400">{tr.chain.chartEmpty}</p>
             ) : (
-                rows.map((r) => <LiveLine key={`${r.t.tx}:${r.t.logIndex}`} row={r} now={now} />)
+                rows.map((r) => <LiveLine key={`${r.t.tx}:${r.t.logIndex}`} row={r} now={now} nicks={nicks} />)
             )}
         </section>
     );
 }
 
 /** Below lg: the newest trade on one line; nothing when there is none. */
-function LatestTrade({curves, now}: {curves: CurveInfo[]; now: number}) {
+function LatestTrade({rows, now, nicks}: {rows: LiveRow[]; now: number; nicks: Nicks}) {
     const tr = useCopy();
-    const rows = useLiveRows(curves, 1);
     if (rows.length === 0) return null;
     return (
         <section aria-label={tr.homeRows.livePanel} className="lg:hidden mb-5 bg-ink-900 border border-ink-700 rounded-card px-4 py-2 min-w-0">
-            <LiveLine row={rows[0]} now={now} compact />
+            <LiveLine row={rows[0]} now={now} compact nicks={nicks} />
         </section>
     );
 }
@@ -352,6 +355,9 @@ export default function Curves() {
     const [tab, setTab] = useState<Tab>("latest");
     const [period, setPeriod] = useState<SummaryWindow>(86400);
     const [query, setQuery] = useState("");
+    // live trades (panel: 8, mobile line: the newest of them) and one bulk nickname lookup for both
+    const live = useLiveRows(curves, 8);
+    const liveNicks = useNicknames(live.filter((r) => !r.t.isDev).map((r) => r.t.trader));
     const now = useNow();
     // Stats for the chosen window: the server index plus browser RPC trades after its indexedBlock.
     // Without the server (503 / no answer) the list keeps working on the browser window alone, and
@@ -383,7 +389,7 @@ export default function Curves() {
                         <p className="text-[14px] text-hanji-400">{tr.curve.empty}</p>
                     ) : (
                         <>
-                            <LatestTrade curves={curves} now={now} />
+                            <LatestTrade rows={live.slice(0, 1)} now={now} nicks={liveNicks} />
                             {top && query.trim() === "" && <FeaturedCard c={top} imageUrl={meta.get(top.address)?.imageUrl} />}
                             <SearchBox value={query} onChange={setQuery} onHit={openHit} />
                             <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-3 min-w-0">
@@ -415,7 +421,7 @@ export default function Curves() {
                     <IntroCard className="mt-6 lg:hidden" />
                 </div>
                 <aside className="hidden lg:flex lg:flex-col gap-5 sticky top-6 self-start min-w-0">
-                    {!isError && !isLoading && curves.length > 0 && <LivePanel curves={curves} now={now} />}
+                    {!isError && !isLoading && curves.length > 0 && <LivePanel rows={live} now={now} nicks={liveNicks} />}
                     <IntroCard />
                 </aside>
             </div>

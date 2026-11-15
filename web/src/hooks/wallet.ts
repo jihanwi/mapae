@@ -18,6 +18,8 @@ export type WalletOut = {
     nickname: string | null;
     launched: (WalletCurveOut & {createdTs: string})[];
     received: WalletCurveOut[];
+    /** indexer position read in the same request as the positions (null: browser trades not added) */
+    indexedBlock: string | null;
     positions: ServerPosition[];
     /** more trades than the server folds: positions is empty and P&L is not shown */
     positionsTruncated?: boolean;

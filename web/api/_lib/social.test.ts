@@ -38,7 +38,7 @@ async function actionProof(action: SocialAction, payload: string, o: {issuedAt?:
 function fakeDeps(o: {verified?: boolean; nickname?: {nickname: string; updatedAtSec: number} | null; taken?: boolean; curveKnown?: boolean; isCurve?: boolean; rate?: {sinceLastSec: number | null; last24h: number}; deleteOk?: boolean} = {}) {
     const calls: string[] = [];
     const c = (name: string) => calls.push(name);
-    const comment: CommentOut = {id: 7, nickname: "말발굽", body: "hi", createdAt: "2026-11-14T00:00:00Z", holder: false, dev: false};
+    const comment: CommentOut = {id: 7, nickname: "말발굽", body: "hi", author: "0x00000000000000000000000000000000000000aa", createdAt: "2026-11-14T00:00:00Z", holder: false, dev: false};
     const deps: SocialDeps = {
         db: {
             ensureSchema: async () => void c("ensureSchema"),

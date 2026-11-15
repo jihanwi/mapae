@@ -1,4 +1,5 @@
-// GET /api/comments?curve=0x..&before=<id>&limit=<=50 (newest first, no wallet addresses)
+// GET /api/comments?curve=0x..&before=<id>&limit=<=50 (newest first; each comment carries its
+// author address, nicknames being a public profile)
 // POST /api/comments (verified wallets with a nickname)
 import * as db from "../_lib/db.js";
 import {cors, forbiddenOrigin, json} from "../_lib/http.js";

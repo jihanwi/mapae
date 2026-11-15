@@ -370,12 +370,18 @@ export async function walletTrades(sql: Sql, address: string, factory: string, b
 }
 
 // ---------------------------------------------------------------------------------------------
-// Nicknames and comments (lowercase addresses; no wallet address is ever returned for comments)
+// Nicknames and comments (lowercase addresses). Nicknames are a public profile (owner decision
+// 2026-11-15): comments carry the author address, and nicknames can be looked up in bulk.
 // ---------------------------------------------------------------------------------------------
 
 export async function nicknameOf(sql: Sql, address: string): Promise<{nickname: string; updatedAtSec: number} | null> {
     const rows = (await sql.query(`SELECT nickname, extract(epoch FROM updated_at)::bigint::text AS t FROM mapae_nicknames WHERE address = $1`, [address])) as {nickname: string; t: string}[];
     return rows[0] ? {nickname: rows[0].nickname, updatedAtSec: Number(rows[0].t)} : null;
+}
+
+/** Nicknames of the given lowercase addresses (one query; addresses without one are absent). */
+export async function nicknamesOf(sql: Sql, addresses: readonly string[]): Promise<{address: string; nickname: string}[]> {
+    return (await sql.query(`SELECT address, nickname FROM mapae_nicknames WHERE address = ANY($1)`, [addresses])) as {address: string; nickname: string}[];
 }
 
 export async function nicknameTakenByOther(sql: Sql, nicknameLc: string, address: string): Promise<boolean> {
@@ -410,7 +416,7 @@ export async function commentRate(sql: Sql, author: string): Promise<{sinceLastS
 /** Comments with nickname, holder (token balance > 0 from indexed transfers) and dev flags, all
  *  in one query (joins + one lateral aggregate per row; no per-comment round trip). */
 const COMMENT_VIEW = `
-    SELECT c.id::text AS id, coalesce(n.nickname, '') AS nickname, c.body,
+    SELECT c.id::text AS id, coalesce(n.nickname, '') AS nickname, c.body, c.author,
            to_char(c.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "createdAt",
            coalesce(b.bal, 0) > 0 AS holder,
            (m.dev IS NOT NULL AND m.dev = c.author) AS dev
@@ -424,7 +430,7 @@ const COMMENT_VIEW = `
         WHERE t.token = m.token AND (t.to_addr = c.author OR t.from_addr = c.author)
     ) b ON true`;
 
-type CommentRow = {id: string; nickname: string; body: string; createdAt: string; holder: boolean; dev: boolean};
+type CommentRow = {id: string; nickname: string; body: string; author: string; createdAt: string; holder: boolean; dev: boolean};
 const toComment = (r: CommentRow) => ({...r, id: Number(r.id)});
 
 export async function listComments(sql: Sql, curve: string, before: number | undefined, limit: number) {

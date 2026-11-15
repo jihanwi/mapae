@@ -55,7 +55,7 @@ export const bodyLength = (s: string) => [...s].length;
 // Dependencies
 // ---------------------------------------------------------------------------------------------
 
-export type CommentOut = {id: number; nickname: string; body: string; createdAt: string; holder: boolean; dev: boolean};
+export type CommentOut = {id: number; nickname: string; body: string; author: string; createdAt: string; holder: boolean; dev: boolean};
 
 export interface SocialDb {
     ensureSchema(): Promise<void>;

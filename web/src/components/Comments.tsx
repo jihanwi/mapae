@@ -1,7 +1,9 @@
-// Token page comments. Only verified wallets post; only nicknames are shown (no wallet address).
+// Token page comments. Only verified wallets post. The author is shown by nickname and links to
+// the author's public profile (/w/:address); nicknames are a public profile (owner decision 2026-11-15).
 // Bodies are plain text (no HTML, no auto links); newlines kept, long words wrap.
 // Layout note (390px): one column, break-words + whitespace-pre-wrap, no fixed widths.
 import {useState} from "react";
+import {WalletLink} from "./WalletLink";
 import {useAccount, useReadContract} from "wagmi";
 import {useCopy} from "../copy";
 import {ADDR_V3} from "../contracts/addressesV3";
@@ -136,7 +138,11 @@ export function Comments({curve}: {curve: string}) {
                             return (
                                 <li key={c.id} className="py-3 border-t border-ink-700 first:border-t-0 min-w-0">
                                     <div className="flex items-center gap-2 flex-wrap text-[13px] mb-1">
-                                        <span className="font-semibold text-hanji-100 break-all">{c.nickname}</span>
+                                        {c.author ? (
+                                            <WalletLink address={c.author} nickname={c.nickname} className="font-semibold text-hanji-100 hover:text-brass-400" />
+                                        ) : (
+                                            <span className="font-semibold text-hanji-100 break-all">{c.nickname}</span>
+                                        )}
                                         {c.dev && <Badge kind="partial">{tr.social.dev}</Badge>}
                                         {c.holder && <Badge kind="neutral">{tr.social.holder}</Badge>}
                                         <span className="text-hanji-400 text-[12px]">{Number.isFinite(ts) ? agoLabel(tr, now, ts) : ""}</span>
