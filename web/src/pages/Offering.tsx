@@ -12,6 +12,7 @@ import {RunFn, TxButton} from "../components/tx";
 import {countdown, fmt, sanitizeAmountInput} from "../lib/format";
 import {creatorOf} from "../lib/creators";
 import {explorerAddr, giwaSepolia} from "../config/chain";
+import {DEFAULT_TITLE, useTitle} from "../lib/title";
 
 type Alloc = {participants: string[]; allocations: string[]; refunds: string[]} & Record<string, unknown>;
 
@@ -35,6 +36,7 @@ function useAllocation(offering: string | undefined, account: string | undefined
 }
 
 export default function Offering() {
+    useTitle(DEFAULT_TITLE);
     const {addr} = useParams<{addr: `0x${string}`}>();
     const {offerings, isLoading, isError, refetch} = useOfferings();
     const o = offerings.find((x) => x.address.toLowerCase() === addr?.toLowerCase());

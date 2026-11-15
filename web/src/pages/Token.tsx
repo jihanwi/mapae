@@ -29,6 +29,7 @@ import {DevFeeBand} from "../components/DevFees";
 import {WalletLink} from "../components/WalletLink";
 import {useNicknames} from "../hooks/nicknames";
 import {Change, pctLabel, quoteUnit} from "./Curves";
+import {DEFAULT_TITLE, titleOf, useTitle} from "../lib/title";
 
 // Layout note: below lg one column of full-width blocks (w-full / min-w-0, no fixed widths; the two
 // column wrappers are display:contents so `order-*` interleaves their blocks), metrics in 2 columns,
@@ -538,6 +539,7 @@ export default function Token() {
     });
     const isCurve = reg.data?.[0]?.status === "success" ? (reg.data[0].result as boolean) : undefined;
     const {curve: c, isLoading, isError, refetch} = useCurve(isCurve ? addr : undefined);
+    useTitle(c ? titleOf(`${c.name} (${c.symbol})`) : DEFAULT_TITLE);
     const meta = useCurveMeta();
     const {address: account} = useAccount();
     // Trade side shared by the panel and the mobile bottom bar.

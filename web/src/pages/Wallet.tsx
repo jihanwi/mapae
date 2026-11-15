@@ -6,6 +6,7 @@ import {useEffect, useState} from "react";
 import {Link, useNavigate, useParams} from "react-router-dom";
 import {useQueryClient} from "@tanstack/react-query";
 import {useAccount, useReadContracts} from "wagmi";
+import {DEFAULT_TITLE, titleOf, useTitle} from "../lib/title";
 import {Abi} from "viem";
 import {useCopy} from "../copy";
 import {CurveInfo, useCurves} from "../hooks/curves";
@@ -351,6 +352,7 @@ function WalletView({address}: {address: Address}) {
     const sums = totals(rows);
     const launchedCount = serverOk ? profile.data.launched.length : curves.filter((c) => lc(c.dev) === lc(address)).length;
     const nick = profile.data?.nickname ?? null;
+    useTitle(titleOf(nick ?? shortAddr(address)));
 
     return (
         <div className="flex flex-col gap-5 sm:gap-6 min-w-0">
@@ -442,6 +444,7 @@ export default function Wallet() {
     const tr = useCopy();
     const {address: param} = useParams();
     const addr = normalizeAddressParam(param) ?? undefined;
+    useTitle(addr ? null : DEFAULT_TITLE); // a valid address: WalletView sets the title
     const navigate = useNavigate();
     useEffect(() => {
         if (addr && param !== addr) navigate(`/w/${addr}`, {replace: true});

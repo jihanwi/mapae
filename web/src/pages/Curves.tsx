@@ -17,6 +17,7 @@ import {PriorityBadge} from "../components/PriorityCountdown";
 import {useCurveMeta} from "../hooks/meta";
 import {useNicknames} from "../hooks/nicknames";
 import {WalletLink} from "../components/WalletLink";
+import {useTitle} from "../lib/title";
 
 // Layout note (390px): fluid padding, every text block is min-w-0 + truncate, and below lg each row
 // is a two-line flex row (no table), so nothing asks for more width than the viewport. The sort tabs
@@ -348,6 +349,7 @@ function SearchBox({value, onChange, onHit}: {value: string; onChange: (v: strin
 
 export default function Curves() {
     const tr = useCopy();
+    useTitle(`MAPAE | ${tr.homeRows.tagline}`);
     const navigate = useNavigate();
     const {curves, isLoading, isError, refetch} = useCurves();
     const activity = useActivity();

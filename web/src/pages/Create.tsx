@@ -20,6 +20,7 @@ import {opensOnboarding, useOnboardingModal} from "../components/OnboardingModal
 import {modalLabel} from "../components/CurveTradePanel";
 import {draftValid, MetaFields, SaveStatus} from "../components/MetaForm";
 import {draftHasContent, emptyDraft, MetaDraft, useSaveMeta} from "../hooks/meta";
+import {titleOf, useTitle} from "../lib/title";
 
 type QuoteKind = "KRWs" | "ETH";
 type QuoteConfig = {registered: boolean; enabled: boolean; decimals: number; curveVirtualQuote: bigint};
@@ -75,6 +76,7 @@ const inputCls =
 
 export default function Create() {
     const tr = useCopy();
+    useTitle(titleOf(tr.create.title));
     const {address} = useAccount();
     const client = usePublicClient({chainId: giwaSepolia.id});
     const {writeContractAsync} = useWriteContract();

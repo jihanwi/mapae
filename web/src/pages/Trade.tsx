@@ -13,11 +13,13 @@ import {fmt, sanitizeAmountInput, shortAddr} from "../lib/format";
 import {creatorOf} from "../lib/creators";
 import {computeBurned} from "./Home";
 import {explorerAddr, giwaSepolia} from "../config/chain";
+import {DEFAULT_TITLE, useTitle} from "../lib/title";
 
 const DEAD = "0x000000000000000000000000000000000000dEaD" as const;
 const ZERO = "0x0000000000000000000000000000000000000000" as const;
 
 export default function Trade() {
+    useTitle(DEFAULT_TITLE);
     const {offerings, isLoading, isError, refetch} = useOfferings();
     const [params] = useSearchParams();
     const listed = offerings.filter((o) => o.settled && o.pool !== ZERO);

@@ -1,9 +1,11 @@
 import {Link} from "react-router-dom";
 import {useCopy} from "../copy";
 import {Medallion, PrimaryBtn} from "../components/ui";
+import {DEFAULT_TITLE, useTitle} from "../lib/title";
 
 /** 알 수 없는 라우트 / 렌더 에러 폴백 — 영문 기본 화면 대신 디자인 시스템에 맞춘 한국어 안내 (6-b) */
 export default function NotFound() {
+    useTitle(DEFAULT_TITLE);
     const tr = useCopy();
     return (
         <div className="max-w-page mx-auto px-4 sm:px-8 pt-16 pb-20 text-center">
