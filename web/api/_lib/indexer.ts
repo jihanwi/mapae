@@ -235,9 +235,21 @@ export function cronAuthorized(authorization: string | null, secret: string | un
     return !!secret && !!authorization && sameSecret(authorization, `Bearer ${secret}`);
 }
 
-export async function runCron(authorization: string | null, secret: string | undefined, deps: CronDeps): Promise<CronResult> {
+/** How much one run may index: ranges of RANGE_SPAN blocks and a time budget checked before each
+ *  range after the first. The cron uses the defaults; the on-demand catch-up uses 1 range / 8 s. */
+export type IndexOpts = {maxRanges: number; timeBudgetMs: number};
+export const CRON_INDEX_OPTS: IndexOpts = {maxRanges: MAX_RANGES, timeBudgetMs: TIME_BUDGET_MS};
+export const POKE_INDEX_OPTS: IndexOpts = {maxRanges: 1, timeBudgetMs: 8_000};
+
+export async function runCron(authorization: string | null, secret: string | undefined, deps: CronDeps, opts: IndexOpts = CRON_INDEX_OPTS): Promise<CronResult> {
     // 1) auth first: nothing touches the DB or the RPC before this passes
     if (!cronAuthorized(authorization, secret)) return {status: 401, body: {ok: false, error: "unauthorized"}};
+    return indexOnce(deps, opts);
+}
+
+/** Steps 2-8 of a cron run without the secret check (callers gate access themselves: the cron by
+ *  CRON_SECRET, the catch-up POST by the 20 s claim on the cursor row). */
+export async function indexOnce(deps: CronDeps, opts: IndexOpts): Promise<CronResult> {
     const started = deps.nowMs();
     // 2) schema, 3) cursor
     await deps.db.ensureSchema();
@@ -255,8 +267,8 @@ export async function runCron(authorization: string | null, secret: string | und
     let transfers = 0;
     let curves = 0;
     // 5) ranges, with a time budget checked before starting each one
-    for (const [from, to] of planRanges(next, head)) {
-        if (ranges > 0 && deps.nowMs() - started > TIME_BUDGET_MS) break;
+    for (const [from, to] of planRanges(next, head, RANGE_SPAN, opts.maxRanges)) {
+        if (ranges > 0 && deps.nowMs() - started > opts.timeBudgetMs) break;
         try {
             // 6a) two block headers for timestamp interpolation
             const [a, b] = await Promise.all([deps.rpc.blockTime(from), deps.rpc.blockTime(to)]);

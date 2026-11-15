@@ -13,7 +13,7 @@ export function parseWalletTradesParams(p: URLSearchParams): {address: string; b
     return {address, before, limit};
 }
 
-const h = chainGet("wallet-trades", async (sql, p) => {
+const h = chainGet("wallet-trades", {params: ["address", "before", "limit"]}, async (sql, p) => {
     const q = parseWalletTradesParams(p);
     if (!q) return badRequest;
     return {status: 200, body: {trades: await walletTrades(sql, q.address, ADDR_V3.curveFactory, q.before, q.limit)}};

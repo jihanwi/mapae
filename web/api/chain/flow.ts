@@ -7,7 +7,7 @@ import {parseCurve} from "../_lib/indexer.js";
 
 export const FLOW_WINDOW = 86_400;
 
-const h = chainGet("flow", async (sql, p) => {
+const h = chainGet("flow", {params: ["curve"]}, async (sql, p) => {
     const curve = parseCurve(p.get("curve"));
     if (!curve) return badRequest;
     const since = Math.floor(Date.now() / 1000) - FLOW_WINDOW;

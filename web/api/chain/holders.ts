@@ -3,7 +3,7 @@ import {badRequest, chainGet} from "../_lib/chainApi.js";
 import {curveRow, holders} from "../_lib/db.js";
 import {holderLabel, parseCurve} from "../_lib/indexer.js";
 
-const h = chainGet("holders", async (sql, p) => {
+const h = chainGet("holders", {params: ["curve"]}, async (sql, p) => {
     const curve = parseCurve(p.get("curve"));
     if (!curve) return badRequest;
     const c = await curveRow(sql, curve);
