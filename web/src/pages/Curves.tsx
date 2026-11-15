@@ -11,6 +11,7 @@ import {fmtRound, shortAddr} from "../lib/format";
 import {agoLabel, prefersReducedMotion, tradeAmount, tradeUnit, useNow} from "../components/feed";
 import {Badge, Card, CardSkeleton, Gauge, NetError} from "../components/ui";
 import {CurveAvatar} from "../components/MetaForm";
+import {addrKey} from "../lib/address";
 import {PriorityBadge} from "../components/PriorityCountdown";
 import {useCurveMeta} from "../hooks/meta";
 
@@ -90,13 +91,13 @@ function CurveCard({c, stats, tsOf, now, imageUrl}: {c: CurveInfo; stats: CurveS
 function LiveStrip({curves, now}: {curves: CurveInfo[]; now: number}) {
     const tr = useCopy();
     const {trades, tsOf} = useActivity();
-    const byAddr = new Map(curves.map((c) => [c.address, c]));
-    const rows = trades.filter((t) => byAddr.has(t.curve)).slice(0, 8);
+    const byAddr = new Map(curves.map((c) => [addrKey(c.address), c]));
+    const rows = trades.filter((t) => byAddr.has(addrKey(t.curve))).slice(0, 8);
     if (rows.length === 0) return null;
     return (
         <section aria-label={tr.feed.liveLabel} className="mb-6 bg-ink-900 border border-ink-700 rounded-card px-4 py-2 min-w-0">
             {rows.map((t) => {
-                const c = byAddr.get(t.curve)!;
+                const c = byAddr.get(addrKey(t.curve))!;
                 const ts = tsOf(t.block);
                 const side = t.side === "buy" ? tr.feed.buy : tr.feed.sell;
                 const wallet = t.isDev ? tr.curve.dev : shortAddr(t.trader);
@@ -178,7 +179,7 @@ export default function Curves() {
                     ) : (
                         <div className="grid gap-5" style={grid}>
                             {sorted.map((c) => (
-                                <CurveCard key={c.address} c={c} stats={stats.get(c.address)} tsOf={activity.tsOf} now={now} imageUrl={meta.get(c.address)?.imageUrl} />
+                                <CurveCard key={c.address} c={c} stats={stats.get(addrKey(c.address))} tsOf={activity.tsOf} now={now} imageUrl={meta.get(c.address)?.imageUrl} />
                             ))}
                         </div>
                     )}

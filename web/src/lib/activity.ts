@@ -6,7 +6,7 @@ import {CurveSaleAbi, MapaePoolV3Abi} from "../contracts/abisV3.js"; // .js: als
 import {marketCapQuote, progressBps, TOTAL_SUPPLY, WAD} from "./curveMath.js";
 
 type Address = `0x${string}`;
-const lc = (a: string) => a.toLowerCase();
+const lc = (a: string) => a.toLowerCase() as Address;
 
 /** Retained activity entries (newest first); older ones are dropped. */
 export const ACTIVITY_CAP = 2_000;
@@ -168,7 +168,7 @@ export function resolve(entries: readonly Entry[], curves: readonly CurveRef[]):
     for (const e of entries) {
         if (e.kind === "Graduated") {
             const c = byCurve.get(e.emitter);
-            if (c) graduatedAt.set(c.address, e.block);
+            if (c) graduatedAt.set(lc(c.address), e.block);
             continue;
         }
         const pos = {block: e.block, logIndex: e.logIndex, tx: e.tx};
@@ -213,22 +213,24 @@ export type CurveStats = {
     recent: Trade[];
 };
 
-/** Per-curve stats over the retained window. Curves with no trade have no entry. */
+/** Per-curve stats over the retained window, keyed by lowercase curve address. Curves with no
+ *  trade have no entry. */
 export function aggregate(trades: readonly Trade[], recentLimit = 30): Map<Address, CurveStats> {
     const out = new Map<Address, CurveStats>();
     const traders = new Map<Address, Set<string>>();
     for (const t of [...trades].sort(newerFirst)) {
-        let s = out.get(t.curve);
+        const key = lc(t.curve);
+        let s = out.get(key);
         if (!s) {
             s = {lastTradeBlock: t.block, tradeCount: 0, uniqueTraders: 0, volumeQuote: 0n, volumeQuoteNonDev: 0n, recent: []};
-            out.set(t.curve, s);
-            traders.set(t.curve, new Set());
+            out.set(key, s);
+            traders.set(key, new Set());
         }
         s.tradeCount++;
         s.volumeQuote += t.volume;
         if (t.block > s.lastTradeBlock) s.lastTradeBlock = t.block;
         if (!t.isDev) {
-            if (t.side === "buy" && t.verified === true) traders.get(t.curve)!.add(lc(t.trader));
+            if (t.side === "buy" && t.verified === true) traders.get(key)!.add(lc(t.trader));
             s.volumeQuoteNonDev += t.volume;
         }
         if (s.recent.length < recentLimit) s.recent.push(t);
@@ -281,12 +283,12 @@ const byNewest = (a: CurveRef, b: CurveRef) => b.index - a.index;
 /** Curves in the order of `tab`. Tabs that filter (popular, almost, graduated) drop the rest. */
 export function sortCurves<T extends SortCurve>(tab: Tab, curves: readonly T[], stats: ReadonlyMap<Address, CurveStats>, graduatedAt: ReadonlyMap<Address, bigint> = new Map()): T[] {
     const list = [...curves];
-    const last = (c: T) => stats.get(c.address)?.lastTradeBlock;
+    const last = (c: T) => stats.get(lc(c.address))?.lastTradeBlock;
     switch (tab) {
         case "latest":
             return list.sort((a, b) => {
-                const sa = stats.get(a.address)?.lastTradeTs;
-                const sb = stats.get(b.address)?.lastTradeTs;
+                const sa = stats.get(lc(a.address))?.lastTradeTs;
+                const sb = stats.get(lc(b.address))?.lastTradeTs;
                 if (sa !== undefined && sb !== undefined && sa !== sb) return sb - sa;
                 const la = last(a);
                 const lb = last(b);
@@ -296,9 +298,9 @@ export function sortCurves<T extends SortCurve>(tab: Tab, curves: readonly T[], 
                 return byNewest(a, b);
             });
         case "popular": {
-            const active = list.filter((c) => (stats.get(c.address)?.uniqueTraders ?? 0) > 0);
-            const u = (c: T) => stats.get(c.address)!.uniqueTraders;
-            const v = (c: T) => volumeRatio(stats.get(c.address)!.volumeQuoteNonDev, c.virtualQuote); // Dev trades do not lift the rank
+            const active = list.filter((c) => (stats.get(lc(c.address))?.uniqueTraders ?? 0) > 0);
+            const u = (c: T) => stats.get(lc(c.address))!.uniqueTraders;
+            const v = (c: T) => volumeRatio(stats.get(lc(c.address))!.volumeQuoteNonDev, c.virtualQuote); // Dev trades do not lift the rank
             const ru = competitionRanks(active, (a, b) => u(a) > u(b));
             const rv = competitionRanks(active, (a, b) => cmpRatio(v(a), v(b)) > 0);
             const sum = new Map(active.map((c, i) => [c.address, ru[i] + rv[i]]));
@@ -342,8 +344,8 @@ export function sortCurves<T extends SortCurve>(tab: Tab, curves: readonly T[], 
             return list
                 .filter((c) => c.graduated)
                 .sort((a, b) => {
-                    const ga = graduatedAt.get(a.address);
-                    const gb = graduatedAt.get(b.address);
+                    const ga = graduatedAt.get(lc(a.address));
+                    const gb = graduatedAt.get(lc(b.address));
                     if (ga !== undefined && gb !== undefined && ga !== gb) return ga > gb ? -1 : 1;
                     if (ga !== undefined && gb === undefined) return -1;
                     if (gb !== undefined && ga === undefined) return 1;

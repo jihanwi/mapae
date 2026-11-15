@@ -86,12 +86,13 @@ export function mergeStats(
     return out;
 }
 
-/** Map keyed by the same address spelling the curve list uses. */
+/** Stats of the listed curves only, keyed by lowercase address (the rule for every stats map). */
 export function keyByCurves(stats: Map<Address, CurveStats>, curves: readonly {address: Address}[]): Map<Address, CurveStats> {
     const m = new Map<Address, CurveStats>();
     for (const c of curves) {
-        const s = stats.get(c.address.toLowerCase() as Address);
-        if (s) m.set(c.address, s);
+        const k = c.address.toLowerCase() as Address;
+        const s = stats.get(k);
+        if (s) m.set(k, s);
     }
     return m;
 }
