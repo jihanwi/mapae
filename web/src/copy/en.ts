@@ -413,6 +413,16 @@ export const en = {
         featuredLabel: "Closest to graduation",
         livePanel: "Live trades",
     },
+    tokenPage: {
+        tabs: {comments: "Comments", trades: "Trades", holders: "Holders", info: "Info"},
+        volume: "24h volume",
+        holders: "Holders",
+        copy: "Copy",
+        copied: "Copied",
+        copyLabel: "Copy token contract address",
+        devHolds: (n: string) => `Dev holds ${n}%`,
+        quick: {k10: "10K", k50: "50K", k100: "100K", e001: "0.01", e005: "0.05", e01: "0.1", p25: "25%", p50: "50%", p75: "75%"},
+    },
     errorsV3: {
         NotVerified: "Verification required.",
         NotVerifiedCreator: "Verification required.",

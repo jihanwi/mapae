@@ -548,6 +548,17 @@ export const ko = {
         featuredLabel: "졸업에 가장 가까운 토큰",
         livePanel: "실시간 거래",
     },
+    // 토큰 페이지 (지표, 탭, 주소 복사, 빠른 금액)
+    tokenPage: {
+        tabs: {comments: "댓글", trades: "거래", holders: "보유자", info: "정보"},
+        volume: "24시간 거래대금",
+        holders: "보유자",
+        copy: "복사",
+        copied: "복사했어요",
+        copyLabel: "토큰 컨트랙트 주소 복사",
+        devHolds: (n: string) => `Dev 보유 ${n}%`,
+        quick: {k10: "1만", k50: "5만", k100: "10만", e001: "0.01", e005: "0.05", e01: "0.1", p25: "25%", p50: "50%", p75: "75%"},
+    },
     errorsV3: {
         NotVerified: "실명 인증이 필요해요",
         NotVerifiedCreator: "실명 인증이 필요해요",

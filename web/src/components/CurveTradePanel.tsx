@@ -1,4 +1,4 @@
-import {ReactNode, useMemo, useRef, useState} from "react";
+import {ReactNode, useEffect, useMemo, useRef, useState} from "react";
 import {Abi} from "viem";
 import {formatUnits, parseUnits} from "viem";
 import {useAccount, useBalance, usePublicClient, useReadContract, useReadContracts, useWriteContract} from "wagmi";
@@ -18,6 +18,7 @@ import {ADDR_V3} from "../contracts/addressesV3";
 import {giwaSepolia} from "../config/chain";
 import {fmt, fmtCeil, sanitizeAmountInput} from "../lib/format";
 import {maxInput} from "../lib/maxInput";
+import {quickAmounts} from "../lib/quickAmount";
 import {RunFn, RunOpts, TxButton, useToast} from "./tx";
 import {approvalAlreadySent, SentApproval, waitForAllowance} from "../lib/allowance";
 import {PrimaryBtn, SecondaryBtn} from "./ui";
@@ -82,12 +83,20 @@ function useAmount(raw: string) {
     }, [raw]);
 }
 
-/** Buy/sell panel: curve trades before graduation, pool swaps after. */
-export function CurveTradePanel({c}: {c: CurveDetail}) {
+/** Buy/sell panel: curve trades before graduation, pool swaps after. `side` / `onSideChange` let
+ *  the page pick the side (mobile bottom bar); without them the panel keeps its own state. */
+export function CurveTradePanel({c, side: sideProp, onSideChange}: {c: CurveDetail; side?: Side; onSideChange?: (s: Side) => void}) {
     const tr = useCopy();
     const {address} = useAccount();
-    const [side, setSide] = useState<Side>("buy");
+    const [ownSide, setOwnSide] = useState<Side>("buy");
+    const side = sideProp ?? ownSide;
+    const setSide = (s: Side) => {
+        setOwnSide(s);
+        onSideChange?.(s);
+    };
     const [raw, setRaw] = useState("");
+    // A new side starts from an empty amount (also when the page changes the side).
+    useEffect(() => setRaw(""), [side]);
     // Auto tolerance from this curve's (or, after graduation, this pool's) recent fills.
     const activity = useActivity();
     const nowSec = useNow();
@@ -130,10 +139,7 @@ export function CurveTradePanel({c}: {c: CurveDetail}) {
                 {(["buy", "sell"] as const).map((d) => (
                     <button
                         key={d}
-                        onClick={() => {
-                            setSide(d);
-                            setRaw("");
-                        }}
+                        onClick={() => setSide(d)}
                         className={`flex-1 py-3 text-[14px] font-semibold ${side === d ? "bg-ink-700 text-hanji-100" : "bg-transparent text-hanji-400 hover:text-hanji-100"}`}
                     >
                         {d === "buy" ? tr.curve.buy : tr.curve.sell}
@@ -153,15 +159,22 @@ export function CurveTradePanel({c}: {c: CurveDetail}) {
                 />
                 <span className="text-hanji-400 text-[14px] flex-none">{side === "buy" ? (c.graduated && c.isEth ? "WETH" : unit) : c.symbol}</span>
             </div>
+            {/* quick amounts; "max" is the former balance button (maxInput) */}
+            <div className="grid grid-cols-4 gap-2 mb-2">
+                {quickAmounts(side, c.isEth, address ? balance : undefined, payNative).map((q) => (
+                    <button
+                        key={q.label}
+                        type="button"
+                        disabled={q.disabled}
+                        onClick={() => setRaw(formatUnits(q.value === "max" ? maxInput(balance ?? 0n, payNative) : q.value, 18))}
+                        className="min-h-[40px] px-1 rounded-input border border-ink-700 text-[13px] text-hanji-100 tabular-nums whitespace-nowrap hover:border-brass-600 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-ink-700"
+                    >
+                        {q.label === "max" ? tr.curve.useMax : tr.tokenPage.quick[q.label]}
+                    </button>
+                ))}
+            </div>
             {address && balance !== undefined && (
-                <button
-                    type="button"
-                    title={tr.curve.useMax}
-                    onClick={() => setRaw(formatUnits(maxInput(balance, payNative), 18))}
-                    className="block text-left bg-transparent border-none p-0 text-[12px] text-hanji-400 hover:text-hanji-100 mb-3 tabular-nums cursor-pointer"
-                >
-                    {tr.curve.balance(fmt(balance, 4, tr.locale), balUnit)}
-                </button>
+                <p className="m-0 text-[12px] text-hanji-400 mb-3 tabular-nums">{tr.curve.balance(fmt(balance, 4, tr.locale), balUnit)}</p>
             )}
             <SlippagePicker pref={pref} setPref={setPref} autoBps={autoBps} />
             {c.graduated ? (

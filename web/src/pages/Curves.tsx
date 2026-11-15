@@ -48,7 +48,8 @@ function useFlashOnIncrease(value: bigint | number | undefined): boolean {
     return on;
 }
 
-function Change({bps}: {bps: bigint | undefined}) {
+/** Change vs. the reference price: "+" with text-success, text-error below 0, "–" when unknown. */
+export function Change({bps}: {bps: bigint | undefined}) {
     const tr = useCopy();
     if (bps === undefined) return <span className="text-hanji-400">–</span>;
     const {text, tone} = changeLabel(bps, tr.locale);
@@ -244,7 +245,7 @@ function LivePanel({curves, now}: {curves: CurveInfo[]; now: number}) {
         <section aria-label={tr.homeRows.livePanel} className="bg-ink-800 border border-ink-700 rounded-card px-4 py-3 min-w-0">
             <h2 className="m-0 mb-2 text-[14px] font-semibold">{tr.homeRows.livePanel}</h2>
             {rows.length === 0 ? (
-                <p className="m-0 text-[12px] text-hanji-400">–</p>
+                <p className="m-0 text-[12px] text-hanji-400">{tr.chain.chartEmpty}</p>
             ) : (
                 rows.map((r) => <LiveLine key={`${r.t.tx}:${r.t.logIndex}`} row={r} now={now} />)
             )}
@@ -383,7 +384,7 @@ export default function Curves() {
                     ) : (
                         <>
                             <LatestTrade curves={curves} now={now} />
-                            {top && <FeaturedCard c={top} imageUrl={meta.get(top.address)?.imageUrl} />}
+                            {top && query.trim() === "" && <FeaturedCard c={top} imageUrl={meta.get(top.address)?.imageUrl} />}
                             <SearchBox value={query} onChange={setQuery} onHit={openHit} />
                             <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-3 min-w-0">
                                 <Tabs tab={tab} onChange={setTab} />
