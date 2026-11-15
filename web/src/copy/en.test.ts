@@ -11,7 +11,7 @@ describe("English plurals", () => {
 });
 
 describe("English v3 copy guardrails", () => {
-    const v3 = JSON.stringify([en.common, en.nav, en.curve, en.create, en.onboardingV3, en.tx, en.errorsV3, en.route404, en.feed, en.meta, en.chain, en.social, en.nickname, en.tradeGuard]);
+    const v3 = JSON.stringify([en.common, en.nav, en.curve, en.create, en.onboardingV3, en.tx, en.errorsV3, en.route404, en.feed, en.meta, en.chain, en.social, en.nickname, en.tradeGuard, en.priority]);
     it("has no return-expectation or safety-claim words and no em dash", () => {
         for (const w of [/profit/i, /returns/i, /invest/i, /pump/i, /\bmoon/i, /\bgem\b/i, /\balpha\b/i, /\bsafe\b/i, /guarantee/i, /rug-proof/i, /—/, /!/]) {
             expect(v3, String(w)).not.toMatch(w);
@@ -31,6 +31,8 @@ describe("feed copy guardrails", () => {
             JSON.stringify(d.social),
             JSON.stringify(d.nickname),
             JSON.stringify(d.tradeGuard),
+            JSON.stringify(d.priority),
+            d.priority.banner("09:59"),
             d.feed.window(3),
             d.feed.recentLine(2, "1,000", "KRWs"),
             d.feed.noTrades(3),

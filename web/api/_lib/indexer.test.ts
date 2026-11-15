@@ -18,7 +18,10 @@ import {
     toTradeRows,
     toTransferRows,
     TRANSFER_TOPIC,
+    fillVerified,
+    verifiedLookupTargets,
 } from "./indexer.js";
+import {INDEXER_STATE_ID, loadCurves, readNextBlock, readState, Sql, writeRange} from "./db.js";
 
 type A = `0x${string}`;
 const addr = (n: number) => `0x${n.toString(16).padStart(40, "0")}` as A;
@@ -31,6 +34,7 @@ const TOKEN = addr(0x70);
 const POOL = addr(0xb1);
 const DEV = addr(0xde);
 const ALICE = addr(0xa1);
+const BOB = addr(0xb0b);
 const T0 = {block: 100n, ts: 1_000};
 const T1 = {block: 200n, ts: 1_100};
 
@@ -38,12 +42,12 @@ const raw = (address: A, topics: Hex[], data: Hex, block: bigint, i: number): Ra
 
 function created(block: bigint): RawLog {
     const topics = encodeEventTopics({abi: CurveFactoryAbi, eventName: "CurveCreated", args: {dev: up(DEV), curve: up(CURVE), token: up(TOKEN)}}) as Hex[];
-    const data = encodeAbiParameters([{type: "address"}, {type: "uint256"}, {type: "string"}, {type: "string"}], [addr(0x99), 2_000_000n * E18, "Horse", "HRN"]);
+    const data = encodeAbiParameters([{type: "address"}, {type: "uint256"}, {type: "string"}, {type: "string"}, {type: "uint64"}], [addr(0x99), 2_000_000n * E18, "Horse", "HRN", 1_650n]);
     return raw(FACTORY, topics, data, block, 0);
 }
-function buy(trader: A, isDev: boolean, quoteSpent: bigint, tokensOut: bigint, block: bigint, i: number): RawLog {
+function buy(trader: A, isDev: boolean, quoteSpent: bigint, tokensOut: bigint, block: bigint, i: number, verified = true): RawLog {
     const topics = encodeEventTopics({abi: CurveSaleAbi, eventName: "Buy", args: {trader}}) as Hex[];
-    const data = encodeAbiParameters(Array(8).fill(null).map((_, k) => ({type: k === 0 ? "bool" : "uint256"})), [isDev, quoteSpent, tokensOut, 0n, 0n, 0n, 0n, 0n]);
+    const data = encodeAbiParameters(Array(9).fill(null).map((_, k) => ({type: k <= 1 ? "bool" : "uint256"})), [isDev, verified, quoteSpent, tokensOut, 0n, 0n, 0n, 0n, 0n]);
     return raw(CURVE, topics, data, block, i);
 }
 function sell(trader: A, tokenIn: bigint, quoteOut: bigint, block: bigint, i: number): RawLog {
@@ -86,7 +90,7 @@ describe("rows", () => {
     it("curve rows from CurveCreated, lowercase, interpolated time", () => {
         const rows = toCurveRows([created(150n)], up(FACTORY), T0, T1);
         expect(rows).toEqual([
-            {curve: CURVE, token: TOKEN, dev: DEV, quote: addr(0x99), virtualQuote: (2_000_000n * E18).toString(), name: "Horse", symbol: "HRN", createdBlock: "150", createdTs: "1050"},
+            {curve: CURVE, token: TOKEN, dev: DEV, quote: addr(0x99), virtualQuote: (2_000_000n * E18).toString(), name: "Horse", symbol: "HRN", createdBlock: "150", createdTs: "1050", priorityUntil: "1650", factory: FACTORY},
         ]);
         expect(toCurveRows([created(150n)], addr(0xbad), T0, T1)).toEqual([]);
     });
@@ -106,8 +110,8 @@ describe("rows", () => {
         expect(graduations).toEqual([{curve: CURVE, pool: POOL, block: "130"}]);
         const byBlock = Object.fromEntries(trades.map((t) => [t.block, t]));
         expect(Object.keys(byBlock).sort()).toEqual(["110", "120", "140", "150"]);
-        expect(byBlock["110"]).toMatchObject({venue: "curve", side: "buy", trader: ALICE, isDev: false, quoteAmount: (3n * E18).toString(), tokenAmount: (1000n * E18).toString(), priceWad: (3n * E18 / 1000n).toString(), ts: "1010"});
-        expect(byBlock["120"]).toMatchObject({side: "sell", tokenAmount: (500n * E18).toString(), quoteAmount: E18.toString(), priceWad: (E18 / 500n).toString()});
+        expect(byBlock["110"]).toMatchObject({venue: "curve", side: "buy", trader: ALICE, isDev: false, verified: true, quoteAmount: (3n * E18).toString(), tokenAmount: (1000n * E18).toString(), priceWad: (3n * E18 / 1000n).toString(), ts: "1010"});
+        expect(byBlock["120"]).toMatchObject({side: "sell", verified: null, tokenAmount: (500n * E18).toString(), quoteAmount: E18.toString(), priceWad: (E18 / 500n).toString()});
         expect(byBlock["140"]).toMatchObject({venue: "pool", side: "buy", trader: ALICE, isDev: false, quoteAmount: (2n * E18).toString(), tokenAmount: (400n * E18).toString()});
         expect(byBlock["150"]).toMatchObject({venue: "pool", side: "sell", trader: DEV, isDev: true, tokenAmount: (100n * E18).toString(), quoteAmount: (E18 / 2n).toString()});
         expect(trades.every((t) => t.tx === t.tx.toLowerCase())).toBe(true);
@@ -125,9 +129,9 @@ describe("rows", () => {
     });
 });
 
-function deps(over: {head?: bigint; next?: bigint | null; failAt?: number; nowStep?: number} = {}) {
+function deps(over: {head?: bigint; next?: bigint | null; failAt?: number; nowStep?: number; withSell?: boolean; lookupFails?: boolean} = {}) {
     const calls: string[] = [];
-    const writes: {nextBlock: bigint; trades: number}[] = [];
+    const writes: {nextBlock: bigint; trades: number; rows: import("./indexer.js").TradeRow[]}[] = [];
     let now = 0;
     let rangeNo = 0;
     const d: CronDeps = {
@@ -135,7 +139,7 @@ function deps(over: {head?: bigint; next?: bigint | null; failAt?: number; nowSt
             ensureSchema: async () => void calls.push("ensureSchema"),
             readNextBlock: async () => (calls.push("readNextBlock"), over.next === undefined ? null : over.next),
             loadCurves: async () => (calls.push("loadCurves"), [{curve: CURVE, token: TOKEN, dev: DEV, pool: null}]),
-            writeRange: async (w) => void writes.push({nextBlock: w.nextBlock, trades: w.trades.length}),
+            writeRange: async (w) => void writes.push({nextBlock: w.nextBlock, trades: w.trades.length, rows: w.trades}),
         },
         rpc: {
             blockNumber: async () => (calls.push("blockNumber"), over.head ?? 20_010n),
@@ -145,9 +149,14 @@ function deps(over: {head?: bigint; next?: bigint | null; failAt?: number; nowSt
                 if (q.topics[0] === ACTIVITY_TOPICS) {
                     rangeNo++;
                     if (over.failAt === rangeNo) throw new Error("rpc down");
-                    return [buy(ALICE, false, E18, E18, q.fromBlock, 0)];
+                    return over.withSell ? [buy(ALICE, false, E18, E18, q.fromBlock, 0), sell(BOB, E18, E18 / 2n, q.fromBlock, 1)] : [buy(ALICE, false, E18, E18, q.fromBlock, 0)];
                 }
                 return [];
+            },
+            isVerifiedMany: async (wallets) => {
+                calls.push(`multicall:${wallets.length}`);
+                if (over.lookupFails) throw new Error("multicall down");
+                return new Map(wallets.map((w) => [w.toLowerCase(), true]));
             },
         },
         nowMs: () => (now += over.nowStep ?? 1),
@@ -173,7 +182,7 @@ describe("runCron", () => {
         expect(r.status).toBe(200);
         expect(r.body).toMatchObject({ok: true, from: "1000", to: "9999", ranges: 1, trades: 1, next_block: "10000"});
         expect(calls).toEqual(["ensureSchema", "readNextBlock", "blockNumber", "loadCurves", "blockTime", "blockTime", "getLogs:created", "getLogs:activity", "getLogs:transfer"]);
-        expect(writes).toEqual([{nextBlock: 10_000n, trades: 1}]);
+        expect(writes.map((w) => [w.nextBlock, w.trades])).toEqual([[10_000n, 1]]);
     });
     it("returns indexed 0 when caught up", async () => {
         const {d} = deps({next: 20_001n, head: 20_010n});
@@ -191,6 +200,68 @@ describe("runCron", () => {
         expect(r.status).toBe(200);
         expect(writes.length).toBeLessThan(12);
         expect(writes.length).toBeGreaterThanOrEqual(1);
+    });
+});
+
+describe("v3.1 verified status", () => {
+    it("Buy rows carry the event value; sells are filled from ONE lookup per range", async () => {
+        const {d, calls, writes} = deps({head: 1000n + 9_000n + 10n - 1n, withSell: true});
+        await runCron("Bearer s3cret", "s3cret", d);
+        expect(calls.filter((c) => c.startsWith("multicall"))).toEqual(["multicall:1"]); // Bob only
+        expect(calls.length).toBe(9 + 1); // 5 RPC + 1 lookup per range (plus schema/cursor/head/load)
+        const rows = writes[0].rows;
+        expect(rows.find((r) => r.side === "buy")!.verified).toBe(true);
+        expect(rows.find((r) => r.side === "sell")!.verified).toBe(true);
+    });
+    it("a failed lookup leaves null and indexing continues", async () => {
+        const {d, writes} = deps({head: 1000n + 9_000n + 10n - 1n, withSell: true, lookupFails: true});
+        const r = await runCron("Bearer s3cret", "s3cret", d);
+        expect(r.status).toBe(200);
+        expect(writes[0].rows.find((x) => x.side === "sell")!.verified).toBeNull();
+        expect(writes[0].rows.find((x) => x.side === "buy")!.verified).toBe(true);
+    });
+    it("no sells or swaps: no lookup at all", async () => {
+        const {d, calls} = deps({head: 1000n + 9_000n + 10n - 1n});
+        await runCron("Bearer s3cret", "s3cret", d);
+        expect(calls.some((c) => c.startsWith("multicall"))).toBe(false);
+    });
+    it("helpers: targets are unique null-status traders; missing lookups stay null", () => {
+        const base = {tx: tx(1), logIndex: 0, curve: CURVE, venue: "curve" as const, trader: ALICE, isDev: false, quoteAmount: "1", tokenAmount: "1", priceWad: "1", block: "1", ts: "1"};
+        const rows = [
+            {...base, side: "sell" as const, verified: null},
+            {...base, logIndex: 1, side: "sell" as const, verified: null},
+            {...base, logIndex: 2, side: "buy" as const, verified: false, trader: BOB},
+        ];
+        expect(verifiedLookupTargets(rows)).toEqual([ALICE]);
+        expect(fillVerified(rows, new Map()).map((r) => r.verified)).toEqual([null, null, false]);
+        expect(fillVerified(rows, null).map((r) => r.verified)).toEqual([null, null, false]);
+    });
+    it("only the current factory's CurveCreated logs become curves", () => {
+        expect(toCurveRows([created(150n)], addr(0xbad), T0, T1)).toEqual([]);
+    });
+});
+
+describe("db: v3.1 cursor row and factory filter", () => {
+    it("reads and writes indexer state id 31 and loads curves of one factory", async () => {
+        const seen: {text: string; params: unknown[]}[] = [];
+        const fake = {
+            query: (text: string, params: unknown[] = []) => {
+                seen.push({text, params});
+                return Promise.resolve([]);
+            },
+            transaction: async (qs: unknown[]) => qs,
+        } as unknown as Sql;
+        expect(INDEXER_STATE_ID).toBe(31);
+        await readNextBlock(fake);
+        await readState(fake);
+        await loadCurves(fake, "0xABC");
+        await writeRange(fake, {curves: [], graduations: [], trades: [], transfers: [], nextBlock: 5n, indexedTs: 7});
+        expect(seen[0].params).toEqual([31]);
+        expect(seen[1].params).toEqual([31]);
+        expect(seen[2]).toMatchObject({params: ["0xabc"]});
+        expect(seen[2].text).toContain("WHERE factory = $1");
+        const state = seen.find((q) => q.text.includes("mapae_indexer_state (id"))!;
+        expect(state.params).toEqual(["5", "7", 31]);
     });
 });
 

@@ -13,6 +13,8 @@ import {useActivity} from "../hooks/activity";
 import {useChainSummary, useHolders, useTradeHistory} from "../hooks/chainData";
 import {mergeHistory, sharePct} from "../lib/chainMerge";
 import {CandleChart} from "../components/CandleChart";
+import {tokenPageState} from "../lib/tokenPage";
+import {PriorityBanner} from "../components/PriorityCountdown";
 import {Comments} from "../components/Comments";
 import {agoLabel, tradeAmount, tradeUnit, useNow} from "../components/feed";
 import {Badge, Gauge, NetError, PrimaryBtn, SecondaryBtn, Skeleton, Stat} from "../components/ui";
@@ -122,6 +124,8 @@ function TradeHistory({c}: {c: CurveDetail}) {
                                 {t.isDev ? <Badge kind="partial">{tr.curve.dev}</Badge> : <span className="text-hanji-100">{shortAddr(t.trader)}</span>}
                             </span>
                             <span className={`flex-none font-semibold ${t.side === "buy" ? "text-success" : "text-error"}`}>{t.side === "buy" ? tr.feed.buy : tr.feed.sell}</span>
+                            {/* v3.1: buys made by a verified wallet (server: indexed status, browser: Buy.verified) */}
+                            {t.side === "buy" && t.verified === true && <Badge kind="neutral">{tr.priority.verifiedTag}</Badge>}
                             <span className="text-hanji-100">
                                 {fmt(t.tokenAmount, 2, tr.locale)} {c.symbol}
                             </span>
@@ -270,7 +274,7 @@ export default function Token() {
     const {curve: param} = useParams();
     const valid = !!param && isAddress(param);
     const addr = valid ? (param as Address) : undefined;
-    // Only curves opened by the v3 CurveFactory are shown (isCurve guard).
+    // Only curves opened by the current (v3.1) CurveFactory are shown (isCurve guard).
     const reg = useReadContracts({
         contracts: [{address: ADDR_V3.curveFactory, abi: CurveFactoryAbi, functionName: "isCurve", args: [addr ?? ZERO], chainId: giwaSepolia.id}],
         query: {enabled: valid},
@@ -282,7 +286,8 @@ export default function Token() {
 
     const wrap = (node: React.ReactNode) => <div className="max-w-page mx-auto px-4 sm:px-8 pt-8 sm:pt-10 pb-16 sm:pb-20">{node}</div>;
 
-    if (!valid || isCurve === false) {
+    const page = tokenPageState({validAddress: valid, isCurve, registryError: reg.isError, curveError: isError, curveLoaded: !isLoading && !!c});
+    if (page === "notFound") {
         return wrap(
             <div className="text-center pt-8">
                 <h1 className="m-0 mb-2 text-[22px] font-bold">{tr.curve.notFoundTitle}</h1>
@@ -291,8 +296,8 @@ export default function Token() {
             </div>
         );
     }
-    if (reg.isError || isError) return wrap(<NetError onRetry={() => { void reg.refetch(); refetch(); }} />);
-    if (isCurve === undefined || isLoading || !c) return wrap(<Skeleton h={320} />);
+    if (page === "error") return wrap(<NetError onRetry={() => { void reg.refetch(); refetch(); }} />);
+    if (page === "loading" || !c) return wrap(<Skeleton h={320} />);
 
     const m = meta.get(c.address);
     const isDev = !!account && account.toLowerCase() === c.dev.toLowerCase();
@@ -331,7 +336,8 @@ export default function Token() {
             <div className="rounded-input px-4 py-3.5 text-[13px] text-hanji-100 border border-ink-700 bg-ink-900 text-center">
                 {tr.curve.fixedPanel}
             </div>
-            {/* 6) trade panel */}
+            {/* 6) trade panel (v3.1: verified-only notice while the priority window is open) */}
+            {!c.graduated && <PriorityBanner priorityUntil={c.priorityUntil} />}
             <CurveTradePanel c={c} />
             {/* 7) trade history (server index + browser RPC), holders */}
             {/* 6b) comments (verified wallets, nicknames only) */}

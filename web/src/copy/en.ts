@@ -1,6 +1,6 @@
 // English dictionary. `satisfies Copy` makes tsc fail if any key of ko.ts is missing.
 // Style: plain, short sentences in sentence case; no exclamation marks; no return/profit language.
-import {ko, Copy} from "./ko";
+import {ko, Copy, PRIORITY_MINUTES} from "./ko";
 
 const verifiedTraders = (n: number) => `${n} verified trader${n === 1 ? "" : "s"}`;
 
@@ -45,7 +45,7 @@ export const en = {
     trade: ko.trade,
     curve: {
         listTitle: "Curves",
-        listSub: "Curves only verified wallets can trade. When a curve sells out, it graduates to a pool in the same transaction.",
+        listSub: `For the first ${PRIORITY_MINUTES} minutes after launch, only verified wallets can buy. After that, anyone can. When a curve sells out, it graduates to a pool in the same transaction.`,
         empty: "No curves yet",
         verifiedTraders,
         verifiedTradersNote: "excluding the Dev",
@@ -91,14 +91,14 @@ export const en = {
         balance: (amt: string, unit: string) => `Balance ${amt} ${unit}`,
         useMax: "Use max",
         poolTitle: "Trade on the graduated pool",
-        poolNote: "This curve has graduated, so trading now happens on the pool. Only verified wallets can trade on the pool too.",
+        poolNote: "This curve has graduated, so trading now happens on the pool. Anyone can trade on the pool.",
         poolWethOnly: "The graduated pool only accepts WETH. Wrap your ETH into WETH, then come back.",
         poolReceive: "You receive (estimated)",
         cta: {
             connect: "Connect your wallet",
             wrongChain: "Switch to GIWA Sepolia",
             notVerified: "Verification required",
-            notVerifiedNote: "This wallet isn't verified yet. Only verified wallets can trade on curves and pools.",
+            notVerifiedNote: `This wallet isn't verified yet. For the first ${PRIORITY_MINUTES} minutes after launch, only verified wallets can buy. After that, anyone can.`,
             enterAmount: "Enter an amount",
             insufficient: "Not enough balance",
             loading: "Checking…",
@@ -151,6 +151,7 @@ export const en = {
         connectTitle: "Connect wallet · GIWA Sepolia",
         verifyTitle: "Verification",
         verifyNote: "This is a testnet-only verification. On mainnet, wallets are verified through Upbit KYC.",
+        verifyOptional: `Verification currently goes through Upbit KYC. Without it, you can still trade once the first ${PRIORITY_MINUTES} minutes after launch are over.`,
         verifyCta: "Verify on testnet",
         krwTitle: "KRWs balance",
         krwNote: (have: string, need: string) => `You have ${have} KRWs · You need ${need} KRWs`,
@@ -219,7 +220,7 @@ export const en = {
     feed: {
         tabsLabel: "Sort curves",
         tabs: {latest: "Latest", popular: "Popular", mcap: "Market cap", almost: "Almost graduated", new: "New", graduated: "Graduated"},
-        popularNote: "Ranked by verified wallets that traded recently, together with trading volume.",
+        popularNote: "Ranked by verified wallets that bought in the last 24 hours, together with trading volume.",
         mcapNote: "Curves with different paired assets are compared by how far they've moved from the start.",
         window: (h: number) => `Based on about the last ${h} hour${h === 1 ? "" : "s"}`,
         emptyTab: "No curves match this view yet.",
@@ -382,6 +383,15 @@ export const en = {
         sentFailed: "The price moved, so the trade didn't go through. Only gas was spent.",
         retryAuto: "Switch to auto tolerance and try again",
         retry: "Try again",
+    },
+    priority: {
+        rule: `For the first ${PRIORITY_MINUTES} minutes after launch, only verified wallets can buy. After that, anyone can.`,
+        badge: (t: string) => `Verified only ${t}`,
+        banner: (t: string) => `Right now only verified wallets can buy. Anyone can buy in ${t}.`,
+        wait: (m: number, s: number) => `You can buy in ${m}m ${s}s`,
+        verifyNow: "Verify and buy now",
+        stillWindow: "It's still the verified-only window. Try again in a moment.",
+        verifiedTag: "Verified",
     },
     errorsV3: {
         NotVerified: "Verification required.",

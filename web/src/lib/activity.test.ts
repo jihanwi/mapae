@@ -31,11 +31,11 @@ const DEV = addr(0xde);
 const ALICE = addr(0xa1);
 const BOB = addr(0xb0b);
 
-function buyLog(o: {emitter: A; trader: A; isDev: boolean; quoteSpent: bigint; tokensOut: bigint; block: bigint; i: number}): RawLog {
+function buyLog(o: {emitter: A; trader: A; isDev: boolean; verified?: boolean; quoteSpent: bigint; tokensOut: bigint; block: bigint; i: number}): RawLog {
     const topics = encodeEventTopics({abi: CurveSaleAbi, eventName: "Buy", args: {trader: o.trader}}) as Hex[];
     const data = encodeAbiParameters(
-        [{type: "bool"}, {type: "uint256"}, {type: "uint256"}, {type: "uint256"}, {type: "uint256"}, {type: "uint256"}, {type: "uint256"}, {type: "uint256"}],
-        [o.isDev, o.quoteSpent, o.tokensOut, 1n, 2n, 3n, 0n, 0n]
+        [{type: "bool"}, {type: "bool"}, {type: "uint256"}, {type: "uint256"}, {type: "uint256"}, {type: "uint256"}, {type: "uint256"}, {type: "uint256"}, {type: "uint256"}],
+        [o.isDev, o.verified ?? true, o.quoteSpent, o.tokensOut, 1n, 2n, 3n, 0n, 0n]
     );
     return {address: o.emitter, topics, data, blockNumber: o.block, logIndex: o.i, transactionHash: tx(o.i + Number(o.block) * 100)};
 }
@@ -80,7 +80,8 @@ describe("decode + resolve + aggregate", () => {
         expect(trades).toHaveLength(6);
     });
     it("excludes the Dev (isDev on curve events, trader == dev on pool swaps) and dedupes wallets", () => {
-        expect(s.uniqueTraders).toBe(2); // Alice twice, Bob on curve and pool
+        // v3.1: only verified curve buys count (Alice twice); Bob only sold and swapped on the pool
+        expect(s.uniqueTraders).toBe(1);
         expect(trades.find((t) => t.venue === "pool" && t.side === "sell")!.isDev).toBe(true);
         expect(trades.find((t) => t.venue === "pool" && t.side === "buy")!.trader).toBe(BOB);
     });
@@ -90,6 +91,27 @@ describe("decode + resolve + aggregate", () => {
         expect(s.tradeCount).toBe(6);
         expect(s.lastTradeBlock).toBe(21n);
         expect(s.recent[0].block).toBe(21n);
+    });
+});
+
+describe("v3.1 verified buys", () => {
+    it("decodes Buy.verified and counts only verified non-Dev buyers", () => {
+        const logs = [
+            buyLog({emitter: CURVE, trader: ALICE, isDev: false, verified: false, quoteSpent: 10n, tokensOut: 1n, block: 30n, i: 0}),
+            buyLog({emitter: CURVE, trader: BOB, isDev: false, verified: true, quoteSpent: 10n, tokensOut: 1n, block: 31n, i: 0}),
+            buyLog({emitter: CURVE, trader: DEV, isDev: true, verified: true, quoteSpent: 10n, tokensOut: 1n, block: 32n, i: 0}),
+        ];
+        const entries = decodeActivityLogs(logs);
+        expect(entries.map((e) => (e.kind === "Buy" ? e.verified : null))).toEqual([false, true, true]);
+        const {trades} = resolve(entries, [curveRef]);
+        expect(trades.find((t) => t.trader === ALICE)!.verified).toBe(false);
+        expect(aggregate(trades).get(CURVE)!.uniqueTraders).toBe(1); // Bob only
+    });
+    it("Popular drops curves without any verified buyer", () => {
+        const c1 = sc(1);
+        const c2 = sc(2);
+        const s = aggregate([trade(c1.address, ALICE, 5n, 100n, false, false), trade(c2.address, BOB, 6n, 1n)]);
+        expect(ids(sortCurves("popular", [c1, c2], s))).toEqual([2]);
     });
 });
 
@@ -127,8 +149,8 @@ const VQ_ETH = 2n * E18;
 function sc(n: number, o: Partial<SortCurve> = {}): SortCurve {
     return {address: addr(n), pool: addr(0), dev: DEV, index: n, graduated: false, virtualQuote: VQ_KRW, r: 0n, s: 0n, ...o};
 }
-function trade(curve: A, trader: A, block: bigint, volume: bigint, isDev = false): Trade {
-    return {curve, venue: "curve", side: "buy", trader, isDev, tokenAmount: 1n, quoteAmount: volume, volume, block, logIndex: 0, tx: tx(Number(block) * 1000 + Number(BigInt(curve) % 1000n))};
+function trade(curve: A, trader: A, block: bigint, volume: bigint, isDev = false, verified: boolean | null = true): Trade {
+    return {curve, venue: "curve", side: "buy", trader, isDev, verified, tokenAmount: 1n, quoteAmount: volume, volume, block, logIndex: 0, tx: tx(Number(block) * 1000 + Number(BigInt(curve) % 1000n))};
 }
 const ids = (l: SortCurve[]) => l.map((c) => Number(BigInt(c.address)));
 

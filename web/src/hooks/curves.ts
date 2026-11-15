@@ -5,6 +5,7 @@ import {useEffect, useState} from "react";
 import {Abi} from "viem";
 import {useAccount, useBalance, useReadContract, useReadContracts} from "wagmi";
 import {ADDR_V3} from "../contracts/addressesV3";
+import {priorityRemaining} from "../lib/priority";
 import {CurveFactoryAbi, CurveSaleAbi, MapaePoolV3Abi, MembershipTokenV3Abi, MockDojangV3Abi} from "../contracts/abisV3";
 import {giwaSepolia} from "../config/chain";
 
@@ -29,6 +30,8 @@ export type CurveInfo = {
     isEth: boolean;
     /** Position in allCurves (higher = newer). */
     index: number;
+    /** v3.1: unix seconds until which only verified wallets may buy. */
+    priorityUntil: bigint;
     /** Graduated pool spot (quote per token, 18 decimals); set by useCurves only, after graduation. */
     poolSpot?: bigint;
 };
@@ -51,6 +54,7 @@ const CURVE_FIELDS = [
     "verifiedBuyerCount",
     "pool",
     "totalFeeBps",
+    "priorityUntil",
 ] as const;
 const DETAIL_FIELDS = ["devAccrued", "platformBps", "devBps", "lpSeedBps"] as const;
 
@@ -71,6 +75,7 @@ function toInfo(address: Address, r: unknown[], name: unknown, symbol: unknown, 
         verifiedBuyerCount: Number(r[7] as number),
         pool: r[8] as Address,
         totalFeeBps: Number(r[9] as number),
+        priorityUntil: BigInt(r[10] as bigint),
         name: name as string,
         symbol: symbol as string,
         isEth: quote.toLowerCase() === ADDR_V3.weth.toLowerCase(),
@@ -176,10 +181,10 @@ export function useCurve(address: Address | undefined) {
         address && r && ns
             ? {
                   ...toInfo(address, r, ns[0], ns[1]),
-                  devAccrued: r[10] as bigint,
-                  platformBps: Number(r[11] as number),
-                  devBps: Number(r[12] as number),
-                  lpSeedBps: Number(r[13] as number),
+                  devAccrued: r[11] as bigint,
+                  platformBps: Number(r[12] as number),
+                  devBps: Number(r[13] as number),
+                  lpSeedBps: Number(r[14] as number),
               }
             : undefined;
     return {
@@ -279,7 +284,9 @@ export type CtaState =
     | {kind: "enterAmount"}
     | {kind: "insufficient"}
     | {kind: "approve"; token: Address; spender: Address; amount: bigint}
-    | {kind: "ready"};
+    | {kind: "ready"}
+    /** v3.1: inside the real-name priority window with an unverified wallet (buys only). */
+    | {kind: "priorityWait"; remainingSec: number};
 
 export type CtaInput = {
     /** ERC-20 the user pays with; "native" for ETH sent as msg.value. */
@@ -288,23 +295,85 @@ export type CtaInput = {
     amount: bigint;
     /** Contract that pulls payToken via transferFrom; undefined when no approval is needed. */
     spender: Address | undefined;
+    /** Real-name requirement (v3.1): "required" (launch; default), "none" (curve sells, pool swaps)
+     *  or a curve buy with its priority window (verified only while the window is open). */
+    verify?: VerifyRule;
 };
+
+export type VerifyRule = "required" | "none" | {priorityUntil: bigint};
+
+/** Everything the CTA decision needs, already read. Pure so the transitions are testable. */
+export type CtaFacts = {
+    connected: boolean;
+    rightChain: boolean;
+    /** undefined while loading (or not needed). */
+    verified: boolean | undefined;
+    verify: VerifyRule;
+    nowSec: number;
+    amount: bigint;
+    payToken: Address | "native" | undefined;
+    spender: Address | undefined;
+    nativeBalance: bigint | undefined;
+    balance: bigint | undefined;
+    allowance: bigint | undefined;
+};
+
+export function ctaDecision(f: CtaFacts): CtaState {
+    if (!f.connected) return {kind: "connect"};
+    if (!f.rightChain) return {kind: "wrongChain"};
+    if (f.verify !== "none") {
+        const remaining = f.verify === "required" ? Infinity : priorityRemaining(f.verify.priorityUntil, f.nowSec);
+        // Only checked while it matters: always for launch, inside the window for a curve buy.
+        if (remaining > 0) {
+            if (f.verified === undefined) return {kind: "loading"};
+            if (!f.verified) return f.verify === "required" ? {kind: "notVerified"} : {kind: "priorityWait", remainingSec: remaining};
+        }
+    }
+    if (f.amount <= 0n || !f.payToken) return {kind: "enterAmount"};
+    if (f.payToken === "native") {
+        if (f.nativeBalance === undefined) return {kind: "loading"};
+        return f.nativeBalance < f.amount ? {kind: "insufficient"} : {kind: "ready"};
+    }
+    if (f.balance === undefined) return {kind: "loading"};
+    if (f.balance < f.amount) return {kind: "insufficient"};
+    if (f.spender) {
+        if (f.allowance === undefined) return {kind: "loading"};
+        if (f.allowance < f.amount) return {kind: "approve", token: f.payToken, spender: f.spender, amount: f.amount};
+    }
+    return {kind: "ready"};
+}
+
+/** Unix seconds, ticking every second only while `active` (e.g. a visible countdown). */
+export function useSecondClock(active: boolean): number {
+    const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
+    useEffect(() => {
+        if (!active) return;
+        setNow(Math.floor(Date.now() / 1000));
+        const id = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
+        return () => clearInterval(id);
+    }, [active]);
+    return active ? now : Math.floor(Date.now() / 1000);
+}
 
 /** Ordered CTA decision: not connected → wrong network → not verified (MockDojang) →
  *  no amount → insufficient balance → approval needed → ready. Approval is for the exact amount. */
-export function useTradeCta({payToken, amount, spender}: CtaInput): {state: CtaState; refetch: () => void} {
+export function useTradeCta({payToken, amount, spender, verify = "required"}: CtaInput): {state: CtaState; refetch: () => void} {
     const {address, isConnected, chainId} = useAccount();
     const owner = address ?? ZERO;
     const erc20 = payToken && payToken !== "native" ? payToken : undefined;
+    // The window can close while the panel is open: tick every second only while it is open.
+    const windowOpen = typeof verify === "object" && priorityRemaining(verify.priorityUntil, Date.now() / 1000) > 0;
+    const nowSec = useSecondClock(windowOpen);
+    const needsVerified = verify !== "none";
     const reads = useReadContracts({
         contracts: [
-            {address: ADDR_V3.mockDojang, abi: MockDojangV3Abi as Abi, functionName: "isVerified", args: [owner], chainId: giwaSepolia.id},
             ...(erc20
                 ? [
                       {address: erc20, abi: tokenAbi, functionName: "balanceOf", args: [owner], chainId: giwaSepolia.id},
                       {address: erc20, abi: tokenAbi, functionName: "allowance", args: [owner, spender ?? ZERO], chainId: giwaSepolia.id},
                   ]
                 : []),
+            ...(needsVerified ? [{address: ADDR_V3.mockDojang, abi: MockDojangV3Abi as Abi, functionName: "isVerified", args: [owner], chainId: giwaSepolia.id}] : []),
         ],
         query: {enabled: !!address, refetchInterval: 6_000},
     });
@@ -313,26 +382,20 @@ export function useTradeCta({payToken, amount, spender}: CtaInput): {state: CtaS
         void reads.refetch();
         void native.refetch();
     };
-
-    if (!isConnected || !address) return {state: {kind: "connect"}, refetch};
-    if (chainId !== giwaSepolia.id) return {state: {kind: "wrongChain"}, refetch};
-    const verified = reads.data?.[0];
-    if (!verified || verified.status !== "success") return {state: {kind: "loading"}, refetch};
-    if (verified.result !== true) return {state: {kind: "notVerified"}, refetch};
-    if (amount <= 0n || !payToken) return {state: {kind: "enterAmount"}, refetch};
-
-    if (payToken === "native") {
-        if (native.data === undefined) return {state: {kind: "loading"}, refetch};
-        if (native.data.value < amount) return {state: {kind: "insufficient"}, refetch};
-        return {state: {kind: "ready"}, refetch};
-    }
-    const bal = reads.data?.[1];
-    if (!bal || bal.status !== "success") return {state: {kind: "loading"}, refetch};
-    if ((bal.result as bigint) < amount) return {state: {kind: "insufficient"}, refetch};
-    if (spender) {
-        const allow = reads.data?.[2];
-        if (!allow || allow.status !== "success") return {state: {kind: "loading"}, refetch};
-        if ((allow.result as bigint) < amount) return {state: {kind: "approve", token: payToken, spender, amount}, refetch};
-    }
-    return {state: {kind: "ready"}, refetch};
+    const ok = (i: number) => (reads.data?.[i]?.status === "success" ? reads.data[i].result : undefined);
+    const vIdx = erc20 ? 2 : 0;
+    const state = ctaDecision({
+        connected: isConnected && !!address,
+        rightChain: chainId === giwaSepolia.id,
+        verified: needsVerified ? (ok(vIdx) as boolean | undefined) : undefined,
+        verify,
+        nowSec,
+        amount,
+        payToken,
+        spender,
+        nativeBalance: native.data?.value,
+        balance: erc20 ? (ok(0) as bigint | undefined) : undefined,
+        allowance: erc20 ? (ok(1) as bigint | undefined) : undefined,
+    });
+    return {state, refetch};
 }

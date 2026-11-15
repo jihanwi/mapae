@@ -34,7 +34,7 @@ export type RawLog = {address: Address; topics: readonly Hex[]; data: Hex; block
 /** Decoded, chain-level entry. Not yet tied to a curve: that happens in `resolve`, against the
  *  curve list known at read time (so a curve created after the fetch is still matched). */
 export type Entry =
-    | {kind: "Buy"; emitter: Address; trader: Address; isDev: boolean; quoteSpent: bigint; tokensOut: bigint; fees: bigint; block: bigint; logIndex: number; tx: Hex}
+    | {kind: "Buy"; emitter: Address; trader: Address; isDev: boolean; verified: boolean; quoteSpent: bigint; tokensOut: bigint; fees: bigint; block: bigint; logIndex: number; tx: Hex}
     | {kind: "Sell"; emitter: Address; trader: Address; isDev: boolean; tokenIn: bigint; quoteOut: bigint; fees: bigint; block: bigint; logIndex: number; tx: Hex}
     | {kind: "Swapped"; emitter: Address; to: Address; quoteIn: boolean; amountIn: bigint; amountOut: bigint; royalty: bigint; block: bigint; logIndex: number; tx: Hex}
     | {kind: "Graduated"; emitter: Address; pool: Address; block: bigint; logIndex: number; tx: Hex};
@@ -58,6 +58,7 @@ export function decodeActivityLogs(logs: readonly RawLog[]): Entry[] {
                 kind: "Buy",
                 trader: lc(a.trader as string) as Address,
                 isDev: a.isDev as boolean,
+                verified: a.verified as boolean,
                 quoteSpent: a.quoteSpent as bigint,
                 tokensOut: a.tokensOut as bigint,
                 fees: (a.platformFee as bigint) + (a.devFee as bigint) + (a.lpSeedFee as bigint),
@@ -138,6 +139,9 @@ export type Trade = {
     side: "buy" | "sell";
     trader: Address;
     isDev: boolean;
+    /** v3.1: real-name status at the time of the trade. Curve buys carry it in the Buy event;
+     *  curve sells and pool swaps don't, so the browser leaves it null (the indexer looks it up). */
+    verified: boolean | null;
     tokenAmount: bigint;
     /** Pair asset amount shown to the user: paid on a buy, received on a sell. */
     quoteAmount: bigint;
@@ -173,21 +177,21 @@ export function resolve(entries: readonly Entry[], curves: readonly CurveRef[]):
             if (!c) continue;
             trades.push(
                 e.kind === "Buy"
-                    ? {...pos, curve: c.address, venue: "curve", side: "buy", trader: e.trader, isDev: e.isDev, tokenAmount: e.tokensOut, quoteAmount: e.quoteSpent, volume: e.quoteSpent}
-                    : {...pos, curve: c.address, venue: "curve", side: "sell", trader: e.trader, isDev: e.isDev, tokenAmount: e.tokenIn, quoteAmount: e.quoteOut, volume: e.quoteOut + e.fees}
+                    ? {...pos, curve: c.address, venue: "curve", side: "buy", trader: e.trader, isDev: e.isDev, verified: e.verified, tokenAmount: e.tokensOut, quoteAmount: e.quoteSpent, volume: e.quoteSpent}
+                    : {...pos, curve: c.address, venue: "curve", side: "sell", trader: e.trader, isDev: e.isDev, verified: null, tokenAmount: e.tokenIn, quoteAmount: e.quoteOut, volume: e.quoteOut + e.fees}
             );
             continue;
         }
         const c = byPool.get(e.emitter);
         if (!c) continue;
-        // Pool swaps: the verified wallet is `to` (the pool gates `to`, the sender may be a router).
+        // Pool swaps: the trader is `to` (the receiving wallet; the sender may be a router).
         const isDev = e.to === lc(c.dev);
         trades.push(
             e.quoteIn
-                ? {...pos, curve: c.address, venue: "pool", side: "buy", trader: e.to, isDev, tokenAmount: e.amountOut, quoteAmount: e.amountIn, volume: e.amountIn}
+                ? {...pos, curve: c.address, venue: "pool", side: "buy", trader: e.to, isDev, verified: null, tokenAmount: e.amountOut, quoteAmount: e.amountIn, volume: e.amountIn}
                 : // amountOut is net of platform fee and royalty; royalty is in the event, the platform
                   // fee is not (separate PlatformFeePaid event), so sell volume is amountOut + royalty.
-                  {...pos, curve: c.address, venue: "pool", side: "sell", trader: e.to, isDev, tokenAmount: e.amountIn, quoteAmount: e.amountOut, volume: e.amountOut + e.royalty}
+                  {...pos, curve: c.address, venue: "pool", side: "sell", trader: e.to, isDev, verified: null, tokenAmount: e.amountIn, quoteAmount: e.amountOut, volume: e.amountOut + e.royalty}
         );
     }
     trades.sort(newerFirst);
@@ -199,7 +203,7 @@ export type CurveStats = {
     /** Unix seconds of the last trade, when known (server summary merge); sorting prefers it. */
     lastTradeTs?: number;
     tradeCount: number;
-    /** Distinct non-Dev wallets that traded in the window. */
+    /** v3.1: distinct non-Dev wallets that made a verified buy in the window (Popular's first metric). */
     uniqueTraders: number;
     /** Buy + sell volume in the pair asset, fees included, Dev trades included (shown on cards). */
     volumeQuote: bigint;
@@ -224,7 +228,7 @@ export function aggregate(trades: readonly Trade[], recentLimit = 30): Map<Addre
         s.volumeQuote += t.volume;
         if (t.block > s.lastTradeBlock) s.lastTradeBlock = t.block;
         if (!t.isDev) {
-            traders.get(t.curve)!.add(lc(t.trader));
+            if (t.side === "buy" && t.verified === true) traders.get(t.curve)!.add(lc(t.trader));
             s.volumeQuoteNonDev += t.volume;
         }
         if (s.recent.length < recentLimit) s.recent.push(t);

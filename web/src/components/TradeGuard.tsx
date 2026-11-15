@@ -150,6 +150,9 @@ export function useGuardedSend() {
                 const name = revertName(e);
                 if (name === "InsufficientOutput") {
                     dispatch({type: "simulateFailed", reason: "InsufficientOutput", fresh});
+                } else if (name === "NotVerified") {
+                    // v3.1: the device clock says the priority window is over but the chain does not yet.
+                    push({kind: "error", text: tr.priority.stillWindow});
                 } else {
                     push({kind: "error", text: humanError(e, tr, "v3")});
                     p.opts.onRevert?.(name);

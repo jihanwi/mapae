@@ -25,6 +25,8 @@ export type ServerTrade = {
     tokenAmount: string;
     priceWad: string;
     ts: string;
+    /** v3.1 index: real-name status at trade time (null when unknown). */
+    verified?: boolean | null;
 };
 
 export const DAY = 86_400;
@@ -71,6 +73,8 @@ export function mergeStats(
         s.volumeQuote += t.quoteAmount;
         if (!t.isDev) {
             s.volumeQuoteNonDev += t.quoteAmount;
+            // v3.1: only verified buys count as real-name traders (same rule as the server's traders24h)
+            if (t.side !== "buy" || t.verified !== true) continue;
             let set = fresh.get(key);
             if (!set) fresh.set(key, (set = new Set()));
             if (!set.has(t.trader.toLowerCase())) {
@@ -100,6 +104,8 @@ export type HistoryRow = {
     venue: "curve" | "pool";
     trader: Address;
     isDev: boolean;
+    /** Real-name status at trade time; null when unknown (browser sells / swaps, index lookup failed). */
+    verified: boolean | null;
     quoteAmount: bigint;
     tokenAmount: bigint;
     ts: number | undefined;
@@ -117,10 +123,10 @@ export function mergeHistory(server: readonly ServerTrade[], browser: readonly T
     };
     for (const t of browser) {
         if (!after(t.block, indexed)) continue;
-        push({key: `${t.tx.toLowerCase()}:${t.logIndex}`, tx: t.tx, logIndex: t.logIndex, side: t.side, venue: t.venue, trader: t.trader, isDev: t.isDev, quoteAmount: t.quoteAmount, tokenAmount: t.tokenAmount, ts: tsOf(t.block)});
+        push({key: `${t.tx.toLowerCase()}:${t.logIndex}`, tx: t.tx, logIndex: t.logIndex, side: t.side, venue: t.venue, trader: t.trader, isDev: t.isDev, verified: t.verified, quoteAmount: t.quoteAmount, tokenAmount: t.tokenAmount, ts: tsOf(t.block)});
     }
     for (const t of server) {
-        push({key: `${t.tx.toLowerCase()}:${t.logIndex}`, tx: t.tx, logIndex: t.logIndex, side: t.side, venue: t.venue, trader: t.trader, isDev: t.isDev, quoteAmount: BigInt(t.quoteAmount), tokenAmount: BigInt(t.tokenAmount), ts: Number(t.ts)});
+        push({key: `${t.tx.toLowerCase()}:${t.logIndex}`, tx: t.tx, logIndex: t.logIndex, side: t.side, venue: t.venue, trader: t.trader, isDev: t.isDev, verified: t.verified ?? null, quoteAmount: BigInt(t.quoteAmount), tokenAmount: BigInt(t.tokenAmount), ts: Number(t.ts)});
     }
     return rows.sort((a, b) => (b.ts ?? Infinity) - (a.ts ?? Infinity));
 }

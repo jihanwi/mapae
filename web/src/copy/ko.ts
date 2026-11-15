@@ -1,6 +1,11 @@
 // Korean dictionary: the reference. `type Copy = typeof ko`; en.ts must satisfy it.
 // 모든 사용자 노출 문구 단일 파일 (C7) — 오너는 이 파일만 검수하면 된다.
 // 금지: "수익 · 오른다 · 투자" 계열 표현.
+import {ADDR_V3} from "../contracts/addressesV3";
+
+/** v3.1 real-name priority window in whole minutes (from the deployment, never hardcoded). */
+export const PRIORITY_MINUTES = Math.round(ADDR_V3.priorityWindow / 60);
+
 export const ko = {
     /** BCP 47 locale for numbers and dates */
     locale: "ko-KR",
@@ -154,7 +159,7 @@ export const ko = {
     // v3 본딩커브 (발행자는 항상 "Dev")
     curve: {
         listTitle: "커브",
-        listSub: "실명 지갑만 사고팔 수 있는 커브예요. 다 팔리면 그 자리에서 풀로 졸업해요",
+        listSub: `커브가 열리고 ${PRIORITY_MINUTES}분 동안은 실명 지갑만 살 수 있어요. 그 뒤에는 누구나 살 수 있어요. 다 팔리면 그 자리에서 풀로 졸업해요`,
         empty: "아직 열린 커브가 없어요",
         verifiedTraders: (n: number) => `실명 거래자 ${n}명`,
         verifiedTradersNote: "Dev 제외",
@@ -200,14 +205,14 @@ export const ko = {
         balance: (amt: string, unit: string) => `보유 ${amt} ${unit}`,
         useMax: "최대로 넣기",
         poolTitle: "졸업 풀에서 거래",
-        poolNote: "졸업한 커브라 이제 풀에서 거래해요. 풀에서도 실명 지갑만 거래할 수 있어요",
+        poolNote: "졸업한 커브라 이제 풀에서 거래해요. 풀에서는 누구나 거래할 수 있어요",
         poolWethOnly: "졸업 풀에서는 WETH로만 살 수 있어요. ETH를 WETH로 바꾼 뒤 다시 와 주세요",
         poolReceive: "예상 수령",
         cta: {
             connect: "지갑을 연결해 주세요",
             wrongChain: "GIWA Sepolia로 전환해 주세요",
             notVerified: "실명 인증이 필요해요",
-            notVerifiedNote: "아직 실명 인증을 하지 않은 지갑이에요. 커브와 풀은 실명 지갑만 거래할 수 있어요",
+            notVerifiedNote: `아직 실명 인증을 하지 않은 지갑이에요. 커브가 열리고 ${PRIORITY_MINUTES}분 동안은 실명 지갑만 살 수 있어요. 그 뒤에는 누구나 살 수 있어요`,
             enterAmount: "수량을 입력해 주세요",
             insufficient: "잔고가 부족해요",
             loading: "확인하는 중…",
@@ -262,6 +267,7 @@ export const ko = {
         connectTitle: "지갑 연결 · GIWA Sepolia",
         verifyTitle: "실명 인증",
         verifyNote: "테스트넷 체험용 인증이에요. 메인넷에서는 업비트 KYC로 받은 실명 지갑을 써요",
+        verifyOptional: `실명 인증은 지금 업비트 KYC로 받아요. 인증이 없어도 커브가 열리고 ${PRIORITY_MINUTES}분이 지나면 거래할 수 있어요`,
         verifyCta: "테스트넷 실명 인증",
         krwTitle: "KRWs 잔고",
         krwNote: (have: string, need: string) => `보유 ${have} KRWs · 필요 ${need} KRWs`,
@@ -352,7 +358,7 @@ export const ko = {
     feed: {
         tabsLabel: "커브 정렬",
         tabs: {latest: "방금 거래", popular: "인기", mcap: "시가총액", almost: "졸업 임박", new: "신규", graduated: "졸업"},
-        popularNote: "최근에 거래한 실명 지갑 수와 거래 금액을 같이 봐요",
+        popularNote: "최근 24시간에 실명으로 산 지갑 수와 거래 금액을 같이 봐요",
         mcapNote: "페어 자산이 다른 커브는 출발점 대비 몇 배인지로 비교해요",
         window: (h: number) => `최근 약 ${h}시간 기준`,
         emptyTab: "이 기준에 맞는 커브가 아직 없어요",
@@ -515,6 +521,15 @@ export const ko = {
         sentFailed: "가격이 움직여서 체결되지 않았어요. 가스만 쓰였어요",
         retryAuto: "허용치를 자동으로 바꾸고 다시 시도",
         retry: "다시 시도",
+    },
+    priority: {
+        rule: `커브가 열리고 ${PRIORITY_MINUTES}분 동안은 실명 지갑만 살 수 있어요. 그 뒤에는 누구나 살 수 있어요.`,
+        badge: (t: string) => `실명 우선 ${t}`,
+        banner: (t: string) => `지금은 실명 지갑만 살 수 있어요. ${t} 뒤에 누구나 살 수 있어요`,
+        wait: (m: number, s: number) => `${m}분 ${s}초 뒤에 살 수 있어요`,
+        verifyNow: "실명 인증하고 지금 사기",
+        stillWindow: "아직 실명 우선 구간이에요. 잠시 후 다시 시도해 주세요",
+        verifiedTag: "실명",
     },
     errorsV3: {
         NotVerified: "실명 인증이 필요해요",

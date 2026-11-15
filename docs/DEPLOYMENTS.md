@@ -2,24 +2,25 @@
 
 체인: GIWA Sepolia (chain ID `91342`) · Explorer: https://sepolia-explorer.giwa.io
 
-## v3.1 배포 (실명 우선 구간, 풀 스왑 개방): 배포 후 기입
+## v3.1 배포 (실명 우선 구간, 풀 스왑 개방), 2026-11-15 완료
 
 - 규칙: 커브 개설 후 `priorityWindow`(기본 10분) 동안만 실명 지갑이 매수, 그 뒤 누구나 매수. 매도와 졸업 풀 스왑은 누구나.
   커브 개설과 L1 공모 응모는 실명 유지. 자세한 내용은 [`docs/WORKLOG_v3.md`](WORKLOG_v3.md)의 v3.1 절.
-- 배포 절차: [`docs/DEPLOY_V3_1.md`](DEPLOY_V3_1.md). 주소 기록: `deployments/giwa-sepolia-v3_1.json` (배포 후 생성)
-- 배포 블록: 배포 후 기입 · 배포자: 배포 후 기입 · 트레저리: 배포 후 기입
+- 배포 절차: [`docs/DEPLOY_V3_1.md`](DEPLOY_V3_1.md). 주소 기록: [`deployments/giwa-sepolia-v3_1.json`](../deployments/giwa-sepolia-v3_1.json)
+- 배포 블록 `41377077` (첫 배포 트랜잭션 블록) · 배포자 [`0x67a29AE83f3320C5E9b81D8a1531dE8FcCBED00C`](https://sepolia-explorer.giwa.io/address/0x67a29AE83f3320C5E9b81D8a1531dE8FcCBED00C) · 트레저리 [`0x3ada0Cb1fbb700AC4B41f5D7A9dbE2BC47b9FAaa`](https://sepolia-explorer.giwa.io/address/0x3ada0Cb1fbb700AC4B41f5D7A9dbE2BC47b9FAaa)
+- 우선 구간 `priorityWindow` 600초
 
 | 컨트랙트 | 주소 | 비고 |
 |---|---|---|
-| MockKRW | 배포 후 기입 | `REUSE_MOCK_KRW`로 v3 주소 재사용 예정 |
-| MockDojang | 배포 후 기입 | `REUSE_MOCK_DOJANG`로 v3 주소 재사용 예정 |
-| PoolFactory | 배포 후 기입 | 신규 (MapaePool 바이트코드 변경) |
-| FeeRouter | 배포 후 기입 | 신규 |
-| BuybackVault / BuybackExecutor | 배포 후 기입 | 신규 |
-| DojangEASAdapter | 배포 후 기입 | 신규 |
-| MapaeFactory (mock / EAS) | 배포 후 기입 | 신규 (PoolFactory 참조, Offering 코드 변경) |
-| CurveFactory (mock / EAS) | 배포 후 기입 | 신규 (CurveSale 코드 변경) |
-| MembershipTokenDeployer (라이브러리) | 배포 후 기입 | forge가 broadcast 중 배포 |
+| MockKRW | [`0x74eC9141afAd51F346BA5B841Ba93D573e8786fD`](https://sepolia-explorer.giwa.io/address/0x74eC9141afAd51F346BA5B841Ba93D573e8786fD) | v3 주소 재사용 |
+| MockDojang | [`0xaf80C431813EC4d2Cb34B3EC5b064095256871f8`](https://sepolia-explorer.giwa.io/address/0xaf80C431813EC4d2Cb34B3EC5b064095256871f8) | v3 주소 재사용 |
+| PoolFactory | [`0xf4E7Bf1ACe429400AC23E271E4409D212677e44F`](https://sepolia-explorer.giwa.io/address/0xf4E7Bf1ACe429400AC23E271E4409D212677e44F) | 신규 (MapaePool 바이트코드 변경) |
+| FeeRouter | [`0xAB665B7867080cd62Aa316717400f3Cc094E7bd6`](https://sepolia-explorer.giwa.io/address/0xAB665B7867080cd62Aa316717400f3Cc094E7bd6) | 신규 |
+| BuybackVault / BuybackExecutor | [`0x3Ed11f7Bcc36B3603d51736652884800daa2f54c`](https://sepolia-explorer.giwa.io/address/0x3Ed11f7Bcc36B3603d51736652884800daa2f54c) / [`0x195329375AfbE450DB73A7a2616084C999765f05`](https://sepolia-explorer.giwa.io/address/0x195329375AfbE450DB73A7a2616084C999765f05) | 신규 |
+| DojangEASAdapter | [`0x8Cad1060c003270F1680BFb82b2F6068bc48b640`](https://sepolia-explorer.giwa.io/address/0x8Cad1060c003270F1680BFb82b2F6068bc48b640) | 신규 |
+| MapaeFactory (mock / EAS) | [`0xC0E22127A44266cCC56B2503504373777d0645A9`](https://sepolia-explorer.giwa.io/address/0xC0E22127A44266cCC56B2503504373777d0645A9) / [`0xbDE1429fA07621251BE87248cD61c4f5f554693C`](https://sepolia-explorer.giwa.io/address/0xbDE1429fA07621251BE87248cD61c4f5f554693C) | 신규 (PoolFactory 참조, Offering 코드 변경) |
+| CurveFactory (mock / EAS) | [`0x06f042817c7bBb18C793c586E7afe2870205355D`](https://sepolia-explorer.giwa.io/address/0x06f042817c7bBb18C793c586E7afe2870205355D) / [`0x1Ac4017A568Ec42dF8477a997c09720C975b096f`](https://sepolia-explorer.giwa.io/address/0x1Ac4017A568Ec42dF8477a997c09720C975b096f) | 신규 (CurveSale 코드 변경). 웹은 mock 쪽을 쓴다 |
+| MembershipTokenDeployer (라이브러리) | [`0x9F011858B85b93a73330B56319Dc76a6f3255279`](https://sepolia-explorer.giwa.io/address/0x9F011858B85b93a73330B56319Dc76a6f3255279) | forge가 broadcast 중 배포 |
 
 ## v3 배포 (실명 본딩커브 런치패드), 2026-11-14 완료
 

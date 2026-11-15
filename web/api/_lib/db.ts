@@ -52,6 +52,10 @@ const SCHEMA = [
         ts bigint NOT NULL
     )`,
     `CREATE INDEX IF NOT EXISTS mapae_trades_curve_ts ON mapae_trades (curve, ts DESC)`,
+    // v3.1 (additive): real-name status per trade, priority window and source factory per curve.
+    `ALTER TABLE mapae_trades ADD COLUMN IF NOT EXISTS verified boolean`,
+    `ALTER TABLE mapae_curves ADD COLUMN IF NOT EXISTS priority_until bigint`,
+    `ALTER TABLE mapae_curves ADD COLUMN IF NOT EXISTS factory text`,
     `CREATE INDEX IF NOT EXISTS mapae_trades_ts ON mapae_trades (ts DESC)`,
     `CREATE TABLE IF NOT EXISTS mapae_transfers (
         tx text,
@@ -88,13 +92,17 @@ export async function ensureSchema(sql: Sql): Promise<void> {
     await sql.transaction(SCHEMA.map((q) => sql.query(q)));
 }
 
+/** Indexer cursor row per contract version: id 1 = v3 (left untouched), id 31 = v3.1. */
+export const INDEXER_STATE_ID = 31;
+
 export async function readNextBlock(sql: Sql): Promise<bigint | null> {
-    const rows = (await sql.query(`SELECT next_block::text AS n FROM mapae_indexer_state WHERE id = 1`)) as {n: string}[];
+    const rows = (await sql.query(`SELECT next_block::text AS n FROM mapae_indexer_state WHERE id = $1`, [INDEXER_STATE_ID])) as {n: string}[];
     return rows[0] ? BigInt(rows[0].n) : null;
 }
 
-export async function loadCurves(sql: Sql): Promise<KnownCurve[]> {
-    const rows = (await sql.query(`SELECT curve, token, dev, pool FROM mapae_curves`)) as {curve: string; token: string; dev: string; pool: string | null}[];
+/** Curves of `factory` only, so older factories' curves and pools are never indexed again. */
+export async function loadCurves(sql: Sql, factory: string): Promise<KnownCurve[]> {
+    const rows = (await sql.query(`SELECT curve, token, dev, pool FROM mapae_curves WHERE factory = $1`, [factory.toLowerCase()])) as {curve: string; token: string; dev: string; pool: string | null}[];
     return rows.map((r) => ({curve: r.curve as `0x${string}`, token: r.token as `0x${string}`, dev: r.dev as `0x${string}`, pool: (r.pool as `0x${string}` | null) ?? null}));
 }
 
@@ -107,10 +115,10 @@ export async function writeRange(sql: Sql, w: RangeWrite): Promise<void> {
     const x = w.transfers;
     await sql.transaction([
         sql.query(
-            `INSERT INTO mapae_curves (curve, token, dev, quote, virtual_quote, name, symbol, created_block, created_ts)
-             SELECT * FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::numeric[], $6::text[], $7::text[], $8::bigint[], $9::bigint[])
+            `INSERT INTO mapae_curves (curve, token, dev, quote, virtual_quote, name, symbol, created_block, created_ts, priority_until, factory)
+             SELECT * FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::numeric[], $6::text[], $7::text[], $8::bigint[], $9::bigint[], $10::bigint[], $11::text[])
              ON CONFLICT (curve) DO NOTHING`,
-            [c.map((r) => r.curve), c.map((r) => r.token), c.map((r) => r.dev), c.map((r) => r.quote), c.map((r) => r.virtualQuote), c.map((r) => r.name), c.map((r) => r.symbol), c.map((r) => r.createdBlock), c.map((r) => r.createdTs)]
+            [c.map((r) => r.curve), c.map((r) => r.token), c.map((r) => r.dev), c.map((r) => r.quote), c.map((r) => r.virtualQuote), c.map((r) => r.name), c.map((r) => r.symbol), c.map((r) => r.createdBlock), c.map((r) => r.createdTs), c.map((r) => r.priorityUntil), c.map((r) => r.factory)]
         ),
         sql.query(
             `UPDATE mapae_curves AS m SET pool = u.pool, graduated_block = u.block
@@ -119,8 +127,8 @@ export async function writeRange(sql: Sql, w: RangeWrite): Promise<void> {
             [g.map((r) => r.curve), g.map((r) => r.pool), g.map((r) => r.block)]
         ),
         sql.query(
-            `INSERT INTO mapae_trades (tx, log_index, curve, venue, side, trader, is_dev, quote_amount, token_amount, price_wad, block, ts)
-             SELECT * FROM unnest($1::text[], $2::int[], $3::text[], $4::text[], $5::text[], $6::text[], $7::boolean[], $8::numeric[], $9::numeric[], $10::numeric[], $11::bigint[], $12::bigint[])
+            `INSERT INTO mapae_trades (tx, log_index, curve, venue, side, trader, is_dev, quote_amount, token_amount, price_wad, block, ts, verified)
+             SELECT * FROM unnest($1::text[], $2::int[], $3::text[], $4::text[], $5::text[], $6::text[], $7::boolean[], $8::numeric[], $9::numeric[], $10::numeric[], $11::bigint[], $12::bigint[], $13::boolean[])
              ON CONFLICT (tx, log_index) DO NOTHING`,
             [
                 t.map((r) => r.tx),
@@ -135,6 +143,7 @@ export async function writeRange(sql: Sql, w: RangeWrite): Promise<void> {
                 t.map((r) => r.priceWad),
                 t.map((r) => r.block),
                 t.map((r) => r.ts),
+                t.map((r) => r.verified),
             ]
         ),
         sql.query(
@@ -144,9 +153,9 @@ export async function writeRange(sql: Sql, w: RangeWrite): Promise<void> {
             [x.map((r) => r.tx), x.map((r) => r.logIndex), x.map((r) => r.token), x.map((r) => r.from), x.map((r) => r.to), x.map((r) => r.value), x.map((r) => r.block)]
         ),
         sql.query(
-            `INSERT INTO mapae_indexer_state (id, next_block, updated_at, indexed_ts) VALUES (1, $1::bigint, now(), $2::bigint)
+            `INSERT INTO mapae_indexer_state (id, next_block, updated_at, indexed_ts) VALUES ($3::int, $1::bigint, now(), $2::bigint)
              ON CONFLICT (id) DO UPDATE SET next_block = EXCLUDED.next_block, updated_at = now(), indexed_ts = EXCLUDED.indexed_ts`,
-            [w.nextBlock.toString(), String(w.indexedTs)]
+            [w.nextBlock.toString(), String(w.indexedTs), INDEXER_STATE_ID]
         ),
     ]);
 }
@@ -166,23 +175,25 @@ export type SummaryRow = {
 };
 
 export async function readState(sql: Sql): Promise<{indexedBlock: string | null; indexedTs: string | null}> {
-    const rows = (await sql.query(`SELECT (next_block - 1)::text AS b, indexed_ts::text AS ts FROM mapae_indexer_state WHERE id = 1`)) as {b: string; ts: string | null}[];
+    const rows = (await sql.query(`SELECT (next_block - 1)::text AS b, indexed_ts::text AS ts FROM mapae_indexer_state WHERE id = $1`, [INDEXER_STATE_ID])) as {b: string; ts: string | null}[];
     return {indexedBlock: rows[0]?.b ?? null, indexedTs: rows[0]?.ts ?? null};
 }
 
 /** Per-curve 24 h numbers and the last trade, in one GROUP BY. */
-export async function summary(sql: Sql, sinceTs: number): Promise<SummaryRow[]> {
+/** Curves of `factory` only (v3.1). traders24h = distinct non-Dev wallets with a verified BUY in 24 h. */
+export async function summary(sql: Sql, sinceTs: number, factory: string): Promise<SummaryRow[]> {
     return (await sql.query(
-        `SELECT curve,
-                count(*) FILTER (WHERE ts >= $1)::int AS "trades24h",
-                count(DISTINCT trader) FILTER (WHERE ts >= $1 AND NOT is_dev)::int AS "traders24h",
-                coalesce(sum(quote_amount) FILTER (WHERE ts >= $1), 0)::text AS "volume24h",
-                coalesce(sum(quote_amount) FILTER (WHERE ts >= $1 AND NOT is_dev), 0)::text AS "volume24hExDev",
-                max(ts)::text AS "lastTradeTs",
-                ((array_agg(price_wad ORDER BY ts DESC, block DESC, log_index DESC))[1])::text AS "lastPriceWad"
-         FROM mapae_trades
-         GROUP BY curve`,
-        [sinceTs]
+        `SELECT t.curve,
+                count(*) FILTER (WHERE t.ts >= $1)::int AS "trades24h",
+                count(DISTINCT t.trader) FILTER (WHERE t.ts >= $1 AND NOT t.is_dev AND t.side = 'buy' AND t.verified IS TRUE)::int AS "traders24h",
+                coalesce(sum(t.quote_amount) FILTER (WHERE t.ts >= $1), 0)::text AS "volume24h",
+                coalesce(sum(t.quote_amount) FILTER (WHERE t.ts >= $1 AND NOT t.is_dev), 0)::text AS "volume24hExDev",
+                max(t.ts)::text AS "lastTradeTs",
+                ((array_agg(t.price_wad ORDER BY t.ts DESC, t.block DESC, t.log_index DESC))[1])::text AS "lastPriceWad"
+         FROM mapae_trades t
+         JOIN mapae_curves m ON m.curve = t.curve AND m.factory = $2
+         GROUP BY t.curve`,
+        [sinceTs, factory.toLowerCase()]
     )) as SummaryRow[];
 }
 
@@ -236,13 +247,13 @@ export async function holders(sql: Sql, token: string, exclude: string[]): Promi
     return {rows: rows.map((r) => ({address: r.address, balance: r.balance})), total};
 }
 
-export type TradeOut = {tx: string; logIndex: number; side: string; venue: string; trader: string; isDev: boolean; quoteAmount: string; tokenAmount: string; priceWad: string; ts: string; block: string};
+export type TradeOut = {tx: string; logIndex: number; side: string; venue: string; trader: string; isDev: boolean; quoteAmount: string; tokenAmount: string; priceWad: string; ts: string; block: string; verified: boolean | null};
 
 export async function trades(sql: Sql, curve: string, before: bigint | undefined, limit: number): Promise<TradeOut[]> {
     return (await sql.query(
         `SELECT tx, log_index AS "logIndex", side, venue, trader, is_dev AS "isDev",
                 quote_amount::text AS "quoteAmount", token_amount::text AS "tokenAmount", price_wad::text AS "priceWad",
-                ts::text AS ts, block::text AS block
+                ts::text AS ts, block::text AS block, verified
          FROM mapae_trades
          WHERE curve = $1 AND ($2::bigint IS NULL OR ts < $2::bigint)
          ORDER BY ts DESC, block DESC, log_index DESC

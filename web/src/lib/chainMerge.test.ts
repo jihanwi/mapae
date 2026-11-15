@@ -13,7 +13,7 @@ const NOW = 1_000_000;
 const tsOf = (b: bigint) => Number(b); // block == unix second in these tests
 
 function trade(curve: A, trader: A, block: number, quote: bigint, isDev = false, i = 0): Trade {
-    return {curve, venue: "curve", side: "buy", trader, isDev, tokenAmount: 1n, quoteAmount: quote, volume: quote + 1n, block: BigInt(block), logIndex: i, tx: tx(block * 10 + i)};
+    return {curve, venue: "curve", side: "buy", trader, isDev, verified: true, tokenAmount: 1n, quoteAmount: quote, volume: quote + 1n, block: BigInt(block), logIndex: i, tx: tx(block * 10 + i)};
 }
 
 const server: ServerSummary = {

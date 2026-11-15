@@ -47,8 +47,10 @@ forge script script/DeployV3.s.sol --account deployer --sender 0x67a29AE83f3320C
 ## 4. 직접 배포한 컨트랙트 verify
 
 ```bash
-forge script script/DeployV3.s.sol --account deployer --sender 0x67a29AE83f3320C5E9b81D8a1531dE8FcCBED00C --rpc-url $GIWA_SEPOLIA_RPC_URL --resume --verify --verifier blockscout --verifier-url $BLOCKSCOUT_API_URL
+forge script script/DeployV3.s.sol --account deployer --sender 0x67a29AE83f3320C5E9b81D8a1531dE8FcCBED00C --rpc-url $GIWA_SEPOLIA_RPC_URL --broadcast --resume --verify --verifier blockscout --verifier-url $BLOCKSCOUT_API_URL
 ```
+
+`--resume`은 `--broadcast`가 있어야 실행된다. 이미 확정된 트랜잭션은 다시 보내지 않고 verify만 한다.
 
 재사용한 MockKRW, MockDojang은 v3 때 이미 verify돼 있다.
 
@@ -60,6 +62,11 @@ cat deployments/giwa-sepolia-v3_1.json
 
 `version` "v3.1", `reusedMockKRW` true, `reusedMockDojang` true, `mockKRW`와 `mockDojang`이 위 재사용 주소,
 `priorityWindow` 600, `deployBlock`, `curveFactoryMock`, `factoryMock`, `membershipTokenDeployer`가 있어야 한다.
+
+`deployBlock`은 고쳐 써야 한다. `DeployV3.s.sol`은 시뮬레이션 시점의 블록 번호를 기록하므로 실제 첫 배포
+트랜잭션 블록보다 앞선 값이 들어간다. 배포 로그(`broadcast/DeployV3.s.sol/91342/run-latest.json`의 첫 영수증
+`blockNumber`, 16진수)나 익스플로러에서 첫 배포 트랜잭션의 블록을 확인해 `deployBlock`을 그 값으로 바꾼다.
+인덱서와 verify-children이 이 값부터 이벤트를 읽는다.
 
 ## 6. 팩토리 자식 verify (커브나 공모가 생긴 뒤)
 
