@@ -24,6 +24,7 @@ import {Badge, Gauge, NetError, PrimaryBtn, SecondaryBtn, Skeleton, Stat} from "
 import {CurveAvatar, draftValid, linkDomain, MetaFields, SaveStatus} from "../components/MetaForm";
 import {CurveMeta, draftHasContent, emptyDraft, MetaDraft, useCurveMeta, useSaveMeta} from "../hooks/meta";
 import {CurveTradePanel} from "../components/CurveTradePanel";
+import {CopyAddress} from "../components/CopyAddress";
 import {Change, pctLabel, quoteUnit} from "./Curves";
 
 // Layout note: below lg one column of full-width blocks (w-full / min-w-0, no fixed widths; the two
@@ -113,42 +114,6 @@ function Metrics({c}: {c: CurveDetail}) {
                 <span className="text-hanji-400 font-normal text-[12px]"> ({tr.curve.verifiedTradersNote})</span>
             </Metric>
         </div>
-    );
-}
-
-/** Token contract address with a copy button; without a working clipboard the full address is shown
- *  as selectable text instead. */
-function CopyAddress({token}: {token: Address}) {
-    const tr = useCopy();
-    const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
-    useEffect(() => {
-        if (state !== "copied") return;
-        const id = setTimeout(() => setState("idle"), 2000);
-        return () => clearTimeout(id);
-    }, [state]);
-    const copy = async () => {
-        try {
-            if (!navigator.clipboard) throw new Error("no clipboard");
-            await navigator.clipboard.writeText(token);
-            setState("copied");
-        } catch (e) {
-            console.error("copy failed", e);
-            setState("failed");
-        }
-    };
-    if (state === "failed") {
-        return <span className="inline-flex items-center min-h-[36px] px-3 rounded-full border border-ink-700 text-[12px] text-hanji-100 tabular-nums break-all select-all">{token}</span>;
-    }
-    return (
-        <button
-            type="button"
-            aria-label={tr.tokenPage.copyLabel}
-            onClick={() => void copy()}
-            className="inline-flex items-center gap-2 min-h-[36px] px-3 rounded-full border border-ink-700 text-[12px] text-hanji-100 tabular-nums hover:border-brass-600"
-        >
-            <span>{shortAddr(token)}</span>
-            <span className={state === "copied" ? "text-brass-400" : "text-hanji-400"}>{state === "copied" ? tr.tokenPage.copied : tr.tokenPage.copy}</span>
-        </button>
     );
 }
 
@@ -249,7 +214,7 @@ function Header({c, imageUrl}: {c: CurveDetail; imageUrl?: string | null}) {
                 </div>
             </div>
             <div className="flex flex-wrap items-center gap-2 min-w-0 text-[12px]">
-                <CopyAddress token={c.token} />
+                <CopyAddress address={c.token} label={tr.tokenPage.copyLabel} />
                 {!c.graduated && <PriorityBadge priorityUntil={c.priorityUntil} />}
                 <DevHolds c={c} />
                 <DevLaunched c={c} />

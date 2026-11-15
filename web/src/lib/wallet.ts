@@ -1,15 +1,30 @@
 // Wallet profile math (pure, bigint). Amounts are quote-asset wei, quantities token wei, prices
 // quote wei per whole token (18-decimal fixed point, like spotPrice). Results can be negative.
+// P&L is moving-average: trades are applied in chain order (applyTrade, shared with the API in
+// api/_lib/positions.ts), so a settled sell never changes when more is bought later.
 import type {Trade} from "./activity";
+import {applyTrade, EMPTY_POSITION, PositionState} from "../../api/_lib/positions";
+
+export {applyTrade, EMPTY_POSITION};
+export type {PositionState};
 
 type Address = `0x${string}`;
 const WAD = 10n ** 18n;
 
-export type Amounts = {buyQuote: bigint; buyTokens: bigint; sellQuote: bigint; sellTokens: bigint};
-export type Position = Amounts & {curve: Address; token: Address; name: string; symbol: string};
-export type ServerPosition = {curve: string; token: string; name: string; symbol: string; buyQuote: string; buyTokens: string; sellQuote: string; sellTokens: string};
-
-export const ZERO_AMOUNTS: Amounts = {buyQuote: 0n, buyTokens: 0n, sellQuote: 0n, sellTokens: 0n};
+export type Position = PositionState & {curve: Address; token: Address; name: string; symbol: string};
+export type ServerPosition = {
+    curve: string;
+    token: string;
+    name: string;
+    symbol: string;
+    cost: string;
+    tracked: string;
+    realized: string;
+    buyQuote: string;
+    buyTokens: string;
+    sellQuote: string;
+    sellTokens: string;
+};
 
 export function parsePosition(p: ServerPosition): Position {
     return {
@@ -17,6 +32,9 @@ export function parsePosition(p: ServerPosition): Position {
         token: p.token.toLowerCase() as Address,
         name: p.name,
         symbol: p.symbol,
+        cost: BigInt(p.cost),
+        tracked: BigInt(p.tracked),
+        realized: BigInt(p.realized),
         buyQuote: BigInt(p.buyQuote),
         buyTokens: BigInt(p.buyTokens),
         sellQuote: BigInt(p.sellQuote),
@@ -24,26 +42,10 @@ export function parsePosition(p: ServerPosition): Position {
     };
 }
 
-/** One position plus browser trades after the server's indexedBlock (older ones are already in the
- *  server sums, so they are skipped: no trade is counted twice). `extra` must be this wallet's
- *  trades of this curve. */
-export function addTrades<T extends Amounts>(position: T, extra: readonly Pick<Trade, "side" | "quoteAmount" | "tokenAmount" | "block">[], indexedBlock: bigint): T {
-    const out = {...position};
-    for (const t of extra) {
-        if (t.block <= indexedBlock) continue;
-        if (t.side === "buy") {
-            out.buyQuote += t.quoteAmount;
-            out.buyTokens += t.tokenAmount;
-        } else {
-            out.sellQuote += t.quoteAmount;
-            out.sellTokens += t.tokenAmount;
-        }
-    }
-    return out;
-}
-
-/** Server positions plus this wallet's browser trades after indexedBlock; curves the server has no
- *  line for get a new one (name/symbol from `info`). indexedBlock null (no server): unchanged. */
+/** Server positions plus this wallet's browser trades after indexedBlock, applied in (block,
+ *  logIndex) order; curves the server has no line for start from zero (name/symbol from `info`).
+ *  Older trades are already folded on the server, so nothing is counted twice. indexedBlock null
+ *  (no server): unchanged. */
 export function mergeBrowserTrades(
     positions: readonly Position[],
     trades: readonly Trade[],
@@ -53,22 +55,19 @@ export function mergeBrowserTrades(
 ): Position[] {
     if (indexedBlock === null) return [...positions];
     const w = wallet.toLowerCase();
-    const mine = trades.filter((t) => t.trader.toLowerCase() === w && t.block > indexedBlock && t.tokenAmount > 0n);
+    const mine = trades
+        .filter((t) => t.trader.toLowerCase() === w && t.block > indexedBlock && t.tokenAmount > 0n)
+        .sort((a, b) => (a.block === b.block ? a.logIndex - b.logIndex : a.block < b.block ? -1 : 1));
     const byCurve = new Map<Address, Position>(positions.map((p) => [p.curve, p]));
-    const groups = new Map<Address, Trade[]>();
     for (const t of mine) {
-        const k = t.curve.toLowerCase() as Address;
-        groups.set(k, [...(groups.get(k) ?? []), t]);
-    }
-    for (const [curve, ts] of groups) {
-        const base = byCurve.get(curve);
-        if (base) {
-            byCurve.set(curve, addTrades(base, ts, indexedBlock));
-            continue;
+        const curve = t.curve.toLowerCase() as Address;
+        let base = byCurve.get(curve);
+        if (!base) {
+            const i = info(curve);
+            if (!i) continue;
+            base = {curve, token: i.token.toLowerCase() as Address, name: i.name, symbol: i.symbol, ...EMPTY_POSITION};
         }
-        const i = info(curve);
-        if (!i) continue;
-        byCurve.set(curve, addTrades({curve, token: i.token.toLowerCase() as Address, name: i.name, symbol: i.symbol, ...ZERO_AMOUNTS}, ts, indexedBlock));
+        byCurve.set(curve, {...base, ...applyTrade(base, t)});
     }
     return [...byCurve.values()];
 }
@@ -77,18 +76,15 @@ const min = (a: bigint, b: bigint) => (a < b ? a : b);
 
 export type Pnl = {realized: bigint | undefined; unrealized: bigint | undefined; unrealizedBps: bigint | undefined; cost: bigint | undefined};
 
-/** Average-cost P&L. Only bought quantities count: tokens received by transfer have no cost, so
- *  sells beyond what was bought and holdings beyond what is left of it are ignored. */
-export function pnl(a: Amounts, balance: bigint, price: bigint | undefined): Pnl {
-    if (a.buyTokens === 0n) return {realized: undefined, unrealized: undefined, unrealizedBps: undefined, cost: undefined};
-    const soldCounted = min(a.sellTokens, a.buyTokens);
-    const realized = a.sellTokens === 0n ? 0n : (a.sellQuote * soldCounted) / a.sellTokens - (a.buyQuote * soldCounted) / a.buyTokens;
-    const left = a.buyTokens - soldCounted;
-    const heldCounted = min(balance < 0n ? 0n : balance, left);
-    const cost = (a.buyQuote * heldCounted) / a.buyTokens;
+/** Display values of a moving-average position: realized as settled; the unrealized part covers
+ *  min(balance, tracked) at its share of the remaining cost. Never bought: all undefined. */
+export function pnl(p: PositionState, balance: bigint, price: bigint | undefined): Pnl {
+    if (p.buyTokens === 0n) return {realized: undefined, unrealized: undefined, unrealizedBps: undefined, cost: undefined};
+    const heldCounted = min(balance < 0n ? 0n : balance, p.tracked);
+    const cost = p.tracked === 0n ? 0n : (p.cost * heldCounted) / p.tracked;
     const unrealized = price === undefined ? undefined : (heldCounted * price) / WAD - cost;
     const unrealizedBps = cost === 0n || unrealized === undefined ? undefined : (unrealized * 10_000n) / cost;
-    return {realized, unrealized, unrealizedBps, cost};
+    return {realized: p.realized, unrealized, unrealizedBps, cost};
 }
 
 /** Value of a balance at `price`; undefined without a price. */

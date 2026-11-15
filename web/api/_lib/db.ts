@@ -3,6 +3,7 @@
 // only (CREATE ... IF NOT EXISTS, ADD COLUMN IF NOT EXISTS); never DROP or change a type.
 // Addresses are stored lowercase; amounts are raw 18-decimals integers in numeric(78,0).
 import {neon, NeonQueryFunction} from "@neondatabase/serverless";
+import type {FoldRow} from "./positions.js";
 import type {Interval, KnownCurve, RangeWrite} from "./indexer.js";
 
 export type Sql = NeonQueryFunction<false, false>;
@@ -309,7 +310,6 @@ export async function trades(sql: Sql, curve: string, before: bigint | undefined
 
 export type WalletCurve = {curve: string; token: string; name: string; symbol: string};
 export type WalletLaunched = WalletCurve & {createdTs: string};
-export type WalletPosition = WalletCurve & {buyQuote: string; buyTokens: string; sellQuote: string; sellTokens: string};
 
 /** Curves this address launched (Dev), newest first, at most 50. */
 export async function walletLaunched(sql: Sql, address: string, factory: string): Promise<WalletLaunched[]> {
@@ -335,20 +335,21 @@ export async function walletReceived(sql: Sql, address: string, factory: string)
     )) as WalletCurve[];
 }
 
-/** This address's trades summed per curve (curve and pool venues together, Dev trades included). */
-export async function walletPositions(sql: Sql, address: string, factory: string): Promise<WalletPosition[]> {
+export const WALLET_FOLD_LIMIT = 5000;
+
+/** This address's trades in (block, log_index) order with the curve's token, name and symbol, for
+ *  the moving-average fold. At most WALLET_FOLD_LIMIT + 1 rows: one more means "truncated". */
+export async function walletTradeRows(sql: Sql, address: string, factory: string): Promise<FoldRow[]> {
     return (await sql.query(
-        `SELECT t.curve, m.token, m.name, m.symbol,
-                coalesce(sum(t.quote_amount) FILTER (WHERE t.side = 'buy'), 0)::text AS "buyQuote",
-                coalesce(sum(t.token_amount) FILTER (WHERE t.side = 'buy'), 0)::text AS "buyTokens",
-                coalesce(sum(t.quote_amount) FILTER (WHERE t.side = 'sell'), 0)::text AS "sellQuote",
-                coalesce(sum(t.token_amount) FILTER (WHERE t.side = 'sell'), 0)::text AS "sellTokens"
+        `SELECT t.curve, m.token, m.name, m.symbol, t.side,
+                t.quote_amount::text AS "quoteAmount", t.token_amount::text AS "tokenAmount"
          FROM mapae_trades t
          JOIN mapae_curves m ON m.curve = t.curve AND m.factory = $2
          WHERE t.trader = $1
-         GROUP BY t.curve, m.token, m.name, m.symbol`,
-        [address, factory.toLowerCase()]
-    )) as WalletPosition[];
+         ORDER BY t.block, t.log_index
+         LIMIT $3`,
+        [address, factory.toLowerCase(), WALLET_FOLD_LIMIT + 1]
+    )) as FoldRow[];
 }
 
 export type WalletTradeOut = TradeOut & {curve: string; symbol: string};

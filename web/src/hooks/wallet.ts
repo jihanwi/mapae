@@ -19,6 +19,8 @@ export type WalletOut = {
     launched: (WalletCurveOut & {createdTs: string})[];
     received: WalletCurveOut[];
     positions: ServerPosition[];
+    /** more trades than the server folds: positions is empty and P&L is not shown */
+    positionsTruncated?: boolean;
 };
 export type WalletTrade = ServerTrade & {curve: string; symbol: string; block: string};
 

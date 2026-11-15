@@ -89,14 +89,14 @@ function HoldingRow({r, imageUrl}: {r: Row; imageUrl?: string | null}) {
                         </div>
                     </div>
                 </div>
-                <div className="hidden lg:block text-right text-[13px] tabular-nums truncate">{fmt(r.balance, 2, tr.locale)}</div>
+                <div className="hidden lg:block text-right text-[13px] tabular-nums break-words">{fmt(r.balance, 2, tr.locale)}</div>
                 <div className="flex-none text-right tabular-nums min-w-0 max-w-[50%] lg:max-w-none">
-                    <div className="text-[13px] font-semibold truncate">{value}</div>
-                    <div className="text-[12px] truncate lg:hidden">
+                    <div className="text-[13px] font-semibold break-words">{value}</div>
+                    <div className="text-[12px] break-words lg:hidden">
                         <Pnl v={r.unrealized} unit={r.unit} bps={r.unrealizedBps} />
                     </div>
                 </div>
-                <div className="hidden lg:block text-right text-[13px] tabular-nums truncate">
+                <div className="hidden lg:block text-right text-[13px] tabular-nums break-words">
                     <Pnl v={r.unrealized} unit={r.unit} bps={r.unrealizedBps} />
                 </div>
                 <div className="hidden lg:block text-right text-[12px] text-hanji-400 tabular-nums">{sharePct(r.balance, TOTAL_SUPPLY)}%</div>
@@ -113,7 +113,7 @@ function SoldRow({r, imageUrl}: {r: Row; imageUrl?: string | null}) {
                 <div className="font-semibold truncate text-[14px]">{r.c.name}</div>
                 <div className="text-[12px] text-hanji-400 truncate">{r.c.symbol}</div>
             </div>
-            <div className="flex-none text-right text-[13px] tabular-nums max-w-[50%] truncate">
+            <div className="flex-none text-right text-[13px] tabular-nums max-w-[50%] break-words">
                 <Pnl v={r.realized} unit={r.unit} />
             </div>
         </Link>
@@ -185,7 +185,7 @@ function LaunchedTab({launched, byCurve, meta}: {launched: {curve: string; name:
                                 </div>
                             )}
                         </div>
-                        <div className="flex-none text-right text-[13px] tabular-nums max-w-[45%] truncate">
+                        <div className="flex-none text-right text-[13px] tabular-nums max-w-[45%] break-words">
                             {c && m !== undefined ? `${fmtRound(m, c.isEth ? 4 : 0, tr.locale)} ${quoteUnit(c)}` : "–"}
                         </div>
                     </Link>
@@ -277,7 +277,9 @@ function WalletView({address}: {address: Address}) {
         const c = byCurve.get(curve);
         return c ? {token: c.token, name: c.name, symbol: c.symbol} : undefined;
     };
-    const positions: Position[] = serverOk ? mergeBrowserTrades(profile.data.positions.map(parsePosition), activity.trades, address, indexedBlock, info) : [];
+    // More trades than the server folds: no P&L at all (quantities and values still show).
+    const pnlOk = serverOk && !profile.data.positionsTruncated;
+    const positions: Position[] = pnlOk ? mergeBrowserTrades(profile.data.positions.map(parsePosition), activity.trades, address, indexedBlock, info) : [];
     const posByCurve = new Map(positions.map((p) => [p.curve, p]));
     // Tokens to read: received + traded (server) + traded in the browser window.
     const mineInBrowser = activity.trades.filter((t) => lc(t.trader) === lc(address));
@@ -299,7 +301,7 @@ function WalletView({address}: {address: Address}) {
         const unit: Unit = c.isEth ? "ETH" : "KRWs";
         const price = currentPrice(c);
         const pos = posByCurve.get(lc(c.address));
-        const p = serverOk && pos ? pnl(pos, balance, price) : undefined;
+        const p = pnlOk && pos ? pnl(pos, balance, price) : undefined;
         rows.push({
             c,
             unit,
@@ -331,7 +333,6 @@ function WalletView({address}: {address: Address}) {
                     )}
                 </div>
                 <div className="flex items-center gap-x-3 gap-y-2 flex-wrap min-w-0 text-[13px]">
-                    {nick && <span className="text-hanji-400 tabular-nums">{shortAddr(address)}</span>}
                     <CopyAddress address={address} label={`${shortAddr(address)} ${tr.tokenPage.copy}`} />
                     <ExtLink href={explorerAddr(address)}>{tr.walletPage.explorer}</ExtLink>
                 </div>
@@ -344,20 +345,21 @@ function WalletView({address}: {address: Address}) {
                         .map((u) => {
                             const s = sums.get(u)!;
                             return (
-                                <div key={u} className="grid grid-cols-3 gap-3 min-w-0">
-                                    <div className="bg-ink-900 rounded-stat px-3.5 py-3 min-w-0">
+                                <div key={u} className="grid grid-cols-2 lg:grid-cols-3 gap-3 min-w-0">
+                                    {/* below lg the value takes a full row; numbers wrap, never cut */}
+                                    <div className="col-span-2 lg:col-span-1 bg-ink-900 rounded-stat px-3.5 py-3 min-w-0">
                                         <div className="text-[12px] text-hanji-400 mb-1 truncate">{tr.walletPage.value}</div>
-                                        <div className="text-[15px] font-semibold tabular-nums truncate">{s.value !== undefined ? `${fmtRound(s.value, dpOf(u), tr.locale)} ${u}` : "–"}</div>
+                                        <div className="text-[15px] font-semibold tabular-nums break-words">{s.value !== undefined ? `${fmtRound(s.value, dpOf(u), tr.locale)} ${u}` : "–"}</div>
                                     </div>
                                     <div className="bg-ink-900 rounded-stat px-3.5 py-3 min-w-0">
                                         <div className="text-[12px] text-hanji-400 mb-1 truncate">{tr.walletPage.unrealized}</div>
-                                        <div className="text-[15px] font-semibold tabular-nums truncate">
+                                        <div className="text-[15px] font-semibold tabular-nums break-words">
                                             <Pnl v={s.unrealized} unit={u} />
                                         </div>
                                     </div>
                                     <div className="bg-ink-900 rounded-stat px-3.5 py-3 min-w-0">
                                         <div className="text-[12px] text-hanji-400 mb-1 truncate">{tr.walletPage.realized}</div>
-                                        <div className="text-[15px] font-semibold tabular-nums truncate">
+                                        <div className="text-[15px] font-semibold tabular-nums break-words">
                                             <Pnl v={s.realized} unit={u} />
                                         </div>
                                     </div>
