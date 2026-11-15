@@ -1,11 +1,11 @@
 import {describe, expect, it} from "vitest";
 import type {Trade} from "./activity";
-import {addTrades, Amounts, holdingValue, mergeBrowserTrades, pnl, Position, splitHoldings, totals, ZERO_AMOUNTS} from "./wallet";
+import {applyTrade, EMPTY_POSITION, holdingValue, mergeBrowserTrades, pnl, Position, PositionState, splitHoldings, totals} from "./wallet";
+import {VECTORS} from "../../api/_lib/positionVectors";
 
 const E18 = 10n ** 18n;
 const T = (n: number) => BigInt(n) * E18; // whole tokens / whole quote
 const P = (n: number) => BigInt(n) * E18; // price per whole token
-const amt = (buyQuote: number, buyTokens: number, sellQuote = 0, sellTokens = 0): Amounts => ({buyQuote: T(buyQuote), buyTokens: T(buyTokens), sellQuote: T(sellQuote), sellTokens: T(sellTokens)});
 
 type A = `0x${string}`;
 const addr = (n: number) => `0x${n.toString(16).padStart(40, "0")}` as A;
@@ -16,46 +16,51 @@ function trade(curve: A, side: "buy" | "sell", quote: number, tokens: number, bl
     return {curve, venue: "curve", side, trader, isDev: false, verified: null, tokenAmount: T(tokens), quoteAmount: T(quote), volume: T(quote), block: BigInt(block), logIndex: 0, tx: `0x${block.toString(16).padStart(64, "0")}`};
 }
 
+const fold = (...steps: [("buy" | "sell"), number, number][]): PositionState =>
+    steps.reduce((p, [side, q, t]) => applyTrade(p, {side, quoteAmount: T(q), tokenAmount: T(t)}), EMPTY_POSITION);
+
+describe("moving-average fold (browser, same vectors as the server)", () => {
+    for (const v of VECTORS) {
+        it(v.name, () => {
+            const s = v.steps.reduce(applyTrade, EMPTY_POSITION);
+            expect({cost: s.cost, tracked: s.tracked, realized: s.realized}).toEqual(v.want);
+        });
+    }
+});
+
 describe("pnl", () => {
     it("bought 10 for 100, price now 20: unrealized +100 (+100%)", () => {
-        const r = pnl(amt(100, 10), T(10), P(20));
-        expect(r).toEqual({realized: 0n, unrealized: T(100), unrealizedBps: 10_000n, cost: T(100)});
+        expect(pnl(fold(["buy", 100, 10]), T(10), P(20))).toEqual({realized: 0n, unrealized: T(100), unrealizedBps: 10_000n, cost: T(100)});
     });
-    it("bought 10 for 100, sold 5 for 80: realized +30, the 5 left cost 50", () => {
-        const r = pnl(amt(100, 10, 80, 5), T(5), P(10));
-        expect(r.realized).toBe(T(30));
-        expect(r.cost).toBe(T(50));
-        expect(r.unrealized).toBe(0n);
+    it("a later buy keeps the settled realized P&L", () => {
+        const before = pnl(fold(["buy", 100, 10], ["sell", 80, 5]), T(5), P(10));
+        const after = pnl(fold(["buy", 100, 10], ["sell", 80, 5], ["buy", 100, 5]), T(10), P(10));
+        expect(before.realized).toBe(T(30));
+        expect(after.realized).toBe(T(30));
+        expect(after.cost).toBe(T(150));
     });
-    it("sold everything: unrealized 0, realized only", () => {
-        const r = pnl(amt(100, 10, 150, 10), 0n, P(20));
-        expect(r.realized).toBe(T(50));
-        expect(r.unrealized).toBe(0n);
-        expect(r.cost).toBe(0n);
-        expect(r.unrealizedBps).toBeUndefined();
-    });
-    it("holding more than bought (received by transfer): only the bought quantity counts", () => {
-        const r = pnl(amt(100, 10), T(25), P(20));
+    it("balance above tracked (received by transfer): heldCounted = tracked", () => {
+        const r = pnl(fold(["buy", 100, 10]), T(25), P(20));
         expect(r.cost).toBe(T(100));
-        expect(r.unrealized).toBe(T(100)); // 10 * 20 - 100, the 15 received are left out
+        expect(r.unrealized).toBe(T(100)); // 10 * 20 - 100
     });
-    it("never bought (transfer only): undefined", () => {
-        expect(pnl(ZERO_AMOUNTS, T(5), P(20))).toEqual({realized: undefined, unrealized: undefined, unrealizedBps: undefined, cost: undefined});
+    it("balance below tracked: cost is the held share", () => {
+        expect(pnl(fold(["buy", 100, 10]), T(4), P(10)).cost).toBe(T(40));
     });
-    it("sold more than bought (sold received tokens): only the bought quantity counts as sold", () => {
-        // bought 10 for 100, sold 20 for 400 -> 10 counted at the average sell price 20
-        const r = pnl(amt(100, 10, 400, 20), 0n, P(20));
-        expect(r.realized).toBe(T(100)); // 400 * 10/20 - 100
-        expect(r.cost).toBe(0n);
+    it("sold everything: unrealized 0, cost 0, no percentage", () => {
+        const r = pnl(fold(["buy", 100, 10], ["sell", 150, 10]), 0n, P(20));
+        expect(r).toEqual({realized: T(50), unrealized: 0n, unrealizedBps: undefined, cost: 0n});
+    });
+    it("never bought: all undefined", () => {
+        expect(pnl(fold(["sell", 50, 5]), T(5), P(20))).toEqual({realized: undefined, unrealized: undefined, unrealizedBps: undefined, cost: undefined});
     });
     it("a loss is negative", () => {
-        const r = pnl(amt(100, 10), T(10), P(4));
+        const r = pnl(fold(["buy", 100, 10]), T(10), P(4));
         expect(r.unrealized).toBe(-T(60));
         expect(r.unrealizedBps).toBe(-6000n);
-        expect(pnl(amt(100, 10, 30, 5), T(5), P(10)).realized).toBe(-T(20));
     });
-    it("no price: unrealized undefined, realized still known", () => {
-        const r = pnl(amt(100, 10, 80, 5), T(5), undefined);
+    it("no price: unrealized undefined, realized known", () => {
+        const r = pnl(fold(["buy", 100, 10], ["sell", 80, 5]), T(5), undefined);
         expect(r.unrealized).toBeUndefined();
         expect(r.realized).toBe(T(30));
     });
@@ -81,23 +86,30 @@ describe("totals", () => {
     });
 });
 
-describe("addTrades and the indexedBlock boundary", () => {
-    it("adds only trades after indexedBlock", () => {
-        const base = amt(100, 10);
-        const out = addTrades(base, [trade(C1, "buy", 50, 5, 100), trade(C1, "buy", 20, 2, 101), trade(C1, "sell", 30, 3, 102)], 100n);
-        expect(out).toEqual({buyQuote: T(120), buyTokens: T(12), sellQuote: T(30), sellTokens: T(3)});
-        expect(base).toEqual(amt(100, 10)); // input untouched
+describe("mergeBrowserTrades", () => {
+    const one = (st: PositionState): Position => ({curve: C1, token: addr(0x71), name: "One", symbol: "ONE", ...st});
+    it("applies only trades after indexedBlock, in (block, logIndex) order", () => {
+        const server = [one(fold(["buy", 100, 10]))];
+        // given out of order: the sell (block 52) must come after the buy (block 51)
+        const trades = [trade(C1, "sell", 80, 5, 52), trade(C1, "buy", 999, 99, 50), trade(C1, "buy", 100, 10, 51)];
+        const [p] = mergeBrowserTrades(server, trades, W, 50n, () => undefined);
+        // 20 tokens for 200, then sell 5 at 16 against an average of 10
+        expect({cost: p.cost, tracked: p.tracked, realized: p.realized}).toEqual({cost: T(150), tracked: T(15), realized: T(30)});
     });
-    it("merges per curve, adds a new line for an unseen curve, ignores other wallets and old blocks", () => {
-        const server: Position[] = [{curve: C1, token: addr(0x71), name: "One", symbol: "ONE", ...amt(100, 10)}];
-        const trades = [trade(C1, "buy", 10, 1, 51), trade(C1, "buy", 999, 99, 50), trade(C2, "buy", 5, 5, 60), trade(C2, "buy", 7, 7, 61, addr(0xbb))];
+    it("orders by logIndex within a block", () => {
+        const a = {...trade(C1, "sell", 80, 5, 60), logIndex: 1};
+        const b = {...trade(C1, "buy", 100, 10, 60), logIndex: 0};
+        const [p] = mergeBrowserTrades([], [a, b], W, 50n, () => ({token: addr(0x71), name: "One", symbol: "ONE"}));
+        expect(p.realized).toBe(T(30));
+    });
+    it("starts unseen curves from zero and ignores other wallets", () => {
         const info = (c: A) => (c === C2 ? {token: addr(0x72), name: "Two", symbol: "TWO"} : undefined);
-        const out = mergeBrowserTrades(server, trades, W.toUpperCase().replace("0X", "0x"), 50n, info);
-        expect(out.find((p) => p.curve === C1)).toMatchObject(amt(110, 11));
-        expect(out.find((p) => p.curve === C2)).toMatchObject({symbol: "TWO", ...amt(5, 5)});
+        const out = mergeBrowserTrades([], [trade(C2, "buy", 5, 5, 60), trade(C2, "buy", 7, 7, 61, addr(0xbb))], W.toUpperCase().replace("0X", "0x"), 50n, info);
+        expect(out).toHaveLength(1);
+        expect(out[0]).toMatchObject({symbol: "TWO", cost: T(5), tracked: T(5)});
     });
-    it("no indexedBlock (no server): browser trades are not added", () => {
-        const server: Position[] = [{curve: C1, token: addr(0x71), name: "One", symbol: "ONE", ...amt(100, 10)}];
+    it("no indexedBlock (no server): unchanged", () => {
+        const server = [one(fold(["buy", 100, 10]))];
         expect(mergeBrowserTrades(server, [trade(C1, "buy", 10, 1, 99)], W, null, () => undefined)).toEqual(server);
     });
 });
