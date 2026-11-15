@@ -94,7 +94,7 @@ export type TxPhase = "idle" | "wallet" | "confirming";
 export type RunOpts = {
     scope?: "v3";
     onRevert?: (errorName: string | undefined) => void;
-    /** Replaces the default success toast text ("{label} — done") when given. */
+    /** Replaces the default success toast text ("{label}" + the done suffix) when given. */
     successMessage?: string;
 };
 export type RunFn = (label: string, fn: () => Promise<`0x${string}`>, opts?: RunOpts) => Promise<boolean>;
