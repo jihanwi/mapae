@@ -28,7 +28,7 @@ import {
     fillVerified,
     verifiedLookupTargets,
 } from "./indexer.js";
-import {INDEXER_STATE_ID, loadCurves, PokeClaim, POKE_GAP_SEC, readNextBlock, readState, Sql, trades as tradesQuery, walletTradeRows, walletTrades, writeRange} from "./db.js";
+import {curveList, INDEXER_STATE_ID, LIST_MAX, loadCurves, PokeClaim, POKE_GAP_SEC, readNextBlock, readState, Sql, trades as tradesQuery, walletTradeRows, walletTrades, writeRange} from "./db.js";
 import {handlePoke} from "./poke.js";
 import {paramsAllowed} from "./chainApi.js";
 
@@ -339,6 +339,18 @@ describe("db: decision 50 price columns", () => {
             expect(q.text).toMatch(/div\(t?\.?quote_amount \* 1000000000000000000::numeric, t?\.?token_amount\)::text AS "priceWad"/);
             expect(q.text).not.toContain("price_wad");
         }
+    });
+    it("W-T16 list: one statement for every curve of the factory, latest r / s and verified buyers, 501 rows max", async () => {
+        const {sql, seen} = capture();
+        await curveList(sql, "0xABC");
+        expect(seen).toHaveLength(1);
+        expect(seen[0].params).toEqual(["0xabc", LIST_MAX + 1]);
+        expect(LIST_MAX).toBe(500);
+        const q = seen[0].text;
+        expect(q).toContain("WHERE m.factory = $1");
+        expect(q).toContain("ORDER BY m.created_ts DESC");
+        expect(q).toContain("COALESCE(l.r_after, 0)::text AS r");
+        expect(q).toMatch(/count\(DISTINCT t\.trader\)[\s\S]*t\.verified = true AND NOT t\.is_dev/);
     });
     it("the P&L fold reads amounts only (positions.ts never sees a price)", async () => {
         const {sql, seen} = capture();

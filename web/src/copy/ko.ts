@@ -16,6 +16,8 @@ export const ko = {
         netError: "네트워크 응답이 없어요. 잠시 후 다시 시도해 주세요",
         retry: "다시 시도",
         close: "닫기",
+        /** Chain reads fail but earlier data is shown (home list, token page, wallet holdings). */
+        staleBand: "실시간 연결이 늦어지고 있어요. 조금 전 기준으로 보여 드려요",
     },
     appTitle: "MAPAE",
     heroTitle: "사고팔 수 있는 팬 멤버십",
@@ -565,7 +567,8 @@ export const ko = {
         value: "평가 금액",
         unrealized: "평가 손익",
         realized: "실현 손익",
-        counts: (held: number, launched: number) => `보유 토큰 ${held}개 · 발행한 토큰 ${launched}개`,
+        /** held null: balances could not be read (shown as "–") */
+        counts: (held: number | null, launched: number) => `보유 토큰 ${held === null ? "–" : `${held}개`} · 발행한 토큰 ${launched}개`,
         tabs: {holdings: "보유", launched: "발행", trades: "거래"},
         cols: {token: "토큰", balance: "보유 수량", value: "평가 금액", unrealized: "평가 손익", share: "비율"},
         groups: {holding: "보유 중", soldOut: "모두 판 토큰"},

@@ -114,3 +114,99 @@ describe("featured", () => {
         expect(featured([], new Map())).toBeUndefined();
     });
 });
+
+// ---- W-T16: server-first list ----
+import {mergeCurveList, newOnChain, OVERLAY_MAX, overlayTargets, serverCurveInfo} from "./homeList";
+import type {ServerListRow} from "./chainMerge";
+import type {CurveInfo} from "../hooks/curves";
+
+const WETH = addr(0xe7);
+function listRow(i: number, over: Partial<ServerListRow> = {}): ServerListRow {
+    return {
+        curve: addr(0xc0 + i),
+        token: addr(0x70 + i),
+        dev: addr(0xde),
+        quote: addr(0x99),
+        virtualQuote: VQ.toString(),
+        name: `Horse ${i}`,
+        symbol: `H${i}`,
+        createdTs: String(1_000 + i),
+        priorityUntil: String(1_600 + i),
+        pool: null,
+        r: (3n * WAD).toString(),
+        s: (1000n * WAD).toString(),
+        verifiedBuyers: 2,
+        ...over,
+    };
+}
+/** What useCurves builds from the chain reads for the same curve state. */
+function chainInfo(i: number, index: number, over: Partial<CurveInfo> = {}): CurveInfo {
+    return {
+        address: addr(0xc0 + i),
+        token: addr(0x70 + i),
+        quote: addr(0x99),
+        dev: addr(0xde),
+        r: 3n * WAD,
+        s: 1000n * WAD,
+        virtualQuote: VQ,
+        graduated: false,
+        verifiedBuyerCount: 2,
+        pool: addr(0),
+        totalFeeBps: 100,
+        name: `Horse ${i}`,
+        symbol: `H${i}`,
+        isEth: false,
+        index,
+        priorityUntil: BigInt(1_600 + i),
+        poolSpot: undefined,
+        ...over,
+    };
+}
+const strip = ({totalFeeBps: _f, source: _s, ...rest}: CurveInfo) => rest; // eslint-disable-line @typescript-eslint/no-unused-vars
+
+describe("server-first list (W-T16)", () => {
+    it("a server-only row equals the chain row for the same state (fee aside)", () => {
+        const s = serverCurveInfo(listRow(1), 4, WETH);
+        expect(s.source).toBe("server");
+        expect(s.totalFeeBps).toBe(0);
+        expect(strip(s)).toEqual(strip(chainInfo(1, 4)));
+        // the market cap / price helpers read the same numbers
+        expect(currentPrice(s)).toBe(currentPrice(chainInfo(1, 4)));
+        // ETH pair and graduated row: pool kept, the summary's last price stands in for the pool spot
+        const g = serverCurveInfo(listRow(2, {quote: WETH, pool: addr(0xb1)}), 0, WETH, "123");
+        expect(g).toMatchObject({isEth: true, graduated: true, pool: addr(0xb1), poolSpot: 123n});
+    });
+    it("server rows render alone; chain reads replace the rows they cover", () => {
+        const server = [listRow(3), listRow(2), listRow(1)];
+        const alone = mergeCurveList({server, chainAddrs: undefined, chain: new Map(), weth: WETH});
+        expect(alone.map((c) => c.address)).toEqual([addr(0xc3), addr(0xc2), addr(0xc1)]);
+        expect(alone.map((c) => c.index)).toEqual([2, 1, 0]);
+        expect(alone.every((c) => c.source === "server")).toBe(true);
+        const live = chainInfo(2, 1, {r: 9n * WAD});
+        const over = mergeCurveList({server, chainAddrs: [addr(0xc1), addr(0xc2), addr(0xc3)], chain: new Map([[addr(0xc2), live]]), weth: WETH});
+        expect(over[1]).toBe(live);
+        expect(over[0].source).toBe("server");
+    });
+    it("a curve on the chain but not in the server list is added at the top", () => {
+        const server = [listRow(2), listRow(1)];
+        const chainAddrs = [addr(0xc1), addr(0xc2), addr(0xc3)];
+        expect(newOnChain(chainAddrs, server)).toEqual([addr(0xc3)]);
+        const fresh = chainInfo(3, 2);
+        const out = mergeCurveList({server, chainAddrs, chain: new Map([[addr(0xc3), fresh]]), weth: WETH});
+        expect(out.map((c) => c.address)).toEqual([addr(0xc3), addr(0xc2), addr(0xc1)]);
+        expect(out.map((c) => c.index)).toEqual([2, 1, 0]);
+    });
+    it("without a server list the chain rows are the list (newest first)", () => {
+        const out = mergeCurveList({server: undefined, chainAddrs: [addr(0xc1), addr(0xc2)], chain: new Map([[addr(0xc1), chainInfo(1, 0)], [addr(0xc2), chainInfo(2, 1)]]), weth: WETH});
+        expect(out.map((c) => c.index)).toEqual([1, 0]);
+    });
+    it("the chain overlays at most 30 visible rows (plus new curves), deduped", () => {
+        const visible = Array.from({length: 100}, (_, i) => addr(0x1000 + i));
+        const t = overlayTargets([addr(0x9999)], [visible[0], ...visible]);
+        expect(OVERLAY_MAX).toBe(30);
+        expect(t).toHaveLength(1 + 30);
+        expect(t[0]).toBe(addr(0x9999));
+        expect(new Set(t).size).toBe(t.length);
+        expect(overlayTargets([], visible)).toEqual(visible.slice(0, 30));
+    });
+});

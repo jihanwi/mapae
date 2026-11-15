@@ -15,7 +15,32 @@ export type ServerCurveSummary = {
     /** price_wad of the last trade before the window; null when there is none. */
     refPriceWad: string | null;
 };
-export type ServerSummary = {indexedBlock: string | null; indexedTs: string | null; window?: number; curves: Record<string, ServerCurveSummary>};
+/** One curve of the server-first home list (GET /api/chain/summary `list`, newest first). */
+export type ServerListRow = {
+    curve: Address;
+    token: Address;
+    dev: Address;
+    quote: Address;
+    virtualQuote: string;
+    name: string;
+    symbol: string;
+    createdTs: string;
+    priorityUntil: string;
+    pool: Address | null;
+    r: string;
+    s: string;
+    verifiedBuyers: number;
+};
+export type ServerSummary = {
+    indexedBlock: string | null;
+    indexedTs: string | null;
+    window?: number;
+    curves: Record<string, ServerCurveSummary>;
+    /** Absent from older deployments. */
+    list?: ServerListRow[];
+    /** More curves than the list holds (the newest 500 are listed). */
+    listTruncated?: boolean;
+};
 
 export type ServerTrade = {
     tx: `0x${string}`;

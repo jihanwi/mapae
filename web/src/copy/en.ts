@@ -12,6 +12,8 @@ export const en = {
         netError: "The network isn't responding. Try again in a moment.",
         retry: "Try again",
         close: "Close",
+        /** Chain reads fail but earlier data is shown (home list, token page, wallet holdings). */
+        staleBand: "Live connection is slow. Showing data from a moment ago",
     },
     // legacy v2 section, Korean only
     appTitle: ko.appTitle,
@@ -430,7 +432,8 @@ export const en = {
         value: "Value",
         unrealized: "Unrealized P&L",
         realized: "Realized P&L",
-        counts: (held: number, launched: number) => `${held} token${held === 1 ? "" : "s"} held · ${launched} token${launched === 1 ? "" : "s"} launched`,
+        counts: (held: number | null, launched: number) =>
+            `${held === null ? "–" : held} token${held === 1 ? "" : "s"} held · ${launched} token${launched === 1 ? "" : "s"} launched`,
         tabs: {holdings: "Holdings", launched: "Launched", trades: "Trades"},
         cols: {token: "Token", balance: "Balance", value: "Value", unrealized: "Unrealized P&L", share: "Share"},
         groups: {holding: "Holding", soldOut: "Sold out"},

@@ -2,7 +2,8 @@
 // the featured row. No RPC, no React.
 import {addrKey} from "./address";
 import {CurveStats, sortCurves, SortCurve} from "./activity";
-import type {ServerSummary} from "./chainMerge";
+import type {ServerListRow, ServerSummary} from "./chainMerge";
+import type {CurveInfo} from "../hooks/curves";
 import {costToSellOut, grossForNet, spotPrice} from "./curveMath";
 
 type Address = `0x${string}`;
@@ -80,4 +81,93 @@ export function exactAddressHit<T extends Pick<HomeCurve, "address" | "token">>(
 /** The first not-yet-graduated entry of the "almost" order. */
 export function featured<T extends HomeCurve>(curves: readonly T[], stats: ReadonlyMap<Address, CurveStats>): T | undefined {
     return sortCurves("almost", curves.filter((c) => !c.graduated), stats)[0];
+}
+
+// ---------------------------------------------------------------------------------------------
+// Server-first list (W-T16): the server rows render at once, chain reads overlay a few of them.
+// ---------------------------------------------------------------------------------------------
+
+const ZERO_POOL = "0x0000000000000000000000000000000000000000" as Address;
+
+/** Rows the chain overlays on the home: the first OVERLAY_MAX visible ones. */
+export const OVERLAY_MAX = 30;
+
+/** A server list row as a CurveInfo (source "server"). totalFeeBps is not indexed, so it is 0 and
+ *  figures that need it are hidden for server rows. A graduated row has no pool spot; the summary's
+ *  last price (the last pool trade's average) stands in for it. */
+export function serverCurveInfo(row: ServerListRow, index: number, wethAddr: Address, lastPriceWad?: string): CurveInfo {
+    const pool = (row.pool ?? ZERO_POOL).toLowerCase() as Address;
+    const graduated = row.pool !== null;
+    return {
+        address: row.curve,
+        token: row.token,
+        quote: row.quote,
+        dev: row.dev,
+        r: BigInt(row.r),
+        s: BigInt(row.s),
+        virtualQuote: BigInt(row.virtualQuote),
+        graduated,
+        verifiedBuyerCount: row.verifiedBuyers,
+        pool,
+        totalFeeBps: 0,
+        name: row.name,
+        symbol: row.symbol,
+        isEth: row.quote.toLowerCase() === wethAddr.toLowerCase(),
+        index,
+        priorityUntil: BigInt(row.priorityUntil),
+        poolSpot: graduated && lastPriceWad ? BigInt(lastPriceWad) : undefined,
+        source: "server",
+    };
+}
+
+/** The home list: server rows (newest first) with chain reads laid over them, plus curves the
+ *  chain lists but the server does not know yet, at the top. `chainAddrs` is allCurves (oldest
+ *  first) when it loaded; it gives every row its allCurves index. Without server rows the chain
+ *  infos are the list (newest first). */
+export function mergeCurveList(p: {
+    server: readonly ServerListRow[] | undefined;
+    summary?: ServerSummary;
+    chainAddrs: readonly Address[] | undefined;
+    chain: ReadonlyMap<string, CurveInfo>;
+    weth: Address;
+}): CurveInfo[] {
+    const idx = new Map<string, number>((p.chainAddrs ?? []).map((a, i) => [addrKey(a), i]));
+    if (!p.server) return [...p.chain.values()].sort((a, b) => b.index - a.index);
+    const known = new Set(p.server.map((r) => addrKey(r.curve)));
+    const n = p.server.length;
+    const rows = p.server.map((row, i) => {
+        const k = addrKey(row.curve);
+        const live = p.chain.get(k);
+        if (live) return live;
+        return serverCurveInfo(row, idx.get(k) ?? n - 1 - i, p.weth, p.summary?.curves[k]?.lastPriceWad);
+    });
+    const fresh = [...p.chain.values()].filter((c) => !known.has(addrKey(c.address))).sort((a, b) => b.index - a.index);
+    return [...fresh, ...rows];
+}
+
+/** Curves on the chain that the server list does not hold (newest first). */
+export function newOnChain(chainAddrs: readonly Address[] | undefined, server: readonly ServerListRow[] | undefined): Address[] {
+    if (!chainAddrs || !server) return [];
+    const known = new Set(server.map((r) => addrKey(r.curve)));
+    return chainAddrs.filter((a) => !known.has(addrKey(a))).reverse();
+}
+
+/** Chain overlay targets: new curves plus at most OVERLAY_MAX of the visible ones, deduped. */
+export function overlayTargets(fresh: readonly Address[], visible: readonly Address[]): Address[] {
+    const out: Address[] = [];
+    const seen = new Set<string>();
+    const add = (a: Address) => {
+        const k = addrKey(a);
+        if (seen.has(k)) return false;
+        seen.add(k);
+        out.push(a);
+        return true;
+    };
+    for (const a of fresh) add(a);
+    let n = 0;
+    for (const a of visible) {
+        if (n >= OVERLAY_MAX) break;
+        if (add(a)) n++;
+    }
+    return out;
 }

@@ -1,13 +1,16 @@
-// v3 curve data hooks. Direct RPC only (no indexer, no getLogs). Reads are batched through
+// v3 curve data hooks. The list starts from the server index (W-T16); everything else is direct RPC. Reads are batched through
 // wagmi's useReadContracts, which uses the chain's Multicall3, so the RPC count does not grow
 // with the number of curves. Failures are surfaced as error state; there is no fallback data.
-import {useEffect, useState} from "react";
+import {useEffect, useRef, useState} from "react";
 import {Abi} from "viem";
 import {useAccount, useBalance, useReadContract, useReadContracts} from "wagmi";
 import {ADDR_V3} from "../contracts/addressesV3";
 import {priorityRemaining} from "../lib/priority";
 import {CurveFactoryAbi, CurveSaleAbi, MapaePoolV3Abi, MembershipTokenV3Abi, MockDojangV3Abi} from "../contracts/abisV3";
 import {giwaSepolia} from "../config/chain";
+import {addrKey} from "../lib/address";
+import {mergeCurveList, newOnChain, overlayTargets} from "../lib/homeList";
+import {useChainSummary} from "./chainData";
 
 export type Address = `0x${string}`;
 export const ZERO: Address = "0x0000000000000000000000000000000000000000";
@@ -34,6 +37,8 @@ export type CurveInfo = {
     priorityUntil: bigint;
     /** Graduated pool spot (quote per token, 18 decimals); set by useCurves only, after graduation. */
     poolSpot?: bigint;
+    /** "server": built from the indexed list (no chain read yet); totalFeeBps is unknown (0). */
+    source?: "server";
 };
 
 export type CurveDetail = CurveInfo & {
@@ -90,10 +95,17 @@ function results(data: readonly {status: string; result?: unknown}[] | undefined
     return slice.map((x) => x.result);
 }
 
-/** Every curve from CurveFactory.allCurves(), newest first. 3 RPC calls regardless of N:
- *  allCurves, one batch of curve fields, and one batch of token name/symbol plus the graduated
- *  pools' spotPrice (both need addresses from the first batch). All refresh every 10 s. */
-export function useCurves(enabled = true) {
+/** Every curve of the current factory, newest first, server first (W-T16):
+ *  - the summary's `list` renders at once;
+ *  - CurveFactory.allCurves() (1 call) finds curves the server does not know yet;
+ *  - chain fields (1 batch) and name/symbol + graduated pool spot (1 batch) are read only for
+ *    those new curves plus `overlay` (the caller's visible rows, at most OVERLAY_MAX), and replace
+ *    the server rows they cover. Without a server list every curve is read, as before.
+ *  `stale`: the server list is shown but the chain reads fail. `isError`: both fail. 10 s refresh. */
+export function useCurves(enabled = true, overlay: readonly Address[] = []) {
+    const summary = useChainSummary();
+    const server = enabled ? summary.data?.list : undefined;
+    const serverSettled = !summary.isLoading;
     const list = useReadContract({
         address: ADDR_V3.curveFactory,
         abi: CurveFactoryAbi,
@@ -101,7 +113,10 @@ export function useCurves(enabled = true) {
         chainId: giwaSepolia.id,
         query: {enabled, refetchInterval: 10_000},
     });
-    const addrs = enabled ? ((list.data ?? []) as readonly Address[]).slice().reverse() : [];
+    const chainAddrs = enabled && list.data ? (list.data as readonly Address[]) : undefined;
+    const fresh = newOnChain(chainAddrs, server);
+    // Wait for the server answer before reading every curve; a server list narrows the reads.
+    const addrs: Address[] = !enabled || !serverSettled ? [] : server ? overlayTargets(fresh, overlay) : (chainAddrs ?? []).slice().reverse();
     const fields = useReadContracts({
         contracts: addrs.flatMap((a) => CURVE_FIELDS.map((fn) => ({address: a, abi: curveAbi, functionName: fn, chainId: giwaSepolia.id}))),
         query: {enabled: addrs.length > 0, refetchInterval: 10_000},
@@ -129,7 +144,8 @@ export function useCurves(enabled = true) {
         const x = names.data?.[addrs.length * 2 + k];
         if (x?.status === "success") spotOf.set(i, x.result as bigint);
     });
-    const curves: CurveInfo[] = [];
+    const indexOf = new Map<string, number>((chainAddrs ?? []).map((a, i) => [addrKey(a), i]));
+    const chain = new Map<string, CurveInfo>();
     let incomplete = false;
     addrs.forEach((a, i) => {
         const r = results(fields.data, i * N, N);
@@ -138,19 +154,33 @@ export function useCurves(enabled = true) {
             incomplete = true;
             return;
         }
-        // allCurves order: index 0 is the oldest; addrs is reversed (newest first).
-        curves.push({...toInfo(a, r, ns[0], ns[1], addrs.length - 1 - i), poolSpot: spotOf.get(i)});
+        // index = position in allCurves (0 = oldest)
+        chain.set(addrKey(a), {...toInfo(a, r, ns[0], ns[1], indexOf.get(addrKey(a)) ?? 0), poolSpot: spotOf.get(i)});
     });
+    // Rows that leave the overlay keep their last chain read (no flip back to the server values,
+    // which could reorder the list and change the overlay again).
+    const seen = useRef(new Map<string, CurveInfo>());
+    for (const [k, v] of chain) seen.current.set(k, v);
+    const curves = enabled ? mergeCurveList({server, summary: summary.data, chainAddrs, chain: seen.current, weth: ADDR_V3.weth}) : [];
     const fieldFailed = fields.data?.some((x) => x.status !== "success") ?? false;
     // Only name/symbol failures block the list; a failed pool price leaves that market cap unknown.
     const nameFailed = names.data?.slice(0, addrs.length * 2).some((x) => x.status !== "success") ?? false;
-    const isError = list.isError || fields.isError || names.isError || fieldFailed || nameFailed;
+    const chainError = list.isError || fields.isError || names.isError || fieldFailed || nameFailed;
+    const serverError = summary.isError || (summary.isSuccess && !summary.data.list);
+    const isError = enabled && chainError && (serverError || (serverSettled && !server));
+    const stale = enabled && chainError && !!server;
+    const chainLoading = list.isLoading || (addrs.length > 0 && incomplete);
     return {
         curves,
-        isLoading: !isError && (list.isLoading || (addrs.length > 0 && incomplete)),
+        isLoading: enabled && !isError && !server && (!serverSettled || chainLoading),
         isError,
+        stale,
+        /** The chain part alone failed (allCurves or the field reads). */
+        chainError: enabled && chainError,
+        listTruncated: !!summary.data?.listTruncated,
         error: list.error ?? fields.error ?? names.error ?? null,
         refetch: () => {
+            void summary.refetch();
             void list.refetch();
             void fields.refetch();
             void names.refetch();
@@ -177,7 +207,7 @@ export function useCurve(address: Address | undefined) {
     const ns = results(names.data, 0, 2);
     const fieldFailed = fields.data?.some((x) => x.status !== "success") ?? false;
     const nameFailed = names.data?.some((x) => x.status !== "success") ?? false;
-    const curve: CurveDetail | undefined =
+    const read: CurveDetail | undefined =
         address && r && ns
             ? {
                   ...toInfo(address, r, ns[0], ns[1]),
@@ -187,10 +217,18 @@ export function useCurve(address: Address | undefined) {
                   lpSeedBps: Number(r[14] as number),
               }
             : undefined;
+    // The last good read of this address, kept while later reads fail (W-T16 "stale").
+    const last = useRef<CurveDetail | undefined>(undefined);
+    if (read) last.current = read;
+    else if (last.current && last.current.address !== address) last.current = undefined;
+    const isError = fields.isError || names.isError || fieldFailed || nameFailed;
+    const curve = read ?? (isError ? last.current : undefined);
     return {
         curve,
+        /** A read failed after one succeeded: `curve` is the last good one. */
+        stale: isError && !read && !!curve,
         isLoading: !!address && !curve && !fieldFailed && !nameFailed && !fields.isError && !names.isError,
-        isError: fields.isError || names.isError || fieldFailed || nameFailed,
+        isError,
         error: fields.error ?? names.error ?? null,
         refetch: () => {
             void fields.refetch();
