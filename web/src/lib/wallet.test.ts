@@ -1,6 +1,6 @@
 import {describe, expect, it} from "vitest";
 import type {Trade} from "./activity";
-import {applyTrade, EMPTY_POSITION, holdingValue, mergeBrowserTrades, pnl, Position, PositionState, splitHoldings, totals} from "./wallet";
+import {applyTrade, EMPTY_POSITION, holdingValue, mergeBrowserTrades, pnl, Position, PositionState, signedPnl, splitHoldings, totals, walletAmount} from "./wallet";
 import {VECTORS} from "../../api/_lib/positionVectors";
 
 const E18 = 10n ** 18n;
@@ -128,5 +128,24 @@ describe("splitHoldings", () => {
         const {holding, soldOut} = splitHoldings(rows);
         expect(holding.map((r) => r.id)).toEqual(["k3", "k1", "k2", "e1"]);
         expect(soldOut.map((r) => r.id)).toEqual(["s2", "s1"]);
+    });
+});
+
+describe("wallet amounts and signed P&L", () => {
+    const E = 10n ** 18n;
+    it("ETH uses 4 significant digits, KRWs a whole number", () => {
+        expect(walletAmount(4_700_000_000_000n, "ETH", "en-US")).toBe("0.0000047");
+        expect(walletAmount(1234n * E + E / 3n, "KRWs", "en-US")).toBe("1,234");
+        expect(walletAmount(3n * E / 1000n, "WETH", "en-US")).toBe("0.003");
+    });
+    it("a small ETH loss is shown with its digits, not as -0", () => {
+        const r = signedPnl(-4_700_000_000_000n, "ETH", "en-US", -470n);
+        expect(r).toEqual({text: "-0.0000047 ETH (-4.7%)", tone: "down"});
+    });
+    it("a value that displays as 0 has no sign and the flat tone", () => {
+        expect(signedPnl(-(E / 3n), "KRWs", "en-US")).toEqual({text: "0 KRWs", tone: "flat"});
+        expect(signedPnl(0n, "ETH", "en-US", 0n)).toEqual({text: "0 ETH (0.0%)", tone: "flat"});
+        expect(signedPnl(-2n * E, "KRWs", "en-US", -4n).text).toBe("-2 KRWs (0.0%)");
+        expect(signedPnl(5n * E, "KRWs", "en-US", 1234n)).toEqual({text: "+5 KRWs (+12.3%)", tone: "up"});
     });
 });
