@@ -8,7 +8,7 @@ import {useEffect, useRef, useState} from "react";
 import {useCopy} from "../copy";
 import {useCandles, useChainSummary} from "../hooks/chainData";
 import {useActivity} from "../hooks/activity";
-import {barIndexAt, connectOpens, fitView, layoutCandles, LiveTrade, mergeLiveCandles, panBy, parseCandles, View, zoomAt} from "../lib/candles";
+import {barIndexAt, connectOpens, fitView, layoutCandles, LiveTrade, mergeLiveCandles, panBy, parseCandles, TIME_LABEL_W, timeLabels, View, zoomAt} from "../lib/candles";
 import {fmtRound, fmtSig} from "../lib/format";
 
 const HEIGHT = 240;
@@ -61,7 +61,7 @@ export function CandleChart({curve, unit}: {curve: string; unit: string}) {
     // only re-fit the offset (fitView); interval changes go back to the default view.
     const [view, setView] = useState<View | null>(null);
     const total = candles.length;
-    const shown = view ? fitView(view, total) : undefined;
+    const shown = view ? fitView(view, total, plotW) : undefined;
     const L = layoutCandles(candles, plotW, HEIGHT, shown);
     const dp = unit === "ETH" || unit === "WETH" ? 6 : 0;
     const hb = hover !== null ? L.bars[hover] : undefined;
@@ -89,7 +89,7 @@ export function CandleChart({curve, unit}: {curve: string; unit: string}) {
             e.preventDefault();
             const {view: v, total: n, plotW: w} = live2.current;
             if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
-                setView(panBy(v, -e.deltaX, n));
+                setView(panBy(v, -e.deltaX, n, w));
             } else if (e.deltaY !== 0) {
                 const x = e.clientX - plotEl.getBoundingClientRect().left;
                 setView(zoomAt(v, e.deltaY < 0 ? WHEEL_ZOOM : 1 / WHEEL_ZOOM, x, w, n));
@@ -135,7 +135,7 @@ export function CandleChart({curve, unit}: {curve: string; unit: string}) {
                     ))}
                 </div>
             </div>
-            <div ref={boxRef} className="w-full min-w-0">
+            <div ref={boxRef} className="w-full min-w-0 select-none">
                 {q.isError && L.bars.length === 0 ? (
                     <p className="m-0 text-[13px] text-hanji-400">{tr.chain.unavailable}</p>
                 ) : (q.isLoading && L.bars.length === 0) || width === 0 ? (
@@ -184,12 +184,13 @@ export function CandleChart({curve, unit}: {curve: string; unit: string}) {
                                 // vertical swipes still scroll the page; pinch and horizontal moves are ours
                                 style={{touchAction: "pan-y", cursor: dragging ? "grabbing" : "grab"}}
                                 onMouseDown={(e) => {
+                                    e.preventDefault(); // no text selection when a drag starts
                                     drag.current = {x: e.clientX, view: current()};
                                     setDragging(true);
                                     setHover(null);
                                 }}
                                 onMouseMove={(e) => {
-                                    if (drag.current) setView(panBy(drag.current.view, e.clientX - drag.current.x, total));
+                                    if (drag.current) setView(panBy(drag.current.view, e.clientX - drag.current.x, total, plotW));
                                     else onMove(e.clientX, e.currentTarget);
                                 }}
                                 onMouseUp={() => {
@@ -237,9 +238,16 @@ export function CandleChart({curve, unit}: {curve: string; unit: string}) {
                                 }}
                             />
                         </svg>
-                        <div className="flex justify-between text-[11px] text-hanji-400 tabular-nums mt-1" style={{width: plotW}}>
-                            <span>{timeLabel(L.bars[0].candle.t, tr.locale, interval)}</span>
-                            {L.bars.length > 1 && <span>{timeLabel(L.bars[L.bars.length - 1].candle.t, tr.locale, interval)}</span>}
+                        {/* time labels under the first and last visible candles (only the last when they would overlap) */}
+                        <div className="relative h-[16px] text-[11px] text-hanji-400 tabular-nums mt-1 overflow-hidden" style={{width: plotW}}>
+                            {timeLabels(L.bars, plotW).map((lb) => {
+                                const b = lb.bar === "first" ? L.bars[0] : L.bars[L.bars.length - 1];
+                                return (
+                                    <span key={lb.bar} className="absolute top-0 text-center whitespace-nowrap" style={{left: lb.left, width: TIME_LABEL_W}}>
+                                        {timeLabel(b.candle.t, tr.locale, interval)}
+                                    </span>
+                                );
+                            })}
                         </div>
                     </>
                 )}
