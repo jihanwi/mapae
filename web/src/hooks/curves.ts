@@ -230,9 +230,12 @@ export function useCurve(address: Address | undefined) {
         isLoading: !!address && !curve && !fieldFailed && !nameFailed && !fields.isError && !names.isError,
         isError,
         error: fields.error ?? names.error ?? null,
+        // Never refetch while off: the read has no address, and its encoding error would fail every
+        // multicall batched in the same tick (wagmi batch.multicall).
         refetch: () => {
+            if (!address) return;
             void fields.refetch();
-            void names.refetch();
+            if (token) void names.refetch();
         },
     };
 }

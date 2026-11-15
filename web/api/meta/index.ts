@@ -33,6 +33,12 @@ export async function GET(request: Request): Promise<Response> {
     return json(r.status, r.body, {...c.headers, ...cache});
 }
 
+/** HEAD: the GET status and headers without a body (some link-preview fetchers send HEAD first). */
+export async function HEAD(request: Request): Promise<Response> {
+    const r = await GET(request);
+    return new Response(null, {status: r.status, headers: r.headers});
+}
+
 export async function POST(request: Request): Promise<Response> {
     const c = cors(request);
     if (!c.allowed) return forbiddenOrigin(c);

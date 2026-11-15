@@ -16,7 +16,7 @@ import {useActivity} from "../hooks/activity";
 import {useChainSummary, useFlow, useHolders, useTradeHistory} from "../hooks/chainData";
 import {mergeHistory, sharePct} from "../lib/chainMerge";
 import {CandleChart} from "../components/CandleChart";
-import {AUTO_RETRY_MS, INITIAL_GRACE_MS, tokenPageState} from "../lib/tokenPage";
+import {AUTO_RETRY_MS, INITIAL_GRACE_MS, retryTarget, tokenPageState} from "../lib/tokenPage";
 import {PriorityBadge, PriorityBanner} from "../components/PriorityCountdown";
 import {Comments} from "../components/Comments";
 import {agoLabel, prefersReducedMotion, tradeAmount, tradeUnit, useNow} from "../components/feed";
@@ -579,10 +579,19 @@ export default function Token() {
         query: {enabled: valid},
     });
     const isCurve = reg.data?.[0]?.status === "success" ? (reg.data[0].result as boolean) : undefined;
-    const {curve: c, isLoading, isError, stale, refetch} = useCurve(isCurve ? addr : undefined);
+    // A network failure comes back as a successful query holding a "failure" entry (multicall), so
+    // the entry decides whether the registry read failed.
+    const regFailed = reg.isError || reg.data?.[0]?.status === "failure";
     // isCurve is read once; keep a known true through later failures of that read.
     const knownCurve = useRef<string | undefined>(undefined);
     if (isCurve && addr) knownCurve.current = addr;
+    const known = knownCurve.current === addr;
+    const {curve: c, isLoading, isError, stale, refetch} = useCurve(isCurve || known ? addr : undefined);
+    const retry = () => {
+        const t = retryTarget({isCurve, knownCurve: known});
+        if (t !== "curve") void reg.refetch();
+        if (t !== "registry") refetch();
+    };
     const graceOver = useGraceOver(addr, INITIAL_GRACE_MS);
     useTitle(c ? titleOf(`${c.name} (${c.symbol})`) : DEFAULT_TITLE);
     const meta = useCurveMeta();
@@ -604,11 +613,10 @@ export default function Token() {
         <div className="max-w-page mx-auto px-4 sm:px-8 pt-8 sm:pt-10 pb-[calc(96px+env(safe-area-inset-bottom))] lg:pb-20">{node}</div>
     );
 
-    const known = knownCurve.current === addr;
     const page = tokenPageState({
         validAddress: valid,
         isCurve: isCurve ?? (known ? true : undefined),
-        registryError: reg.isError && !known,
+        registryError: regFailed && !known,
         curveError: isError,
         curveLoaded: !isLoading && !!c,
         // c survives a failed read only as the last good one (useCurve), so it means "had data"
@@ -624,7 +632,7 @@ export default function Token() {
             </div>
         );
     }
-    if (page === "error") return wrap(<NetError onRetry={() => { void reg.refetch(); refetch(); }} autoRetryMs={AUTO_RETRY_MS} />);
+    if (page === "error") return wrap(<NetError onRetry={retry} autoRetryMs={AUTO_RETRY_MS} />);
     if (page === "loading" || !c) return wrap(<Skeleton h={320} />);
 
     const m = meta.get(c.address);

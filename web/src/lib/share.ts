@@ -6,8 +6,20 @@ export const X_INTENT = "https://x.com/intent/tweet";
 /** The preview link of a token: <origin>/t/<curve> (a vercel.json rewrite serves it). `apiBase` is
  *  VITE_API_BASE: when absolute (the Pages build) the link goes to that deployment. */
 export function shareLink(curve: string, apiBase: string, pageOrigin: string): string {
-    const origin = /^https?:\/\//.test(apiBase) ? new URL(apiBase).origin : pageOrigin;
-    return `${origin}/t/${curve.toLowerCase()}`;
+    return `${deployOrigin(apiBase, pageOrigin)}/t/${curve.toLowerCase()}`;
+}
+
+/** The Vercel deployment: VITE_API_BASE when absolute (the Pages build), else this page's origin. */
+const deployOrigin = (apiBase: string, pageOrigin: string) => (/^https?:\/\//.test(apiBase) ? new URL(apiBase).origin : pageOrigin);
+
+/** MetaMask mobile deep link (docs.metamask.io "Use deeplinks"): https://link.metamask.io/dapp/{dappUrl},
+ *  the dapp URL without the scheme. No hash route (a deep link can drop what follows #): on a token
+ *  page /t/<curve> (the server sends it on to the token page), elsewhere the site root. */
+export const METAMASK_DAPP = "https://link.metamask.io/dapp/";
+export function metamaskDappUrl(pathname: string, apiBase: string, pageOrigin: string): string {
+    const host = new URL(deployOrigin(apiBase, pageOrigin)).host;
+    const m = /^\/t\/(0x[0-9a-fA-F]{40})(?:\/|$)/.exec(pathname);
+    return m ? `${METAMASK_DAPP}${host}/t/${m[1].toLowerCase()}` : `${METAMASK_DAPP}${host}/`;
 }
 
 export function xIntentUrl(text: string, url: string): string {

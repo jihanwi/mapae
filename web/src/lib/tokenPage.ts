@@ -28,3 +28,17 @@ export function tokenPageState(f: {
     if (f.isCurve === undefined || !f.curveLoaded) return f.graceOver === true ? "error" : "loading";
     return "ready";
 }
+
+/** What a retry (the button or the 10 s auto retry) reads again:
+ *  - "registry": isCurve is not known yet; the curve read is still off and must not be refetched
+ *    (a disabled read has no address, and wagmi batches same-tick multicalls, so its encoding
+ *    error would fail the isCurve read in the same batch);
+ *  - "curve": isCurve read true; only the curve data failed;
+ *  - "both": the last isCurve read failed but an earlier one was true (the curve read stays on). */
+export type RetryTarget = "registry" | "curve" | "both";
+
+export function retryTarget(f: {isCurve: boolean | undefined; knownCurve: boolean}): RetryTarget {
+    if (f.isCurve === true) return "curve";
+    if (f.isCurve === undefined && f.knownCurve) return "both";
+    return "registry";
+}

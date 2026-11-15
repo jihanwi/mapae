@@ -1,6 +1,6 @@
 import {describe, expect, it} from "vitest";
 import {ctaDecision, CtaFacts} from "../hooks/curves";
-import {AUTO_RETRY_MS, INITIAL_GRACE_MS, tokenPageState} from "./tokenPage";
+import {AUTO_RETRY_MS, INITIAL_GRACE_MS, retryTarget, tokenPageState} from "./tokenPage";
 import {ko} from "../copy/ko";
 import {en} from "../copy/en";
 import {ADDR_V3} from "../contracts/addressesV3";
@@ -82,5 +82,28 @@ describe("v3.1 rule copy", () => {
         for (const s of [ko.curve.listSub, ko.curve.poolNote, en.curve.listSub, en.curve.poolNote]) {
             expect(s).not.toMatch(/실명 지갑만 (사고팔|거래)|only verified wallets can trade/i);
         }
+    });
+});
+
+describe("token page retry target (recovery after an initial failure)", () => {
+    it("isCurve unknown: the registry only (the curve read is off and must not be refetched)", () => {
+        expect(retryTarget({isCurve: undefined, knownCurve: false})).toBe("registry");
+    });
+    it("isCurve read true: the curve data only", () => {
+        expect(retryTarget({isCurve: true, knownCurve: true})).toBe("curve");
+        expect(retryTarget({isCurve: true, knownCurve: false})).toBe("curve");
+    });
+    it("last isCurve read failed after an earlier true: both", () => {
+        expect(retryTarget({isCurve: undefined, knownCurve: true})).toBe("both");
+    });
+    it("isCurve false: the registry (the page is not found until a read says otherwise)", () => {
+        expect(retryTarget({isCurve: false, knownCurve: false})).toBe("registry");
+    });
+    it("a registry failure without data keeps the skeleton, then the error; a true read then loads", () => {
+        const base = {validAddress: true, curveError: false, curveLoaded: false};
+        expect(tokenPageState({...base, isCurve: undefined, registryError: true, graceOver: false})).toBe("loading");
+        expect(tokenPageState({...base, isCurve: undefined, registryError: true, graceOver: true})).toBe("error");
+        expect(tokenPageState({...base, isCurve: false, registryError: false, graceOver: true})).toBe("notFound");
+        expect(tokenPageState({...base, isCurve: true, registryError: false, curveLoaded: true, hadData: true, graceOver: true})).toBe("ready");
     });
 });

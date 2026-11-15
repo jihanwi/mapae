@@ -364,6 +364,8 @@ export const ko = {
         /** Mobile browser without a wallet (W-T17) */
         openInAppTitle: "지갑 앱에서 열어 주세요",
         openInAppNote: "모바일 브라우저에는 연결할 지갑이 없어요. 지갑 앱의 브라우저에서 이 주소를 열어 주세요",
+        openInMetaMask: "메타마스크 앱에서 열기",
+        inAppBrowserNote: "다른 앱 안에서 연 화면이라면 사파리나 크롬에서 다시 열어 주세요",
         copyPageLink: "주소 복사",
         pageLinkCopied: "주소를 복사했어요",
     },
