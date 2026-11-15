@@ -37,7 +37,8 @@ type Side = "buy" | "sell";
 const WAD = 10n ** 18n;
 
 /** Slippage props passed to each trade side. */
-/** `blocked`: the custom slippage field holds an invalid value, so no trade button may run. */
+/** `blocked`: the custom slippage field holds an invalid value, or the page is stale (W-T16), so no
+ *  trade button may run. */
 type Slip = {bps: number; autoBps: number; isAuto: boolean; toAuto: () => void; blocked: boolean};
 
 function Row({label, value, strong}: {label: string; value: ReactNode; strong?: boolean}) {
@@ -85,8 +86,9 @@ function useAmount(raw: string) {
 }
 
 /** Buy/sell panel: curve trades before graduation, pool swaps after. `side` / `onSideChange` let
- *  the page pick the side (mobile bottom bar); without them the panel keeps its own state. */
-export function CurveTradePanel({c, side: sideProp, onSideChange}: {c: CurveDetail; side?: Side; onSideChange?: (s: Side) => void}) {
+ *  the page pick the side (mobile bottom bar); without them the panel keeps its own state.
+ *  `paused`: chain reads fail (stale page); the input stays, the trade buttons are disabled. */
+export function CurveTradePanel({c, side: sideProp, onSideChange, paused = false}: {c: CurveDetail; side?: Side; onSideChange?: (s: Side) => void; paused?: boolean}) {
     const tr = useCopy();
     const {address} = useAccount();
     const [ownSide, setOwnSide] = useState<Side>("buy");
@@ -108,7 +110,7 @@ export function CurveTradePanel({c, side: sideProp, onSideChange}: {c: CurveDeta
     const autoBps = autoSlippageBps(points, nowSec);
     const {pref, setPref, bps} = useSlippagePref(autoBps);
     const [slipBlocked, setSlipBlocked] = useState(false);
-    const slip: Slip = {bps, autoBps, isAuto: pref.mode === "auto", toAuto: () => setPref({mode: "auto"}), blocked: slipBlocked};
+    const slip: Slip = {bps, autoBps, isAuto: pref.mode === "auto", toAuto: () => setPref({mode: "auto"}), blocked: slipBlocked || paused};
     const amount = useAmount(raw);
     const unit = c.isEth ? "ETH" : "KRWs";
 

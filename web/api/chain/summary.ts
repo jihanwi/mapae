@@ -1,12 +1,14 @@
 // GET /api/chain/summary?window=3600|86400: indexer position and per-curve numbers for the window
 // (default 86400). Field names (trades24h, ...) are kept for any window; `window` is echoed.
+// `list`: every curve of the current factory (newest 500, then listTruncated: true) with the latest
+// indexed r / s and verified buyer count, so the home renders before any chain read (W-T16).
 // Short CDN cache (15 s): its indexedBlock is the client's data version for the other endpoints.
 //
 // POST /api/chain/summary (no body): on-demand catch-up (STATUS 결정 47). Indexes at most one range
 // (9,000 blocks, 8 s budget), at most once per 20 s across all callers (claim on the cursor row);
 // otherwise just answers the current position. 200 {indexedBlock, ran}, 503 on failure, no-store.
 import {badRequest, chainGet, SUMMARY_CACHE} from "../_lib/chainApi.js";
-import {claimPoke, ensureSchema, getSql, readState, summary} from "../_lib/db.js";
+import {claimPoke, curveList, ensureSchema, getSql, LIST_MAX, readState, summary} from "../_lib/db.js";
 import {cors, forbiddenOrigin, json} from "../_lib/http.js";
 import {indexOnce, POKE_INDEX_OPTS} from "../_lib/indexer.js";
 import {cronDeps} from "../_lib/cronDeps.js";
@@ -28,10 +30,12 @@ const h = chainGet("summary", {params: ["window"], cache: SUMMARY_CACHE}, async 
     const window = parseWindow(params.get("window"));
     if (window === null) return badRequest;
     const since = Math.floor(Date.now() / 1000) - window;
-    const [state, rows] = await Promise.all([readState(sql), summary(sql, since, ADDR_V3.curveFactory)]);
+    const [state, rows, all] = await Promise.all([readState(sql), summary(sql, since, ADDR_V3.curveFactory), curveList(sql, ADDR_V3.curveFactory)]);
     const curves: Record<string, Omit<(typeof rows)[number], "curve">> = {};
     for (const {curve, ...rest} of rows) curves[curve] = rest;
-    return {status: 200, body: {indexedBlock: state.indexedBlock, indexedTs: state.indexedTs, window, curves}};
+    const listTruncated = all.length > LIST_MAX;
+    const list = listTruncated ? all.slice(0, LIST_MAX) : all;
+    return {status: 200, body: {indexedBlock: state.indexedBlock, indexedTs: state.indexedTs, window, curves, list, ...(listTruncated ? {listTruncated: true} : {})}};
 });
 export const GET = h.GET;
 export const OPTIONS = h.OPTIONS;

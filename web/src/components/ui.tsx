@@ -1,4 +1,4 @@
-import {ReactNode} from "react";
+import {ReactNode, useEffect, useRef} from "react";
 import {useCopy} from "../copy";
 
 /** 메달리온 — 유일 모티프. 이중 원 + 중앙 serif 글자 */
@@ -143,13 +143,31 @@ export function TextSkeleton({w = 80, h = 14}: {w?: number; h?: number}) {
 }
 
 /** RPC 완전 장애 시 빈 화면 대신 안내 + 재시도 (1-5, 전 페이지 공용) */
-export function NetError({onRetry}: {onRetry: () => void}) {
+/** Error card with a retry button; `autoRetryMs` also retries on that interval while shown. */
+export function NetError({onRetry, autoRetryMs}: {onRetry: () => void; autoRetryMs?: number}) {
     const tr = useCopy();
+    const retry = useRef(onRetry);
+    retry.current = onRetry;
+    useEffect(() => {
+        if (!autoRetryMs) return;
+        const id = setInterval(() => retry.current(), autoRetryMs);
+        return () => clearInterval(id);
+    }, [autoRetryMs]);
     return (
         <div className="bg-ink-800 border border-ink-700 rounded-card p-6 text-center">
             <p className="m-0 mb-4 text-[14px] text-hanji-400">{tr.common.netError}</p>
             <SecondaryBtn onClick={onRetry}>{tr.common.retry}</SecondaryBtn>
         </div>
+    );
+}
+
+/** Chain reads are failing; the data below is from the last good read or the server index. */
+export function StaleBand({className = ""}: {className?: string}) {
+    const tr = useCopy();
+    return (
+        <p role="status" className={`m-0 rounded-input border border-ink-700 bg-ink-900 px-4 py-2.5 text-[13px] text-hanji-400 ${className}`}>
+            {tr.common.staleBand}
+        </p>
     );
 }
 

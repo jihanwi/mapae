@@ -238,6 +238,52 @@ export async function summary(sql: Sql, sinceTs: number, factory: string): Promi
     )) as SummaryRow[];
 }
 
+/** One curve of the current factory for the server-first home list (STATUS W-T16). */
+export type ListRow = {
+    curve: string;
+    token: string;
+    dev: string;
+    quote: string;
+    virtualQuote: string;
+    name: string;
+    symbol: string;
+    createdTs: string;
+    priorityUntil: string;
+    pool: string | null;
+    /** r / s after the latest curve trade (r_after / s_after), "0" before any trade. */
+    r: string;
+    s: string;
+    /** Distinct non-Dev wallets with a verified curve buy, all time (CurveSale.verifiedBuyerCount). */
+    verifiedBuyers: number;
+};
+
+export const LIST_MAX = 500;
+
+/** Every curve of `factory`, newest first, at most LIST_MAX + 1 rows (one more = truncated).
+ *  One statement: the latest r / s and the verified buyer count come from lateral subqueries. */
+export async function curveList(sql: Sql, factory: string): Promise<ListRow[]> {
+    return (await sql.query(
+        `SELECT m.curve, m.token, m.dev, m.quote, m.virtual_quote::text AS "virtualQuote", m.name, m.symbol,
+                m.created_ts::text AS "createdTs", COALESCE(m.priority_until, 0)::text AS "priorityUntil", m.pool,
+                COALESCE(l.r_after, 0)::text AS r, COALESCE(l.s_after, 0)::text AS s,
+                COALESCE(v.n, 0)::int AS "verifiedBuyers"
+         FROM mapae_curves m
+         LEFT JOIN LATERAL (
+             SELECT t.r_after, t.s_after FROM mapae_trades t
+             WHERE t.curve = m.curve AND t.venue = 'curve' AND t.r_after IS NOT NULL
+             ORDER BY t.block DESC, t.log_index DESC LIMIT 1
+         ) l ON true
+         LEFT JOIN LATERAL (
+             SELECT count(DISTINCT t.trader) AS n FROM mapae_trades t
+             WHERE t.curve = m.curve AND t.venue = 'curve' AND t.side = 'buy' AND t.verified = true AND NOT t.is_dev
+         ) v ON true
+         WHERE m.factory = $1
+         ORDER BY m.created_ts DESC, m.created_block DESC, m.curve DESC
+         LIMIT $2::int`,
+        [factory.toLowerCase(), LIST_MAX + 1]
+    )) as ListRow[];
+}
+
 export type CandleRow = {t: string; o: string; h: string; l: string; c: string; v: string};
 
 /** Latest 300 non-empty buckets, oldest first. Open/close by (ts, block, log_index). */

@@ -72,7 +72,9 @@ export function useWalletBalances(address: Address, tokens: readonly string[]) {
     q.data?.forEach((r, i) => {
         if (r.status === "success") map.set(list[i], r.result as bigint);
     });
-    return {balances: map, isLoading: q.isLoading && list.length > 0, isError: q.isError};
+    // a single failed balanceOf (or the whole batch) means the holdings are incomplete
+    const failed = q.isError || (q.data?.some((r) => r.status !== "success") ?? false);
+    return {balances: map, isLoading: q.isLoading && list.length > 0, isError: failed};
 }
 
 /** Real-name check (v3.2: ADDR_V3.dojangAnyOf = official Dojang OR MockDojang; isVerified(address)). */

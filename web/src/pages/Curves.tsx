@@ -1,16 +1,16 @@
 import {ClipboardEvent, KeyboardEvent, useEffect, useRef, useState} from "react";
 import {Link, useNavigate} from "react-router-dom";
 import {useCopy} from "../copy";
-import {CurveInfo, useCurves} from "../hooks/curves";
+import {Address, CurveInfo, useCurves} from "../hooks/curves";
 import {useActivity} from "../hooks/activity";
 import {SummaryWindow, useChainSummary} from "../hooks/chainData";
 import {keyByCurves, mergeStats, ServerSummary} from "../lib/chainMerge";
 import {CurveStats, marketCap, sortCurves, Tab, TABS, Trade} from "../lib/activity";
 import {progressBps} from "../lib/curveMath";
 import {fmtCeil, fmtRound, shortAddr} from "../lib/format";
-import {changeLabel, changeOf, exactAddressHit, featured, leftToGraduate, searchCurves} from "../lib/homeList";
+import {changeLabel, changeOf, exactAddressHit, featured, leftToGraduate, OVERLAY_MAX, searchCurves} from "../lib/homeList";
 import {agoLabel, prefersReducedMotion, tradeAmount, tradeUnit, useNow} from "../components/feed";
-import {Badge, Card, Gauge, NetError} from "../components/ui";
+import {Badge, Card, Gauge, NetError, StaleBand} from "../components/ui";
 import {CurveAvatar} from "../components/MetaForm";
 import {addrKey} from "../lib/address";
 import {PriorityBadge} from "../components/PriorityCountdown";
@@ -203,7 +203,8 @@ function FeaturedCard({c, imageUrl}: {c: CurveInfo; imageUrl?: string | null}) {
                 <Gauge committed={bps} target={10_000n} />
                 <div className="mt-2 flex justify-between gap-3 flex-wrap text-[12px] text-hanji-400 tabular-nums">
                     <span>{tr.curve.verifiedTraders(c.verifiedBuyerCount)}</span>
-                    <span className="text-hanji-100">{tr.curve.toGraduate(fmtCeil(leftToGraduate(c), c.isEth ? 6 : 0, tr.locale), unit)}</span>
+                    {/* the fee is not indexed: the figure waits for the chain read */}
+                    {c.source !== "server" && <span className="text-hanji-100">{tr.curve.toGraduate(fmtCeil(leftToGraduate(c), c.isEth ? 6 : 0, tr.locale), unit)}</span>}
                 </div>
             </Card>
         </Link>
@@ -351,7 +352,9 @@ export default function Curves() {
     const tr = useCopy();
     useTitle(`MAPAE | ${tr.homeRows.tagline}`);
     const navigate = useNavigate();
-    const {curves, isLoading, isError, refetch} = useCurves();
+    // Server list first; the chain overlays the visible rows (featured + the first OVERLAY_MAX).
+    const [overlay, setOverlay] = useState<Address[]>([]);
+    const {curves, isLoading, isError, stale, refetch} = useCurves(true, overlay);
     const activity = useActivity();
     const meta = useCurveMeta(); // one request for every curve; no metadata on failure
     const [tab, setTab] = useState<Tab>("latest");
@@ -373,6 +376,9 @@ export default function Curves() {
     const top = featured(curves, stats);
     const note = tab === "popular" ? tr.feed.popularNote(period) : tab === "mcap" ? tr.feed.mcapNote : undefined;
     const windowNote = serverOk ? tr.homeRows.periodNote(period) : activity.hours !== undefined ? tr.feed.window(activity.hours) : undefined;
+    const visible = [...(top ? [top.address] : []), ...shown.map((c) => c.address)].slice(0, OVERLAY_MAX);
+    const visibleKey = visible.join(",");
+    useEffect(() => setOverlay(visible), [visibleKey]); // eslint-disable-line react-hooks/exhaustive-deps
     const openHit = (q: string) => {
         const hit = exactAddressHit(curves, q);
         if (hit) navigate(`/t/${hit.address}`);
@@ -384,13 +390,14 @@ export default function Curves() {
                 <div className="min-w-0">
                     <h1 className="m-0 mb-6 sm:mb-8 font-serif text-[24px] sm:text-[30px] font-bold leading-snug">{tr.homeRows.tagline}</h1>
                     {isError ? (
-                        <NetError onRetry={refetch} />
+                        <NetError onRetry={refetch} autoRetryMs={10_000} />
                     ) : isLoading ? (
                         <RowsSkeleton />
                     ) : curves.length === 0 ? (
                         <p className="text-[14px] text-hanji-400">{tr.curve.empty}</p>
                     ) : (
                         <>
+                            {stale && <StaleBand className="mb-4" />}
                             <LatestTrade rows={live.slice(0, 1)} now={now} nicks={liveNicks} />
                             {top && query.trim() === "" && <FeaturedCard c={top} imageUrl={meta.get(top.address)?.imageUrl} />}
                             <SearchBox value={query} onChange={setQuery} onHit={openHit} />

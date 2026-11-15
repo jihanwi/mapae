@@ -1,6 +1,6 @@
 import {describe, expect, it} from "vitest";
 import {ctaDecision, CtaFacts} from "../hooks/curves";
-import {tokenPageState} from "./tokenPage";
+import {AUTO_RETRY_MS, INITIAL_GRACE_MS, tokenPageState} from "./tokenPage";
 import {ko} from "../copy/ko";
 import {en} from "../copy/en";
 import {ADDR_V3} from "../contracts/addressesV3";
@@ -53,6 +53,24 @@ describe("old curve addresses", () => {
         expect(tokenPageState({validAddress: false, isCurve: undefined, registryError: false, curveError: false, curveLoaded: false})).toBe("notFound");
         expect(tokenPageState({validAddress: true, isCurve: undefined, registryError: false, curveError: false, curveLoaded: false})).toBe("loading");
         expect(tokenPageState({validAddress: true, isCurve: true, registryError: false, curveError: false, curveLoaded: true})).toBe("ready");
+    });
+    it("W-T16: stale after data, skeleton then error before it", () => {
+        const base = {validAddress: true, isCurve: true as boolean | undefined, registryError: false, curveError: false, curveLoaded: false};
+        // a read fails after data loaded once: keep the data and show the band
+        expect(tokenPageState({...base, curveError: true, curveLoaded: true, hadData: true, graceOver: true})).toBe("stale");
+        expect(tokenPageState({...base, registryError: true, curveLoaded: true, hadData: true})).toBe("stale");
+        // never loaded: skeleton during the grace period, then the error
+        expect(tokenPageState({...base, curveError: true, hadData: false, graceOver: false})).toBe("loading");
+        expect(tokenPageState({...base, curveError: true, hadData: false, graceOver: true})).toBe("error");
+        // still loading (no failure yet) after the grace period: the error and its retry
+        expect(tokenPageState({...base, graceOver: false})).toBe("loading");
+        expect(tokenPageState({...base, graceOver: true})).toBe("error");
+        expect(tokenPageState({...base, isCurve: undefined, graceOver: true})).toBe("error");
+        // recovers to ready, and not-found wins over everything
+        expect(tokenPageState({...base, curveLoaded: true, hadData: true, graceOver: true})).toBe("ready");
+        expect(tokenPageState({...base, isCurve: false, curveError: true, hadData: true})).toBe("notFound");
+        expect(INITIAL_GRACE_MS).toBe(8_000);
+        expect(AUTO_RETRY_MS).toBe(10_000);
     });
 });
 

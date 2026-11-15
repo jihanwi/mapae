@@ -16,11 +16,11 @@ import {useActivity} from "../hooks/activity";
 import {useChainSummary, useFlow, useHolders, useTradeHistory} from "../hooks/chainData";
 import {mergeHistory, sharePct} from "../lib/chainMerge";
 import {CandleChart} from "../components/CandleChart";
-import {tokenPageState} from "../lib/tokenPage";
+import {AUTO_RETRY_MS, INITIAL_GRACE_MS, tokenPageState} from "../lib/tokenPage";
 import {PriorityBadge, PriorityBanner} from "../components/PriorityCountdown";
 import {Comments} from "../components/Comments";
 import {agoLabel, prefersReducedMotion, tradeAmount, tradeUnit, useNow} from "../components/feed";
-import {Badge, Gauge, NetError, PrimaryBtn, SecondaryBtn, Skeleton, Stat} from "../components/ui";
+import {Badge, Gauge, NetError, PrimaryBtn, SecondaryBtn, Skeleton, Stat, StaleBand} from "../components/ui";
 import {CurveAvatar, draftValid, linkDomain, MetaFields, SaveStatus} from "../components/MetaForm";
 import {CurveMeta, draftHasContent, emptyDraft, MetaDraft, useCurveMeta, useSaveMeta} from "../hooks/meta";
 import {CurveTradePanel} from "../components/CurveTradePanel";
@@ -522,6 +522,16 @@ function MobileTradeBar({panel, onPick}: {panel: React.RefObject<HTMLDivElement>
     );
 }
 
+/** True once `ms` passed since `key` (the page's address) was set. */
+function useGraceOver(key: string | undefined, ms: number): boolean {
+    const [over, setOver] = useState<string | undefined>(undefined);
+    useEffect(() => {
+        const id = setTimeout(() => setOver(key), ms);
+        return () => clearTimeout(id);
+    }, [key, ms]);
+    return over === key && key !== undefined;
+}
+
 export default function Token() {
     const tr = useCopy();
     const {curve: param} = useParams();
@@ -538,7 +548,11 @@ export default function Token() {
         query: {enabled: valid},
     });
     const isCurve = reg.data?.[0]?.status === "success" ? (reg.data[0].result as boolean) : undefined;
-    const {curve: c, isLoading, isError, refetch} = useCurve(isCurve ? addr : undefined);
+    const {curve: c, isLoading, isError, stale, refetch} = useCurve(isCurve ? addr : undefined);
+    // isCurve is read once; keep a known true through later failures of that read.
+    const knownCurve = useRef<string | undefined>(undefined);
+    if (isCurve && addr) knownCurve.current = addr;
+    const graceOver = useGraceOver(addr, INITIAL_GRACE_MS);
     useTitle(c ? titleOf(`${c.name} (${c.symbol})`) : DEFAULT_TITLE);
     const meta = useCurveMeta();
     const {address: account} = useAccount();
@@ -559,7 +573,17 @@ export default function Token() {
         <div className="max-w-page mx-auto px-4 sm:px-8 pt-8 sm:pt-10 pb-[calc(96px+env(safe-area-inset-bottom))] lg:pb-20">{node}</div>
     );
 
-    const page = tokenPageState({validAddress: valid, isCurve, registryError: reg.isError, curveError: isError, curveLoaded: !isLoading && !!c});
+    const known = knownCurve.current === addr;
+    const page = tokenPageState({
+        validAddress: valid,
+        isCurve: isCurve ?? (known ? true : undefined),
+        registryError: reg.isError && !known,
+        curveError: isError,
+        curveLoaded: !isLoading && !!c,
+        // c survives a failed read only as the last good one (useCurve), so it means "had data"
+        hadData: !!c,
+        graceOver,
+    });
     if (page === "notFound") {
         return wrap(
             <div className="text-center pt-8">
@@ -569,7 +593,7 @@ export default function Token() {
             </div>
         );
     }
-    if (page === "error") return wrap(<NetError onRetry={() => { void reg.refetch(); refetch(); }} />);
+    if (page === "error") return wrap(<NetError onRetry={() => { void reg.refetch(); refetch(); }} autoRetryMs={AUTO_RETRY_MS} />);
     if (page === "loading" || !c) return wrap(<Skeleton h={320} />);
 
     const m = meta.get(c.address);
@@ -580,6 +604,7 @@ export default function Token() {
         <div className="flex flex-col gap-5 sm:gap-6 lg:flex-row lg:items-start lg:gap-8 w-full min-w-0">
             <div className="contents lg:flex lg:flex-col lg:gap-6 lg:flex-1 lg:min-w-0">
                 <Link to="/" className="order-0 text-[14px]">← {tr.curve.backToList}</Link>
+                {page === "stale" && <StaleBand className="order-0" />}
                 <div className="order-1 lg:order-none min-w-0">
                     <Header c={c} imageUrl={m?.imageUrl} />
                 </div>
@@ -618,7 +643,7 @@ export default function Token() {
                     </div>
                 )}
                 <div ref={panelRef} className="order-7 lg:order-none min-w-0 scroll-mt-4">
-                    <CurveTradePanel c={c} side={side} onSideChange={setSide} />
+                    <CurveTradePanel c={c} side={side} onSideChange={setSide} paused={page === "stale"} />
                 </div>
                 <div className="order-8 lg:order-none rounded-input px-4 py-3.5 text-[13px] text-hanji-100 border border-ink-700 bg-ink-900 text-center">
                     {tr.curve.fixedPanel}

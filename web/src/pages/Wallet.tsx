@@ -23,7 +23,7 @@ import {fmt, fmtDateTime, fmtRound, shortAddr} from "../lib/format";
 import {holdingValue, mergeBrowserTrades, signedPnl, walletAmount, parsePosition, pnl, Position, splitHoldings, totals, Unit} from "../lib/wallet";
 import {explorerAddr, explorerTx, giwaSepolia} from "../config/chain";
 import {agoLabel, tradeAmount, tradeUnit, useNow} from "../components/feed";
-import {Badge, Gauge, PrimaryBtn, SecondaryBtn} from "../components/ui";
+import {Badge, Gauge, PrimaryBtn, SecondaryBtn, StaleBand} from "../components/ui";
 import {CurveAvatar} from "../components/MetaForm";
 import {CopyAddress} from "../components/CopyAddress";
 import {UnwrapWethBand} from "../components/UnwrapWeth";
@@ -272,7 +272,7 @@ function WalletView({address}: {address: Address}) {
     const {address: account} = useAccount();
     const own = !!account && lc(account) === lc(address);
     const profile = useWalletProfile(address);
-    const {curves, isLoading: curvesLoading} = useCurves();
+    const {curves, isLoading: curvesLoading, chainError: curvesChainError} = useCurves();
     const activity = useActivity();
     const meta = useCurveMeta();
     const verified = useIsVerified(address);
@@ -337,6 +337,8 @@ function WalletView({address}: {address: Address}) {
     }
     const {holding, soldOut} = splitHoldings(rows);
     const sums = totals(rows);
+    // Chain reads failing (balances, or the curve list's chain part): the held count is unknown.
+    const chainFail = bal.isError || curvesChainError;
     const launchedCount = serverOk ? profile.data.launched.length : curves.filter((c) => lc(c.dev) === lc(address)).length;
     const nick = profile.data?.nickname ?? null;
     useTitle(titleOf(nick ?? shortAddr(address)));
@@ -397,7 +399,7 @@ function WalletView({address}: {address: Address}) {
                         })}
                 </div>
             )}
-            <p className="m-0 text-[13px] text-hanji-400 tabular-nums">{tr.walletPage.counts(holding.length, launchedCount)}</p>
+            <p className="m-0 text-[13px] text-hanji-400 tabular-nums">{tr.walletPage.counts(chainFail ? null : holding.length, launchedCount)}</p>
             {/* tabs */}
             <section className="min-w-0">
                 <div role="tablist" className="grid grid-cols-3 border-b border-ink-700 mb-4">
@@ -416,6 +418,7 @@ function WalletView({address}: {address: Address}) {
                     ))}
                 </div>
                 <div role="tabpanel" id={`wallet-panel-${tab}`} aria-labelledby={`wallet-tab-${tab}`} className="min-w-0">
+                    {tab === "holdings" && chainFail && <StaleBand className="mb-4" />}
                     {tab === "holdings" && <HoldingsTab holding={holding} soldOut={soldOut} meta={meta} loading={loading} />}
                     {tab === "launched" &&
                         (serverOk ? (
