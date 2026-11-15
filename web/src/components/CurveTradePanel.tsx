@@ -1,4 +1,4 @@
-import {ReactNode, useMemo, useState} from "react";
+import {ReactNode, useMemo, useRef, useState} from "react";
 import {Abi} from "viem";
 import {formatUnits, parseUnits} from "viem";
 import {useAccount, useBalance, usePublicClient, useReadContract, useReadContracts, useWriteContract} from "wagmi";
@@ -18,7 +18,8 @@ import {ADDR_V3} from "../contracts/addressesV3";
 import {giwaSepolia} from "../config/chain";
 import {fmt, fmtCeil, sanitizeAmountInput} from "../lib/format";
 import {maxInput} from "../lib/maxInput";
-import {RunFn, RunOpts, TxButton} from "./tx";
+import {RunFn, RunOpts, TxButton, useToast} from "./tx";
+import {approvalAlreadySent, SentApproval, waitForAllowance} from "../lib/allowance";
 import {PrimaryBtn, SecondaryBtn} from "./ui";
 import {opensOnboarding, useOnboardingModal} from "./OnboardingModal";
 import {minSec} from "../lib/priority";
@@ -233,6 +234,43 @@ function CtaBlock({
     );
 }
 
+/** Approval step shared by the three trade sides. Sends an exact-amount approval only when the
+ *  CTA says so and it was not already sent for this amount, then waits until the RPC reports the
+ *  new allowance (waitForAllowance) before the trade is re-quoted and simulated. If it never shows
+ *  up, nothing is sent and a "not reflected yet" note is shown; pressing again resumes at the wait. */
+function useApprovalStep(opts: RunOpts) {
+    const tr = useCopy();
+    const push = useToast();
+    const {address} = useAccount();
+    const client = usePublicClient({chainId: giwaSepolia.id});
+    const {writeContractAsync} = useWriteContract();
+    const sent = useRef<SentApproval>(null);
+    const ensure = async (run: RunFn, p: {needsApproval: boolean; token: Address; spender: Address; amount: bigint}): Promise<{ok: boolean; justApproved: boolean}> => {
+        const already = approvalAlreadySent(sent.current, p.token, p.spender, p.amount);
+        if (!p.needsApproval) return {ok: true, justApproved: already};
+        if (!already) {
+            // exact amount only (never an unlimited approval)
+            const ok = await run(tr.curve.txApprove, () =>
+                writeContractAsync({address: p.token, abi: MembershipTokenV3Abi, functionName: "approve", args: [p.spender, p.amount], chainId: giwaSepolia.id}),
+                opts
+            );
+            if (!ok) return {ok: false, justApproved: false};
+            sent.current = {token: p.token, spender: p.spender, amount: p.amount};
+        }
+        if (!client || !address) return {ok: false, justApproved: true};
+        const covered = await waitForAllowance(
+            () => client.readContract({address: p.token, abi: MembershipTokenV3Abi, functionName: "allowance", args: [address, p.spender]}) as Promise<bigint>,
+            p.amount
+        );
+        if (!covered) {
+            push({kind: "error", text: tr.tradeGuard.approvalPending});
+            return {ok: false, justApproved: true};
+        }
+        return {ok: true, justApproved: true};
+    };
+    return {ensure, done: () => void (sent.current = null)};
+}
+
 /** v3 run options: v3 error copy. (v3.1: NotVerified before sending means the device clock is
  *  ahead of the chain inside the priority window; TradeGuard shows that and sends nothing.) */
 function useRunOpts(refetch: () => void, _krwNeeded: bigint): RunOpts {
@@ -271,17 +309,13 @@ function CurveBuy({c, amount, slip, onDone}: {c: CurveDetail; amount: bigint; sl
     const payToken: Address | "native" = c.isEth ? "native" : c.quote;
     const opts = useRunOpts(refetch, c.isEth ? 0n : amount);
     const g = useGuardedSend();
+    const approval = useApprovalStep(opts);
 
     const execute = async (run: RunFn, seenOverride?: bigint, bpsOverride?: number) => {
         if (!quote || !address || !client) return;
-        if (state.kind === "approve") {
-            // exact amount only (never an unlimited approval)
-            const ok = await run(tr.curve.txApprove, () =>
-                writeContractAsync({address: c.quote, abi: MembershipTokenV3Abi, functionName: "approve", args: [c.address, amount], chainId: giwaSepolia.id}),
-                opts
-            );
-            if (!ok) return;
-        }
+        // ETH buys need no approval, so they never wait here.
+        const ap = c.isEth ? {ok: true, justApproved: false} : await approval.ensure(run, {needsApproval: state.kind === "approve", token: c.quote, spender: c.address, amount});
+        if (!ap.ok) return;
         g.reset();
         const call = (min: bigint) =>
             c.isEth
@@ -295,8 +329,10 @@ function CurveBuy({c, amount, slip, onDone}: {c: CurveDetail; amount: bigint; sl
             write: (min) => writeContractAsync(call(min) as Parameters<typeof writeContractAsync>[0]),
             label: tr.curve.txBuy(c.symbol),
             opts,
+            justApproved: ap.justApproved,
         });
         if (ok) {
+            approval.done();
             onDone();
             refetch();
         }
@@ -339,16 +375,12 @@ function CurveSell({c, amount, slip, onDone}: {c: CurveDetail; amount: bigint; s
     const effective: CtaState = state.kind === "ready" || state.kind === "approve" ? (quote ? state : {kind: "loading"}) : state;
     const opts = useRunOpts(refetch, 0n);
     const g = useGuardedSend();
+    const approval = useApprovalStep(opts);
 
     const execute = async (run: RunFn, seenOverride?: bigint, bpsOverride?: number) => {
         if (!quote || !address || !client) return;
-        if (state.kind === "approve") {
-            const ok = await run(tr.curve.txApprove, () =>
-                writeContractAsync({address: c.token, abi: MembershipTokenV3Abi, functionName: "approve", args: [c.address, amount], chainId: giwaSepolia.id}),
-                opts
-            );
-            if (!ok) return;
-        }
+        const ap = await approval.ensure(run, {needsApproval: state.kind === "approve", token: c.token, spender: c.address, amount});
+        if (!ap.ok) return;
         g.reset();
         const call = (min: bigint) => ({address: c.address, abi: CurveSaleAbi, functionName: "sell", args: [amount, min], chainId: giwaSepolia.id}) as const;
         const ok = await g.send(run, {
@@ -359,8 +391,10 @@ function CurveSell({c, amount, slip, onDone}: {c: CurveDetail; amount: bigint; s
             write: (min) => writeContractAsync(call(min)),
             label: tr.curve.txSell(c.symbol),
             opts,
+            justApproved: ap.justApproved,
         });
         if (ok) {
+            approval.done();
             onDone();
             refetch();
         }
@@ -404,6 +438,7 @@ function PoolSide({c, side, amount, slip, onDone}: {c: CurveDetail; side: Side; 
     const outUnit = side === "buy" ? c.symbol : quoteUnitLabel;
     const outDp = side === "buy" ? 4 : c.isEth ? 8 : 2;
     const g = useGuardedSend();
+    const approval = useApprovalStep(opts);
     // Reserves and fee for the price impact (one batched read).
     const res = useReadContracts({
         contracts: (["reserveQuote", "reserveToken", "totalFeeBps"] as const).map((fn) => ({address: pool, abi: MapaePoolV3Abi as Abi, functionName: fn, chainId: giwaSepolia.id})),
@@ -415,13 +450,8 @@ function PoolSide({c, side, amount, slip, onDone}: {c: CurveDetail; side: Side; 
 
     const execute = async (run: RunFn, seenOverride?: bigint, bpsOverride?: number) => {
         if (!quote || !address || !client) return;
-        if (state.kind === "approve") {
-            const ok = await run(tr.curve.txApprove, () =>
-                writeContractAsync({address: payToken, abi: MembershipTokenV3Abi, functionName: "approve", args: [pool, amount], chainId: giwaSepolia.id}),
-                opts
-            );
-            if (!ok) return;
-        }
+        const ap = await approval.ensure(run, {needsApproval: state.kind === "approve", token: payToken, spender: pool, amount});
+        if (!ap.ok) return;
         g.reset();
         const fn = side === "buy" ? "swapQuoteForToken" : "swapTokenForQuote";
         const call = (min: bigint) => ({address: pool, abi: MapaePoolV3Abi, functionName: fn, args: [amount, min, address], chainId: giwaSepolia.id}) as const;
@@ -433,8 +463,10 @@ function PoolSide({c, side, amount, slip, onDone}: {c: CurveDetail; side: Side; 
             write: (min) => writeContractAsync(call(min)),
             label: side === "buy" ? tr.curve.txBuy(c.symbol) : tr.curve.txSell(c.symbol),
             opts,
+            justApproved: ap.justApproved,
         });
         if (ok) {
+            approval.done();
             onDone();
             refetch();
         }

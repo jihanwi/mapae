@@ -1,4 +1,4 @@
-import {createContext, useCallback, useContext, useState, ReactNode} from "react";
+import {createContext, useCallback, useContext, useEffect, useState, ReactNode} from "react";
 import {useQueryClient} from "@tanstack/react-query";
 import {useAccount, usePublicClient} from "wagmi";
 import {explorerTx, giwaSepolia} from "../config/chain";
@@ -7,8 +7,13 @@ import {useCopy} from "../copy";
 import {PrimaryBtn, SecondaryBtn} from "./ui";
 
 type Toast = {id: number; kind: "pending" | "success" | "error"; text: string; hash?: string};
+/** Finished toasts (success / error) disappear after this long; pending ones stay until updated. */
+export const TOAST_MS = 8_000;
+
 type Ctx = {
     push: (t: Omit<Toast, "id">) => number;
+    /** Close every finished toast (route changes). */
+    dismissSettled: () => void;
     update: (id: number, t: Partial<Toast>) => void;
     busyCount: number;
     setBusyCount: (fn: (n: number) => number) => void;
@@ -20,6 +25,15 @@ export function useGlobalTxBusy() {
     return useContext(ToastCtx).busyCount > 0;
 }
 
+/** Close finished toasts whenever the route changes (mounted inside the router). */
+export function ToastRouteReset({pathname}: {pathname: string}) {
+    const {dismissSettled} = useContext(ToastCtx);
+    useEffect(() => {
+        dismissSettled();
+    }, [pathname, dismissSettled]);
+    return null;
+}
+
 /** 토스트 직접 발행 — run()을 타지 않는 경로(지갑 연결 실패 등)의 무음 실패 방지 (4-a) */
 export function useToast() {
     return useContext(ToastCtx).push;
@@ -29,17 +43,26 @@ export function ToastProvider({children}: {children: ReactNode}) {
     const tr = useCopy();
     const [toasts, setToasts] = useState<Toast[]>([]);
     const [busyCount, setBusyCount] = useState(0);
-    const push = useCallback((t: Omit<Toast, "id">) => {
-        const id = Date.now() + Math.random();
-        setToasts((s) => [...s, {...t, id}]);
-        return id;
-    }, []);
-    const update = useCallback((id: number, patch: Partial<Toast>) => {
-        setToasts((s) => s.map((t) => (t.id === id ? {...t, ...patch} : t)));
-        setTimeout(() => setToasts((s) => s.filter((t) => t.id !== id)), 6000);
-    }, []);
+    const close = useCallback((id: number) => setToasts((s) => s.filter((t) => t.id !== id)), []);
+    const push = useCallback(
+        (t: Omit<Toast, "id">) => {
+            const id = Date.now() + Math.random();
+            setToasts((s) => [...s, {...t, id}]);
+            if (t.kind !== "pending") setTimeout(() => close(id), TOAST_MS);
+            return id;
+        },
+        [close]
+    );
+    const update = useCallback(
+        (id: number, patch: Partial<Toast>) => {
+            setToasts((s) => s.map((t) => (t.id === id ? {...t, ...patch} : t)));
+            setTimeout(() => close(id), TOAST_MS);
+        },
+        [close]
+    );
+    const dismissSettled = useCallback(() => setToasts((s) => s.filter((t) => t.kind === "pending")), []);
     return (
-        <ToastCtx.Provider value={{push, update, busyCount, setBusyCount}}>
+        <ToastCtx.Provider value={{push, dismissSettled, update, busyCount, setBusyCount}}>
             {children}
             <div className="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-[340px]">
                 {toasts.map((t) => (
@@ -51,6 +74,9 @@ export function ToastProvider({children}: {children: ReactNode}) {
                             {t.kind === "error" && <span className="text-error">✕</span>}
                             <span className="text-hanji-100">{t.text}</span>
                         </div>
+                        <button type="button" onClick={() => close(t.id)} aria-label={tr.common.close} className="float-right -mt-5 text-hanji-400 hover:text-hanji-100 text-[14px] leading-none px-1">
+                            ✕
+                        </button>
                         {t.hash && (
                             <a href={explorerTx(t.hash)} target="_blank" rel="noreferrer" className="text-brass-400 text-[12px] hover:text-hanji-100">
                                 {tr.tx.viewOnChain}

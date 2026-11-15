@@ -19,6 +19,7 @@ import {
     SlippagePref,
 } from "../lib/slippage";
 import {RunFn, RunOpts, TxButton, useToast} from "./tx";
+import {simulateWithApprovalRetry} from "../lib/allowance";
 
 // ---------------------------------------------------------------------------------------------
 // Preference
@@ -121,6 +122,10 @@ export type SendPlan = {
     write: (min: bigint) => Promise<`0x${string}`>;
     label: string;
     opts: RunOpts;
+    /** An approval was sent right before this trade: a simulation that fails for another reason
+     *  (likely the node not seeing the approval yet) is retried once after RESIMULATE_DELAY_MS. */
+    justApproved?: boolean;
+    sleep?: (ms: number) => Promise<void>;
 };
 
 /** Re-quote, compare with what the user saw, simulate, then send. InsufficientOutput before
@@ -145,7 +150,7 @@ export function useGuardedSend() {
             const d = requoteDecision(p.seen, fresh, p.bps);
             if (d.kind === "confirm") return false;
             try {
-                await p.simulate(d.min);
+                await simulateWithApprovalRetry(() => p.simulate(d.min), !!p.justApproved, revertName, p.sleep);
             } catch (e) {
                 const name = revertName(e);
                 if (name === "InsufficientOutput") {

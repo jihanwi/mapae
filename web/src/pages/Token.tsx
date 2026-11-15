@@ -1,7 +1,7 @@
-import {Link, useParams} from "react-router-dom";
-import {isAddress} from "viem";
+import {Link, useNavigate, useParams} from "react-router-dom";
+import {addrKey, normalizeAddressParam} from "../lib/address";
 import {useAccount, useReadContract, useReadContracts} from "wagmi";
-import {useState} from "react";
+import {useEffect, useState} from "react";
 import {useCopy} from "../copy";
 import {Address, CurveDetail, useCurve, ZERO} from "../hooks/curves";
 import {CurveFactoryAbi, MapaePoolV3Abi} from "../contracts/abisV3";
@@ -102,7 +102,7 @@ function TradeHistory({c}: {c: CurveDetail}) {
     const summary = useChainSummary();
     const hist = useTradeHistory(c.address);
     const now = useNow();
-    const browser = activity.stats.get(c.address)?.recent ?? [];
+    const browser = activity.stats.get(addrKey(c.address))?.recent ?? [];
     const serverOk = hist.isSuccess && summary.isSuccess;
     const server = serverOk ? hist.data.pages.flatMap((p) => p.trades) : [];
     const rows = mergeHistory(server, browser, serverOk ? summary.data.indexedBlock : null, activity.tsOf);
@@ -272,8 +272,13 @@ function Contracts({c}: {c: CurveDetail}) {
 export default function Token() {
     const tr = useCopy();
     const {curve: param} = useParams();
-    const valid = !!param && isAddress(param);
-    const addr = valid ? (param as Address) : undefined;
+    // Any letter case is accepted; the checksummed form is used everywhere on the page.
+    const addr = normalizeAddressParam(param) ?? undefined;
+    const valid = addr !== undefined;
+    const navigate = useNavigate();
+    useEffect(() => {
+        if (addr && param !== addr) navigate(`/t/${addr}`, {replace: true});
+    }, [addr, param, navigate]);
     // Only curves opened by the current (v3.1) CurveFactory are shown (isCurve guard).
     const reg = useReadContracts({
         contracts: [{address: ADDR_V3.curveFactory, abi: CurveFactoryAbi, functionName: "isCurve", args: [addr ?? ZERO], chainId: giwaSepolia.id}],

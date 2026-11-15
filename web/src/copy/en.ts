@@ -11,6 +11,7 @@ export const en = {
     common: {
         netError: "The network isn't responding. Try again in a moment.",
         retry: "Try again",
+        close: "Close",
     },
     // legacy v2 section, Korean only
     appTitle: ko.appTitle,
@@ -382,6 +383,7 @@ export const en = {
         continueAtPrice: "Continue at this price",
         sentFailed: "The price moved, so the trade didn't go through. Only gas was spent.",
         retryAuto: "Switch to auto tolerance and try again",
+        approvalPending: "The approval hasn't been reflected yet. Press the button again in a moment.",
         retry: "Try again",
     },
     priority: {

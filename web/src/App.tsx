@@ -10,7 +10,7 @@ import {MockKRWAbi, MockDojangAbi} from "./contracts/abis";
 import {ADDR_V3} from "./contracts/addressesV3";
 import {MockKRWV3Abi} from "./contracts/abisV3";
 import {useOnboarding} from "./hooks";
-import {useTx, useGlobalTxBusy} from "./components/tx";
+import {ToastRouteReset, useTx, useGlobalTxBusy} from "./components/tx";
 import {fmt, shortAddr} from "./lib/format";
 import {OnboardingProvider} from "./components/OnboardingModal";
 import {NicknameProvider, useNicknameModal} from "./components/NicknameModal";
@@ -238,6 +238,7 @@ export default function App() {
     return (
         <div className="min-h-[100dvh] bg-ink-950 text-hanji-100">
             <NicknameProvider>
+                <ToastRouteReset pathname={pathname} />
                 <Nav />
                 {/* legacy v2 section: Korean-only notice in other languages, ADDR-based strip */}
                 {isOfferingSection(pathname) && tr.legacyNotice && (
