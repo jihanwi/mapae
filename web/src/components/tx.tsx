@@ -91,7 +91,12 @@ export function ToastProvider({children}: {children: ReactNode}) {
 
 export type TxPhase = "idle" | "wallet" | "confirming";
 /** scope "v3": v3 error copy; onRevert: called with the decoded custom error name on failure. */
-export type RunOpts = {scope?: "v3"; onRevert?: (errorName: string | undefined) => void};
+export type RunOpts = {
+    scope?: "v3";
+    onRevert?: (errorName: string | undefined) => void;
+    /** Replaces the default success toast text ("{label} — done") when given. */
+    successMessage?: string;
+};
 export type RunFn = (label: string, fn: () => Promise<`0x${string}`>, opts?: RunOpts) => Promise<boolean>;
 
 /** 트랜잭션 실행 훅 — 3단계 상태(서명 대기 → 컨펌 대기 → 완료) + 토스트 + 쿼리 무효화 */
@@ -122,7 +127,7 @@ export function useTx() {
                 update(id, {kind: "pending", text: `${label} — ${tr.tx.pendingTx}`, hash});
                 const receipt = await client.waitForTransactionReceipt({hash});
                 if (receipt.status !== "success") throw new Error("reverted");
-                update(id, {kind: "success", text: `${label} — ${tr.tx.success}`, hash}); // ③ 완료 (H3)
+                update(id, {kind: "success", text: opts?.successMessage ?? `${label} — ${tr.tx.success}`, hash}); // ③ 완료 (H3)
                 await qc.invalidateQueries();
                 // 9-f: 로그(이벤트) 인덱싱이 늦는 경우 대비해 잠시 뒤 한 번 더 무효화 → 피드/카운터 즉시 갱신
                 setTimeout(() => { void qc.invalidateQueries(); }, 4000);
