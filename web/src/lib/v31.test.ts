@@ -59,7 +59,7 @@ describe("old curve addresses", () => {
 describe("v3.1 rule copy", () => {
     it("uses the reference sentences with minutes from ADDR_V3.priorityWindow", () => {
         const m = ADDR_V3.priorityWindow / 60;
-        expect(ko.priority.rule).toBe(`커브가 열리고 ${m}분 동안은 실명 지갑만 살 수 있어요. 그 뒤에는 누구나 살 수 있어요.`);
+        expect(ko.priority.rule).toBe(`출시 후 ${m}분 동안은 실명 지갑만 살 수 있어요. 그 뒤에는 누구나 살 수 있어요.`);
         expect(en.priority.rule).toBe(`For the first ${m} minutes after launch, only verified wallets can buy. After that, anyone can.`);
         for (const s of [ko.curve.listSub, ko.curve.poolNote, en.curve.listSub, en.curve.poolNote]) {
             expect(s).not.toMatch(/실명 지갑만 (사고팔|거래)|only verified wallets can trade/i);
