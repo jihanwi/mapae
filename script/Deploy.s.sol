@@ -75,7 +75,10 @@ contract Deploy is Script {
 
         // Stack 3: GIWA-native showcase (live Dojang attestation stack)
         DojangEASAdapter adapter = new DojangEASAdapter(
-            IEAS(GiwaSepolia.EAS), IDojangScroll(GiwaSepolia.DOJANG_SCROLL), GiwaSepolia.VERIFIED_ADDRESS_SCHEMA_UID
+            IEAS(GiwaSepolia.EAS),
+            IDojangScroll(GiwaSepolia.DOJANG_SCROLL),
+            GiwaSepolia.ATTESTER_TESTNET_FAUCET,
+            GiwaSepolia.VERIFIED_ADDRESS_SCHEMA_UID
         );
         MapaeFactory factoryDojang = new MapaeFactory(
             IDojang(address(adapter)),

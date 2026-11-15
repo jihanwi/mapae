@@ -26,4 +26,11 @@ library GiwaSepolia {
     /// @notice Verified Address schema UID (data: `bool isVerified`).
     bytes32 internal constant VERIFIED_ADDRESS_SCHEMA_UID =
         0x072d75e18b2be4f89a13a7147240477481c4b526d5795802acba59046b426e08;
+
+    /// @notice DojangScroll attester (issuer) IDs: the lookup key of
+    ///         getVerifiedAddressAttestationUid (docs.giwa.io, Dojang verified address).
+    ///         Mainnet uses UPBIT_KOREA alone; the testnet uses TESTNET_FAUCET.
+    bytes32 internal constant ATTESTER_UPBIT_KOREA = 0xd99b42e778498aa3c9c1f6a012359130252780511687a35982e8e52735453034;
+    bytes32 internal constant ATTESTER_TESTNET_FAUCET =
+        0xaa92f8c143657dde575de430aecaea6ca91f2e6072339b16932d426895d8d678;
 }

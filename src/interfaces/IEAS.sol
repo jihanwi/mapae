@@ -26,9 +26,11 @@ interface IEAS {
 /// @notice Dojang's convenience lookup contract on GIWA. ABI confirmed against
 ///         the live GIWA Sepolia deployment (impl v0.5.1 behind an ERC-1967
 ///         proxy at 0xd5077b67dcb56caC8b270C7788FC3E6ee03F17B9).
-/// @dev getVerifiedAddressAttestationUid REVERTS (custom error) when the
-///      account has no attestation — callers must try/catch.
+/// @dev The second argument is the ATTESTER ID (the issuer, e.g. UPBIT_KOREA or
+///      TESTNET_FAUCET), not the schema UID. Passing the schema UID reverts
+///      (0x6e7910da). getVerifiedAddressAttestationUid also REVERTS (custom error)
+///      when the account has no attestation, so callers must try/catch.
 interface IDojangScroll {
-    function isVerified(address account, bytes32 schemaUid) external view returns (bool);
-    function getVerifiedAddressAttestationUid(address account, bytes32 schemaUid) external view returns (bytes32);
+    function isVerified(address account, bytes32 attesterId) external view returns (bool);
+    function getVerifiedAddressAttestationUid(address account, bytes32 attesterId) external view returns (bytes32);
 }

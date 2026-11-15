@@ -21,6 +21,11 @@ library CurvePresets {
     /// @notice Tokens seeded into the AMM pool at graduation.
     uint256 internal constant DEX_SUPPLY = 200_000_000e18;
 
+    /// @notice Most tokens the Dev may receive from the first buy inside the creation tx:
+    ///         5% of TOTAL_SUPPLY (50M). Later buys by the Dev are uncapped like everyone's
+    ///         (STATUS 결정 49, 결정 19 kept).
+    uint256 internal constant DEV_FIRST_BUY_MAX_TOKENS = TOTAL_SUPPLY * 500 / 10_000;
+
     /// @notice Virtual token reserve of the constant-product curve.
     /// @dev Chosen so the AMM seed price equals the curve closing price (PM 2026-11-14).
     ///      At sell-out the curve holds r = Vq·S/(Vt−S) and quotes (Vq + r)/(Vt − S) = Vq·Vt/(Vt−S)².

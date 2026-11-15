@@ -11,6 +11,7 @@ import {IWETH} from "./interfaces/IWETH.sol";
 import {PoolFactory} from "./PoolFactory.sol";
 import {MapaeFactory} from "./MapaeFactory.sol";
 import {CurveSale} from "./CurveSale.sol";
+import {CurvePresets} from "./CurvePresets.sol";
 
 /// @title CurveFactory
 /// @notice Opens v3 L0 bonding curves (CurveSale). Kept separate from MapaeFactory because
@@ -49,6 +50,7 @@ contract CurveFactory is Ownable, ReentrancyGuard {
     error EthRefundFailed();
     error DirectEthRejected();
     error PriorityWindowOutOfBand(uint32 window);
+    error DevFirstBuyTooLarge(uint256 tokensOut, uint256 maxTokens);
 
     event CurveEnabledSet(bool enabled);
     event PriorityWindowSet(uint32 oldWindow, uint32 newWindow);
@@ -122,8 +124,10 @@ contract CurveFactory is Ownable, ReentrancyGuard {
         priorityWindow = window;
     }
 
-    /// @notice Open a curve. `devBuyQuoteIn > 0` performs the dev first buy in the same tx
-    ///         (may sell out and graduate the curve immediately).
+    /// @notice Open a curve. `devBuyQuoteIn > 0` performs the dev first buy in the same tx.
+    ///         That buy may deliver at most DEV_FIRST_BUY_MAX_TOKENS (5% of supply); more
+    ///         reverts the whole creation with DevFirstBuyTooLarge (nothing is trimmed). It
+    ///         cannot sell out the curve; the Dev buys more later like anyone else.
     function createCurve(
         IERC20 quote,
         string calldata name,
@@ -136,7 +140,8 @@ contract CurveFactory is Ownable, ReentrancyGuard {
     }
 
     /// @notice createCurve with quote = WETH and the dev first buy paid in native ETH
-    ///         (msg.value; 0 = open only). Unspent ETH is refunded.
+    ///         (msg.value; 0 = open only). Unspent ETH is refunded. The same 5% cap as
+    ///         createCurve applies; over the cap the whole tx reverts and the ETH stays with the Dev.
     function createCurveWithETH(string calldata name, string calldata symbol, uint256 minTokensOut)
         external
         payable
@@ -144,7 +149,10 @@ contract CurveFactory is Ownable, ReentrancyGuard {
         returns (address curve, address token)
     {
         (curve, token) = _open(weth, name, symbol);
-        if (msg.value > 0) _ethBuy(CurveSale(curve), minTokensOut);
+        if (msg.value > 0) {
+            (uint256 tokensOut,) = _ethBuy(CurveSale(curve), minTokensOut);
+            _checkDevFirstBuy(tokensOut);
+        }
     }
 
     /// @notice Buy on a WETH-quoted curve with native ETH. The priority window is enforced by
@@ -231,9 +239,17 @@ contract CurveFactory is Ownable, ReentrancyGuard {
     function _devFirstBuy(IERC20 quote, CurveSale c, uint256 quoteIn, uint256 minTokensOut) internal {
         quote.safeTransferFrom(msg.sender, address(this), quoteIn);
         quote.forceApprove(address(c), quoteIn);
-        (, uint256 spent) = c.buyFor(msg.sender, quoteIn, minTokensOut);
+        (uint256 tokensOut, uint256 spent) = c.buyFor(msg.sender, quoteIn, minTokensOut);
+        _checkDevFirstBuy(tokensOut);
         if (quoteIn > spent) quote.safeTransfer(msg.sender, quoteIn - spent);
         quote.forceApprove(address(c), 0);
+    }
+
+    /// @dev Dev first buy cap (creation tx only): exactly the cap passes, 1 wei more reverts.
+    function _checkDevFirstBuy(uint256 tokensOut) internal pure {
+        if (tokensOut > CurvePresets.DEV_FIRST_BUY_MAX_TOKENS) {
+            revert DevFirstBuyTooLarge(tokensOut, CurvePresets.DEV_FIRST_BUY_MAX_TOKENS);
+        }
     }
 
     /// @dev Revert if the wallet already opened MAX_CURVES_PER_WINDOW curves within the last

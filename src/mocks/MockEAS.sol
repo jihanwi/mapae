@@ -28,25 +28,26 @@ contract MockEAS is IEAS {
 contract MockDojangScroll is IDojangScroll {
     error AttestationNotFound(); // mirrors live custom-error revert
 
-    mapping(address account => mapping(bytes32 schema => bytes32 uid)) internal _uids;
+    /// @dev Keyed by ATTESTER ID like the live scroll (not by schema UID).
+    mapping(address account => mapping(bytes32 attesterId => bytes32 uid)) internal _uids;
     bool public revertMode;
 
-    function setUid(address account, bytes32 schemaUid, bytes32 uid) external {
-        _uids[account][schemaUid] = uid;
+    function setUid(address account, bytes32 attesterId, bytes32 uid) external {
+        _uids[account][attesterId] = uid;
     }
 
     function setRevertMode(bool on) external {
         revertMode = on;
     }
 
-    function isVerified(address account, bytes32 schemaUid) external view returns (bool) {
+    function isVerified(address account, bytes32 attesterId) external view returns (bool) {
         if (revertMode) revert("MockScroll: down");
-        return _uids[account][schemaUid] != bytes32(0);
+        return _uids[account][attesterId] != bytes32(0);
     }
 
-    function getVerifiedAddressAttestationUid(address account, bytes32 schemaUid) external view returns (bytes32) {
+    function getVerifiedAddressAttestationUid(address account, bytes32 attesterId) external view returns (bytes32) {
         if (revertMode) revert("MockScroll: down");
-        bytes32 uid = _uids[account][schemaUid];
+        bytes32 uid = _uids[account][attesterId];
         if (uid == bytes32(0)) revert AttestationNotFound(); // live behavior
         return uid;
     }

@@ -114,7 +114,10 @@ contract DeployV3 is Script {
         d.buybackExecutor = new BuybackExecutor(d.buybackVault, deployer);
         d.buybackVault.setExecutor(address(d.buybackExecutor));
         d.adapter = new DojangEASAdapter(
-            IEAS(GiwaSepolia.EAS), IDojangScroll(GiwaSepolia.DOJANG_SCROLL), GiwaSepolia.VERIFIED_ADDRESS_SCHEMA_UID
+            IEAS(GiwaSepolia.EAS),
+            IDojangScroll(GiwaSepolia.DOJANG_SCROLL),
+            GiwaSepolia.ATTESTER_TESTNET_FAUCET,
+            GiwaSepolia.VERIFIED_ADDRESS_SCHEMA_UID
         );
 
         d.factoryMock = _mapaeFactory(d, IDojang(address(d.mockDojang)));

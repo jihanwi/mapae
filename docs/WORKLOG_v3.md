@@ -673,3 +673,66 @@ immutable). FeeRouter 합계 밴드는 라우터 구조체 4필드 합만 검사
 - RPC 리허설(`forge script ... --rpc-url https://sepolia-rpc.giwa.io`)은 작업 세션의 네트워크 정책으로 GIWA RPC에 연결할
   수 없어 실행하지 못했다. 같은 `deploy()` 경로를 `DeployV3.t.sol`이 로컬에서 검증한다. 리허설은 `docs/DEPLOY_V3_1.md`
   1단계에서 오너가 한다.
+
+## v3.2 (C-T1, 2026-11-16): 공식 도장 인식, 둘 다 인정, Dev 첫 매수 5% 상한
+
+근거: STATUS 결정 46(공식 도장과 목 둘 다 인정, 테스트넷), 결정 49(발행 tx 안의 Dev 첫 매수는 총공급의 5%).
+
+### 어댑터 버그와 수정
+
+- 배포된 `DojangEASAdapter`(v3.1, 0x8Cad…b640)는 `DojangScroll.getVerifiedAddressAttestationUid(account, schemaUid)`를
+  불렀다. 실제 두 번째 인자는 발행자 ID(attester ID)라서 스키마 UID를 넘기면 0x6e7910da로 revert하고, 어댑터는 catch에서
+  false를 돌려줬다. 공식 도장 지갑도 실명이 아닌 것으로 판정됐다. 목 스크롤이 스키마로 키를 잡고 있어서 테스트는 통과했다.
+- 생성자를 `(eas, scroll, attesterId, schemaUid)`로 바꿨다. 조회는 `attesterId`, 본문 검증(스키마, 수령인, 미취소, 미만료,
+  data == 1)은 `schemaUid`. try/catch와 "실패하면 false"는 그대로.
+- `Constants.sol`에 발행자 ID 두 개(UPBIT_KOREA, TESTNET_FAUCET)를 추가했다. `IDojangScroll`의 매개변수 이름을
+  `attesterId`로 고쳤다. `MockDojangScroll`은 발행자 ID로 키를 잡는다.
+- `Deploy.s.sol`(v2)과 `DeployV3.s.sol`(v3.1)의 어댑터 생성도 새 생성자로 맞췄다(TESTNET_FAUCET). 이미 배포된 것과는
+  무관하다.
+
+### DojangAnyOf (테스트넷 전용)
+
+- `isVerified = a || b`. 각 호출은 try/catch, 실패는 false(한쪽이 죽어도 다른 쪽으로 판정). 0 주소 생성은 revert.
+- 테스트넷 구성: a = 어댑터(TESTNET_FAUCET), b = MockDojang. 메인넷은 합성기 없이 어댑터(UPBIT_KOREA) 단독.
+
+### Dev 첫 매수 상한
+
+- `CurvePresets.DEV_FIRST_BUY_MAX_TOKENS = TOTAL_SUPPLY * 500 / 10_000` (5,000만 개).
+- `createCurve`의 `_devFirstBuy`와 `createCurveWithETH`에서 Dev가 받은 토큰(tokensOut)이 상한을 넘으면
+  `DevFirstBuyTooLarge(tokensOut, maxTokens)`로 발행 전체가 revert한다. 잘라서 사 주지 않는다. 상한과 정확히 같은 수량은
+  허용. 발행 뒤의 buy, buyFor, buyWithETH는 그대로(결정 19).
+- 5%를 사는 데 드는 금액(테스트에서 이분 탐색으로 계산, 상한 이하가 나오는 최대 금액):
+
+  | 프리셋 | 매수 금액(수수료 포함) | 커브에 들어가는 순금액 |
+  |---|---|---|
+  | KRWs (Vq 200만) | 99,354.197714853 KRWs | 98,360.655737704 KRWs |
+  | 메인넷 ETH (Vq 0.6) | 0.029806259314456035 ETH | 0.029508196721311475 ETH |
+  | 테스트넷 ETH (Vq 0.002) | 0.000099354197714852 ETH | 0.000098360655737704 ETH |
+
+  수수료는 매수 금액에서 뗀다(`net = quoteIn - quoteIn × 1.00%`). 웹의 기존 첫 매수 기본값 0.00005 ETH는 통과하고
+  0.001 ETH는 막힌다(테스트넷).
+
+### 배포 준비
+
+- `script/DeployV3_2.s.sol`: v3.1 json에서 MockKRW, MockDojang, PoolFactory, FeeRouter, MapaeFactory(mock),
+  MembershipTokenDeployer를 읽어 재사용하고, 어댑터, DojangAnyOf, CurveFactory를 새로 배포한다. 재사용 MapaeFactory의
+  등록값(MockKRW, WETH 0.002 ETH)과 링크된 라이브러리 주소를 확인하고 다르면 멈춘다. 결과는
+  `deployments/giwa-sepolia-v3_2.json`.
+- 재사용 6개의 런타임 바이트코드는 main(v3.1)과 메타데이터까지 같다(`forge inspect ... deployedBytecode` 비교).
+- `script/verify-children.js`: 이벤트를 9,000블록 단위로 나눠 읽는다(RPC 한도 10,000블록). 기본 json은 v3_2가 있으면 그것.
+- 절차: `docs/DEPLOY_V3_2.md`.
+
+### 테스트
+
+- `DojangEASAdapter.t.sol` (+3): 스키마 UID를 발행자 ID 자리에 넣으면 false, 다른 발행자 false, 생성자 값 보관.
+- 신규 `DojangAnyOf.t.sol` (7), `DojangFork.t.sol` (3, `GIWA_SEPOLIA_RPC_URL`이 없으면 건너뜀), `DeployV3_2.t.sol` (4).
+- `CurveFactory.t.sol`: 상한 경계(3개 프리셋 각각), 발행 tx 안 졸업 불가, 발행 뒤 상한 넘는 매수 가능, 상한과 같은 수량
+  허용(하네스).
+- `CurveFactoryETH.t.sol`: 메인넷/테스트넷 프리셋 경계(ETH 전액 반환, 커브 미등록), 발행 뒤 상한 넘는 매수.
+- 바꾼 기존 테스트: `test_K5_DevFirstBuy`(금액 1000 단위 → Vq/100), `test_K5_DevFirstBuyGraduatesInCreateTx`
+  → `test_K5_DevFirstBuyCannotGraduateInCreateTx`(revert 확인으로 교체), `test_W8_CreateWithETH`(0.2 → 0.01 ETH, 졸업 부분은
+  revert 확인으로), `CurvePriority.test_priority_DevFirstBuyErc20AndEth`(0.1 → 0.01 ETH), `DemoCurve.s.sol`의 시나리오 A
+  (Dev 첫 매수 1/13 → 1/200로 발행하고 나머지는 발행 뒤 별도 buy).
+- 합계 373 → **397 그린 + 포크 스위트 건너뜀(RPC 없음, setUp에서 skip되어 1건으로 집계)**. BytecodeSize 통과, CurveFactory 런타임 19,131 바이트(여유 5,445).
+- 포크 테스트와 `cast call`은 작업 세션에서 GIWA RPC에 연결할 수 없어 실행하지 못했다. 오너가 `docs/DEPLOY_V3_2.md` 6단계에서
+  확인한다.

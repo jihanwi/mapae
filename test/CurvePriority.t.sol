@@ -186,7 +186,7 @@ contract CurvePriorityTest is MapaeFactoryTestBase {
 
         vm.deal(dev, 1 ether);
         vm.prank(dev);
-        (address ce,) = cf.createCurveWithETH{value: 0.1 ether}("Dev Eth", "DE", 1);
+        (address ce,) = cf.createCurveWithETH{value: 0.01 ether}("Dev Eth", "DE", 1); // v3.2: under the 5% first-buy cap
         assertGt(CurveSale(ce).s(), 0, "dev ETH buy inside the window");
         assertEq(CurveSale(ce).verifiedBuyerCount(), 0);
         assertFalse(CurveSale(ce).countedVerifiedBuyer(dev));
