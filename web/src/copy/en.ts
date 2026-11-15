@@ -294,7 +294,7 @@ export const en = {
         },
     },
     chain: {
-        chartTitle: "Price chart",
+        chartTitle: "Chart",
         intervals: {m5: "5m", h1: "1h", d1: "1d"},
         intervalLabel: "Candle interval",
         axisLabel: "Vertical axis",

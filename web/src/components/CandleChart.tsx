@@ -8,6 +8,7 @@ import {useEffect, useRef, useState} from "react";
 import {useCopy} from "../copy";
 import {useCandles, useChainSummary} from "../hooks/chainData";
 import {useActivity} from "../hooks/activity";
+import {tradePriceWad} from "../lib/activity";
 import {AREA_GAP, barIndexAt, connectOpens, fitView, layoutCandles, liveFrom, LiveTrade, mergeLiveCandles, panBy, parseCandles, TIME_LABEL_W, timeLabels, toMarketCap, View, zoomAt} from "../lib/candles";
 import {fmtAxisMcap, fmtAxisPrice, fmtRound} from "../lib/format";
 
@@ -61,7 +62,7 @@ const timeLabel = (t: number, locale: string, sec: number) =>
 
 /** `graduated` picks the default scale (log after graduation, linear before) until the user
  *  chooses one. The vertical axis shows market cap by default (STATUS 결정 48). */
-export function CandleChart({curve, unit, graduated = false}: {curve: string; unit: string; graduated?: boolean}) {
+export function CandleChart({curve, unit, virtualQuote, graduated = false}: {curve: string; unit: string; virtualQuote: bigint; graduated?: boolean}) {
     const tr = useCopy();
     const [interval, setIv] = useState<300 | 3600 | 86400>(300);
     const [axis, setAxisState] = useState<AxisUnit>(() => readPref<AxisUnit>(AXIS_KEY, ["mcap", "price"]) ?? "mcap");
@@ -84,9 +85,10 @@ export function CandleChart({curve, unit, graduated = false}: {curve: string; un
     const activity = useActivity();
     // Server candles + this curve's browser RPC trades after the server's indexedBlock (all of them
     // when the candle API is down). Opens are then connected to the previous close (display only).
+    // Prices follow the server: curve trades at the post-trade spot, pool trades at the average.
     const live: LiveTrade[] = activity.trades
         .filter((t) => t.curve.toLowerCase() === curve.toLowerCase())
-        .map((t) => ({block: t.block, logIndex: t.logIndex, ts: activity.tsOf(t.block), quoteAmount: t.quoteAmount, tokenAmount: t.tokenAmount}));
+        .map((t) => ({block: t.block, logIndex: t.logIndex, ts: activity.tsOf(t.block), quoteAmount: t.quoteAmount, tokenAmount: t.tokenAmount, priceWad: tradePriceWad(t, virtualQuote)}));
     const server = q.isSuccess ? parseCandles(q.data) : [];
     // see liveFrom: undefined = add no live trades (position unknown while server candles exist)
     const indexed = liveFrom({candlesOk: q.isSuccess, serverCount: server.length, indexedBlock: summary.isSuccess ? summary.data.indexedBlock : undefined});

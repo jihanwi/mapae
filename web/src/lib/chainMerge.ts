@@ -10,6 +10,7 @@ export type ServerCurveSummary = {
     volume24h: string;
     volume24hExDev: string;
     lastTradeTs: string;
+    /** price_wad of the last trade: post-trade spot for curve trades, executed price for pool trades. */
     lastPriceWad: string;
     /** price_wad of the last trade before the window; null when there is none. */
     refPriceWad: string | null;
@@ -25,6 +26,7 @@ export type ServerTrade = {
     isDev: boolean;
     quoteAmount: string;
     tokenAmount: string;
+    /** Executed price (quote * 1e18 / token), not the candle price (post-trade spot on the curve). */
     priceWad: string;
     ts: string;
     /** v3.1 index: real-name status at trade time (null when unknown). */

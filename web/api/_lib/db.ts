@@ -60,6 +60,9 @@ const SCHEMA = [
     `ALTER TABLE mapae_curves ADD COLUMN IF NOT EXISTS priority_until bigint`,
     `ALTER TABLE mapae_curves ADD COLUMN IF NOT EXISTS factory text`,
     `CREATE INDEX IF NOT EXISTS mapae_trades_ts ON mapae_trades (ts DESC)`,
+    // Decision 50 (additive): curve reserves after each curve trade; NULL for pool trades.
+    `ALTER TABLE mapae_trades ADD COLUMN IF NOT EXISTS r_after numeric(78,0)`,
+    `ALTER TABLE mapae_trades ADD COLUMN IF NOT EXISTS s_after numeric(78,0)`,
     `CREATE TABLE IF NOT EXISTS mapae_transfers (
         tx text,
         log_index int,
@@ -98,10 +101,11 @@ export async function ensureSchema(sql: Sql): Promise<void> {
     await sql.transaction(SCHEMA.map((q) => sql.query(q)));
 }
 
-/** Indexer cursor row per contract version: id 1 = v3, id 31 = v3.1 (both left untouched),
- *  id 32 = v3.2. A new row starts at ADDR_V3.deployBlock, so the new CurveFactory's events from its
- *  deploy block on are read even though the v3.1 cursor is already past it. */
-export const INDEXER_STATE_ID = 32;
+/** Indexer cursor row per contract version: id 1 = v3, id 31 = v3.1, id 32 = v3.2 (all left
+ *  untouched), id 33 = v3.2 reindex for decision 50 (spot price per curve trade). A new row starts at
+ *  ADDR_V3.deployBlock, so every v3.2 event is read again: trades overwrite price_wad, r_after and
+ *  s_after on (tx, log_index); curves and transfers keep DO NOTHING, graduations are idempotent. */
+export const INDEXER_STATE_ID = 33;
 
 /** Minimum seconds between two on-demand catch-up runs, across all callers. */
 export const POKE_GAP_SEC = 20;
@@ -132,8 +136,8 @@ export async function readNextBlock(sql: Sql): Promise<bigint | null> {
 
 /** Curves of `factory` only, so older factories' curves and pools are never indexed again. */
 export async function loadCurves(sql: Sql, factory: string): Promise<KnownCurve[]> {
-    const rows = (await sql.query(`SELECT curve, token, dev, pool FROM mapae_curves WHERE factory = $1`, [factory.toLowerCase()])) as {curve: string; token: string; dev: string; pool: string | null}[];
-    return rows.map((r) => ({curve: r.curve as `0x${string}`, token: r.token as `0x${string}`, dev: r.dev as `0x${string}`, pool: (r.pool as `0x${string}` | null) ?? null}));
+    const rows = (await sql.query(`SELECT curve, token, dev, pool, virtual_quote::text AS vq FROM mapae_curves WHERE factory = $1`, [factory.toLowerCase()])) as {curve: string; token: string; dev: string; pool: string | null; vq: string}[];
+    return rows.map((r) => ({curve: r.curve as `0x${string}`, token: r.token as `0x${string}`, dev: r.dev as `0x${string}`, pool: (r.pool as `0x${string}` | null) ?? null, virtualQuote: BigInt(r.vq)}));
 }
 
 /** One range in one transaction: new curves, graduations, trades, transfers and the cursor.
@@ -157,9 +161,10 @@ export async function writeRange(sql: Sql, w: RangeWrite): Promise<void> {
             [g.map((r) => r.curve), g.map((r) => r.pool), g.map((r) => r.block)]
         ),
         sql.query(
-            `INSERT INTO mapae_trades (tx, log_index, curve, venue, side, trader, is_dev, quote_amount, token_amount, price_wad, block, ts, verified)
-             SELECT * FROM unnest($1::text[], $2::int[], $3::text[], $4::text[], $5::text[], $6::text[], $7::boolean[], $8::numeric[], $9::numeric[], $10::numeric[], $11::bigint[], $12::bigint[], $13::boolean[])
-             ON CONFLICT (tx, log_index) DO NOTHING`,
+            // A reindex (new cursor id) rewrites the price definition of rows already stored.
+            `INSERT INTO mapae_trades (tx, log_index, curve, venue, side, trader, is_dev, quote_amount, token_amount, price_wad, block, ts, verified, r_after, s_after)
+             SELECT * FROM unnest($1::text[], $2::int[], $3::text[], $4::text[], $5::text[], $6::text[], $7::boolean[], $8::numeric[], $9::numeric[], $10::numeric[], $11::bigint[], $12::bigint[], $13::boolean[], $14::numeric[], $15::numeric[])
+             ON CONFLICT (tx, log_index) DO UPDATE SET price_wad = EXCLUDED.price_wad, r_after = EXCLUDED.r_after, s_after = EXCLUDED.s_after`,
             [
                 t.map((r) => r.tx),
                 t.map((r) => r.logIndex),
@@ -174,6 +179,8 @@ export async function writeRange(sql: Sql, w: RangeWrite): Promise<void> {
                 t.map((r) => r.block),
                 t.map((r) => r.ts),
                 t.map((r) => r.verified),
+                t.map((r) => r.rAfter),
+                t.map((r) => r.sAfter),
             ]
         ),
         sql.query(
@@ -315,12 +322,15 @@ export async function holders(sql: Sql, token: string, exclude: string[]): Promi
     return {rows: rows.map((r) => ({address: r.address, balance: r.balance})), total};
 }
 
+/** priceWad here is the executed price (quote_amount * 1e18 / token_amount, rounded down), not
+ *  the stored price_wad (the post-trade spot for curve trades, used by candles and the summary). */
 export type TradeOut = {tx: string; logIndex: number; side: string; venue: string; trader: string; isDev: boolean; quoteAmount: string; tokenAmount: string; priceWad: string; ts: string; block: string; verified: boolean | null};
 
 export async function trades(sql: Sql, curve: string, before: bigint | undefined, limit: number): Promise<TradeOut[]> {
     return (await sql.query(
         `SELECT tx, log_index AS "logIndex", side, venue, trader, is_dev AS "isDev",
-                quote_amount::text AS "quoteAmount", token_amount::text AS "tokenAmount", price_wad::text AS "priceWad",
+                quote_amount::text AS "quoteAmount", token_amount::text AS "tokenAmount",
+                div(quote_amount * 1000000000000000000::numeric, token_amount)::text AS "priceWad",
                 ts::text AS ts, block::text AS block, verified
          FROM mapae_trades
          WHERE curve = $1 AND ($2::bigint IS NULL OR ts < $2::bigint)
@@ -384,7 +394,8 @@ export type WalletTradeOut = TradeOut & {curve: string; symbol: string};
 export async function walletTrades(sql: Sql, address: string, factory: string, before: bigint | undefined, limit: number): Promise<WalletTradeOut[]> {
     return (await sql.query(
         `SELECT t.tx, t.log_index AS "logIndex", t.side, t.venue, t.trader, t.is_dev AS "isDev",
-                t.quote_amount::text AS "quoteAmount", t.token_amount::text AS "tokenAmount", t.price_wad::text AS "priceWad",
+                t.quote_amount::text AS "quoteAmount", t.token_amount::text AS "tokenAmount",
+                div(t.quote_amount * 1000000000000000000::numeric, t.token_amount)::text AS "priceWad",
                 t.ts::text AS ts, t.block::text AS block, t.verified, t.curve, m.symbol
          FROM mapae_trades t
          JOIN mapae_curves m ON m.curve = t.curve AND m.factory = $2

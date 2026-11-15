@@ -2,11 +2,10 @@
 // with injected dependencies, and query parameter validation. Decoding reuses src/lib/activity.ts.
 import {decodeEventLog, encodeEventTopics, Hex, isAddress} from "viem";
 import {CurveFactoryAbi, MembershipTokenV3Abi} from "../../src/contracts/abisV3.js";
-import {ACTIVITY_TOPICS, BlockTime, decodeActivityLogs, interpolateTs, RawLog, resolve} from "../../src/lib/activity.js";
+import {ACTIVITY_TOPICS, BlockTime, decodeActivityLogs, interpolateTs, RawLog, resolve, tradePriceWad} from "../../src/lib/activity.js";
 
 export type Address = `0x${string}`;
 const lc = (a: string) => a.toLowerCase() as Address;
-const WAD = 10n ** 18n;
 export const ZERO_ADDR = "0x0000000000000000000000000000000000000000";
 
 // ---------------------------------------------------------------------------------------------
@@ -62,14 +61,20 @@ export type TradeRow = {
     verified: boolean | null;
     quoteAmount: string;
     tokenAmount: string;
+    /** Curve trades: spot price after the trade, (Vq + r) * 1e18 / (Vt - s) from the event's r, s
+     *  (decision 50), so the last candle matches the market cap. Pool trades: average executed price
+     *  (quote / token); the pool has no curve reserves to read. */
     priceWad: string;
+    /** Curve reserves after the trade (Buy/Sell r, s); null for pool trades. */
+    rAfter: string | null;
+    sAfter: string | null;
     block: string;
     ts: string;
 };
 export type TransferRow = {tx: Hex; logIndex: number; token: Address; from: Address; to: Address; value: string; block: string};
 
 /** A curve as the indexer knows it (from the DB or from this range's CurveCreated). */
-export type KnownCurve = {curve: Address; token: Address; dev: Address; pool: Address | null};
+export type KnownCurve = {curve: Address; token: Address; dev: Address; pool: Address | null; virtualQuote: bigint};
 
 const CURVE_CREATED = CurveFactoryAbi.filter((x) => x.type === "event" && x.name === "CurveCreated");
 const TRANSFER = MembershipTokenV3Abi.filter((x) => x.type === "event" && x.name === "Transfer");
@@ -128,8 +133,10 @@ export function toTradeRows(logs: readonly RawLog[], known: readonly KnownCurve[
     const refs = known.map((k, i) => ({address: k.curve, pool: (pools.get(k.curve) ?? ZERO_ADDR) as Address, dev: k.dev, index: i}));
     const {trades} = resolve(entries, refs);
     const out: TradeRow[] = [];
+    const vq = new Map<string, bigint>(known.map((k) => [k.curve, k.virtualQuote]));
     for (const t of trades) {
         if (t.tokenAmount === 0n) continue;
+        const onCurve = t.venue === "curve" && t.rAfter !== undefined && t.sAfter !== undefined;
         out.push({
             tx: t.tx.toLowerCase() as Hex,
             logIndex: t.logIndex,
@@ -142,7 +149,9 @@ export function toTradeRows(logs: readonly RawLog[], known: readonly KnownCurve[
             verified: t.side === "buy" && t.venue === "curve" ? t.verified : null,
             quoteAmount: t.quoteAmount.toString(),
             tokenAmount: t.tokenAmount.toString(),
-            priceWad: ((t.quoteAmount * WAD) / t.tokenAmount).toString(),
+            priceWad: tradePriceWad(t, vq.get(lc(t.curve))).toString(),
+            rAfter: onCurve ? (t.rAfter as bigint).toString() : null,
+            sAfter: onCurve ? (t.sAfter as bigint).toString() : null,
             block: t.block.toString(),
             ts: tsStr(t.block, a, b),
         });
@@ -274,7 +283,7 @@ export async function indexOnce(deps: CronDeps, opts: IndexOpts): Promise<CronRe
             const [a, b] = await Promise.all([deps.rpc.blockTime(from), deps.rpc.blockTime(to)]);
             // 6b) curves created in this range
             const created = toCurveRows(await deps.rpc.getLogs({fromBlock: from, toBlock: to, address: deps.factory, topics: [CURVE_CREATED_TOPIC]}), deps.factory, a, b);
-            for (const c of created) if (!known.has(c.curve)) known.set(c.curve, {curve: c.curve, token: c.token, dev: c.dev, pool: null});
+            for (const c of created) if (!known.has(c.curve)) known.set(c.curve, {curve: c.curve, token: c.token, dev: c.dev, pool: null, virtualQuote: BigInt(c.virtualQuote)});
             // 6c) activity, no address filter, kept for known curves/pools only
             const raw = toTradeRows(await deps.rpc.getLogs({fromBlock: from, toBlock: to, topics: [ACTIVITY_TOPICS]}), [...known.values()], a, b);
             // 6e) only when the range has sells or pool swaps: their real-name status, one multicall.

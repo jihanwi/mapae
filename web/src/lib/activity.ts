@@ -3,7 +3,7 @@
 // activity.test.ts. Amounts are raw 18-decimals bigints; nothing is converted to floating point.
 import {decodeEventLog, encodeEventTopics, Hex} from "viem";
 import {CurveSaleAbi, MapaePoolV3Abi} from "../contracts/abisV3.js"; // .js: also imported by Vercel Functions (ESM)
-import {marketCapQuote, progressBps, TOTAL_SUPPLY, WAD} from "./curveMath.js";
+import {marketCapQuote, progressBps, spotPrice, TOTAL_SUPPLY, WAD} from "./curveMath.js";
 
 type Address = `0x${string}`;
 const lc = (a: string) => a.toLowerCase() as Address;
@@ -34,8 +34,8 @@ export type RawLog = {address: Address; topics: readonly Hex[]; data: Hex; block
 /** Decoded, chain-level entry. Not yet tied to a curve: that happens in `resolve`, against the
  *  curve list known at read time (so a curve created after the fetch is still matched). */
 export type Entry =
-    | {kind: "Buy"; emitter: Address; trader: Address; isDev: boolean; verified: boolean; quoteSpent: bigint; tokensOut: bigint; fees: bigint; block: bigint; logIndex: number; tx: Hex}
-    | {kind: "Sell"; emitter: Address; trader: Address; isDev: boolean; tokenIn: bigint; quoteOut: bigint; fees: bigint; block: bigint; logIndex: number; tx: Hex}
+    | {kind: "Buy"; emitter: Address; trader: Address; isDev: boolean; verified: boolean; quoteSpent: bigint; tokensOut: bigint; fees: bigint; rAfter: bigint; sAfter: bigint; block: bigint; logIndex: number; tx: Hex}
+    | {kind: "Sell"; emitter: Address; trader: Address; isDev: boolean; tokenIn: bigint; quoteOut: bigint; fees: bigint; rAfter: bigint; sAfter: bigint; block: bigint; logIndex: number; tx: Hex}
     | {kind: "Swapped"; emitter: Address; to: Address; quoteIn: boolean; amountIn: bigint; amountOut: bigint; royalty: bigint; block: bigint; logIndex: number; tx: Hex}
     | {kind: "Graduated"; emitter: Address; pool: Address; block: bigint; logIndex: number; tx: Hex};
 
@@ -62,6 +62,8 @@ export function decodeActivityLogs(logs: readonly RawLog[]): Entry[] {
                 quoteSpent: a.quoteSpent as bigint,
                 tokensOut: a.tokensOut as bigint,
                 fees: (a.platformFee as bigint) + (a.devFee as bigint) + (a.lpSeedFee as bigint),
+                rAfter: a.r as bigint,
+                sAfter: a.s as bigint,
             });
         } else if (ev.eventName === "Sell") {
             out.push({
@@ -72,6 +74,8 @@ export function decodeActivityLogs(logs: readonly RawLog[]): Entry[] {
                 tokenIn: a.tokenIn as bigint,
                 quoteOut: a.quoteOut as bigint,
                 fees: (a.platformFee as bigint) + (a.devFee as bigint) + (a.lpSeedFee as bigint),
+                rAfter: a.r as bigint,
+                sAfter: a.s as bigint,
             });
         } else if (ev.eventName === "Swapped") {
             out.push({
@@ -150,7 +154,24 @@ export type Trade = {
     block: bigint;
     logIndex: number;
     tx: Hex;
+    /** Curve trades: reserve and sold amount AFTER the trade (Buy / Sell event r, s). Absent on
+     *  pool swaps (Swapped carries no reserves). */
+    rAfter?: bigint;
+    sAfter?: bigint;
 };
+
+/** Executed price of a trade: what the trader paid or got per whole token (quote x 1e18 / tokens). */
+export const execPriceWad = (t: {quoteAmount: bigint; tokenAmount: bigint}): bigint => (t.tokenAmount === 0n ? 0n : (t.quoteAmount * WAD) / t.tokenAmount);
+
+/** The price a trade leaves behind (STATUS 결정 50), for charts and change: on the curve the spot
+ *  after the trade, spotPrice(virtualQuote, r, s) with the event's r and s; on the pool the executed
+ *  price (Swapped has no reserves), and also when the curve's virtualQuote is unknown. */
+export function tradePriceWad(t: {venue: "curve" | "pool"; quoteAmount: bigint; tokenAmount: bigint; rAfter?: bigint; sAfter?: bigint}, virtualQuote: bigint | undefined): bigint {
+    if (t.venue === "curve" && t.rAfter !== undefined && t.sAfter !== undefined && virtualQuote !== undefined && virtualQuote > 0n) {
+        return spotPrice(virtualQuote, t.rAfter, t.sAfter);
+    }
+    return execPriceWad(t);
+}
 
 const ZERO = "0x0000000000000000000000000000000000000000";
 
@@ -177,8 +198,8 @@ export function resolve(entries: readonly Entry[], curves: readonly CurveRef[]):
             if (!c) continue;
             trades.push(
                 e.kind === "Buy"
-                    ? {...pos, curve: c.address, venue: "curve", side: "buy", trader: e.trader, isDev: e.isDev, verified: e.verified, tokenAmount: e.tokensOut, quoteAmount: e.quoteSpent, volume: e.quoteSpent}
-                    : {...pos, curve: c.address, venue: "curve", side: "sell", trader: e.trader, isDev: e.isDev, verified: null, tokenAmount: e.tokenIn, quoteAmount: e.quoteOut, volume: e.quoteOut + e.fees}
+                    ? {...pos, curve: c.address, venue: "curve", side: "buy", trader: e.trader, isDev: e.isDev, verified: e.verified, tokenAmount: e.tokensOut, quoteAmount: e.quoteSpent, volume: e.quoteSpent, rAfter: e.rAfter, sAfter: e.sAfter}
+                    : {...pos, curve: c.address, venue: "curve", side: "sell", trader: e.trader, isDev: e.isDev, verified: null, tokenAmount: e.tokenIn, quoteAmount: e.quoteOut, volume: e.quoteOut + e.fees, rAfter: e.rAfter, sAfter: e.sAfter}
             );
             continue;
         }
