@@ -4,7 +4,7 @@ import {useAccount, usePublicClient} from "wagmi";
 import {explorerTx, giwaSepolia} from "../config/chain";
 import {humanError, revertName} from "../lib/errors";
 import {useCopy} from "../copy";
-import {pokeChain} from "../hooks/poke";
+import {catchUpAfterTx} from "../hooks/poke";
 import {PrimaryBtn, SecondaryBtn} from "./ui";
 
 type Toast = {id: number; kind: "pending" | "success" | "error"; text: string; hash?: string};
@@ -129,8 +129,9 @@ export function useTx() {
                 const receipt = await client.waitForTransactionReceipt({hash});
                 if (receipt.status !== "success") throw new Error("reverted");
                 update(id, {kind: "success", text: opts?.successMessage ?? `${label} — ${tr.tx.success}`, hash}); // ③ 완료 (H3)
-                // ask the server to catch up so indexed numbers include this tx (not awaited)
-                void pokeChain(qc);
+                // ask the server to catch up 12 s after the last successful tx (the indexer reads 10
+                // blocks behind the head), so indexed numbers include this tx
+                catchUpAfterTx(qc, receipt.blockNumber);
                 await qc.invalidateQueries();
                 // 9-f: 로그(이벤트) 인덱싱이 늦는 경우 대비해 잠시 뒤 한 번 더 무효화 → 피드/카운터 즉시 갱신
                 setTimeout(() => { void qc.invalidateQueries(); }, 4000);
