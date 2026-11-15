@@ -3,7 +3,7 @@ import {badRequest, chainGet} from "../_lib/chainApi.js";
 import {candles} from "../_lib/db.js";
 import {parseCurve, parseInterval} from "../_lib/indexer.js";
 
-const h = chainGet("candles", async (sql, p) => {
+const h = chainGet("candles", {params: ["curve", "interval"]}, async (sql, p) => {
     const curve = parseCurve(p.get("curve"));
     const interval = parseInterval(p.get("interval"));
     if (!curve || !interval) return badRequest;

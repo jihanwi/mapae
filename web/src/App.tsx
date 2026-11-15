@@ -16,6 +16,7 @@ import {OnboardingProvider} from "./components/OnboardingModal";
 import {NicknameProvider, useNicknameModal} from "./components/NicknameModal";
 import {useNickname} from "./hooks/comments";
 import {ActivityProvider} from "./hooks/activity";
+import {PokeWatcher} from "./hooks/poke";
 
 /** Fixed-price offering section (v1/v2 contracts): /offerings and the legacy pages under it. */
 export function isOfferingSection(pathname: string): boolean {
@@ -252,6 +253,8 @@ export default function App() {
                 {isOfferingSection(pathname) && <OnboardingStrip />}
                 <OnboardingProvider>
                     <ActivityProvider enabled={!isOfferingSection(pathname)}>
+                        {/* asks the indexer to catch up when this tab's trades run ahead of it (v3 only) */}
+                        {!isOfferingSection(pathname) && <PokeWatcher />}
                         <Outlet />
                     </ActivityProvider>
                 </OnboardingProvider>

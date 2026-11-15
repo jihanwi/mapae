@@ -24,6 +24,8 @@ const SCHEMA = [
     )`,
     // Additive: block time of the last indexed block (for /api/chain/summary indexedTs).
     `ALTER TABLE mapae_indexer_state ADD COLUMN IF NOT EXISTS indexed_ts bigint`,
+    // Additive: last on-demand catch-up (POST /api/chain/summary), at most one run per POKE_GAP_SEC.
+    `ALTER TABLE mapae_indexer_state ADD COLUMN IF NOT EXISTS poke_ts bigint`,
     `CREATE TABLE IF NOT EXISTS mapae_curves (
         curve text PRIMARY KEY,
         token text NOT NULL,
@@ -100,6 +102,26 @@ export async function ensureSchema(sql: Sql): Promise<void> {
  *  id 32 = v3.2. A new row starts at ADDR_V3.deployBlock, so the new CurveFactory's events from its
  *  deploy block on are read even though the v3.1 cursor is already past it. */
 export const INDEXER_STATE_ID = 32;
+
+/** Minimum seconds between two on-demand catch-up runs, across all callers. */
+export const POKE_GAP_SEC = 20;
+
+export type PokeClaim = "claimed" | "throttled" | "no_row";
+
+/** Claims the next catch-up run in one statement: "claimed" when no run happened in the last
+ *  POKE_GAP_SEC (poke_ts is set to now), "throttled" otherwise, "no_row" when the cursor row of
+ *  this version does not exist yet. A missing poke_ts column (schema not migrated yet) throws. */
+export async function claimPoke(sql: Sql, nowSec: number): Promise<PokeClaim> {
+    const rows = (await sql.query(
+        `UPDATE mapae_indexer_state SET poke_ts = $1
+         WHERE id = $2 AND (poke_ts IS NULL OR poke_ts <= $1 - $3)
+         RETURNING id`,
+        [nowSec, INDEXER_STATE_ID, POKE_GAP_SEC]
+    )) as unknown[];
+    if (rows.length > 0) return "claimed";
+    const exists = (await sql.query(`SELECT 1 FROM mapae_indexer_state WHERE id = $1`, [INDEXER_STATE_ID])) as unknown[];
+    return exists.length > 0 ? "throttled" : "no_row";
+}
 
 export async function readNextBlock(sql: Sql): Promise<bigint | null> {
     const rows = (await sql.query(`SELECT next_block::text AS n FROM mapae_indexer_state WHERE id = $1`, [INDEXER_STATE_ID])) as {n: string}[];

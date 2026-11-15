@@ -8,7 +8,7 @@ import {useEffect, useRef, useState} from "react";
 import {useCopy} from "../copy";
 import {useCandles, useChainSummary} from "../hooks/chainData";
 import {useActivity} from "../hooks/activity";
-import {barIndexAt, connectOpens, fitView, layoutCandles, LiveTrade, mergeLiveCandles, panBy, parseCandles, TIME_LABEL_W, timeLabels, View, zoomAt} from "../lib/candles";
+import {barIndexAt, connectOpens, fitView, layoutCandles, liveFrom, LiveTrade, mergeLiveCandles, panBy, parseCandles, TIME_LABEL_W, timeLabels, View, zoomAt} from "../lib/candles";
 import {fmtRound, fmtSig} from "../lib/format";
 
 const HEIGHT = 240;
@@ -53,9 +53,8 @@ export function CandleChart({curve, unit}: {curve: string; unit: string}) {
         .filter((t) => t.curve.toLowerCase() === curve.toLowerCase())
         .map((t) => ({block: t.block, logIndex: t.logIndex, ts: activity.tsOf(t.block), quoteAmount: t.quoteAmount, tokenAmount: t.tokenAmount}));
     const server = q.isSuccess ? parseCandles(q.data) : [];
-    const indexed = q.isSuccess ? (summary.isSuccess && summary.data.indexedBlock !== null ? BigInt(summary.data.indexedBlock) : undefined) : null;
-    // undefined: server candles loaded but the indexer position is unknown; don't add live trades
-    // (they could already be counted).
+    // see liveFrom: undefined = add no live trades (position unknown while server candles exist)
+    const indexed = liveFrom({candlesOk: q.isSuccess, serverCount: server.length, indexedBlock: summary.isSuccess ? summary.data.indexedBlock : undefined});
     const candles = connectOpens(indexed === undefined ? server : mergeLiveCandles(server, live, indexed, interval));
     // null = default view (fits the width, newest at the right). Width changes keep the slot and
     // only re-fit the offset (fitView); interval changes go back to the default view.

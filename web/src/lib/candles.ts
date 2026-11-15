@@ -178,6 +178,19 @@ export const MAX_CANDLES = 300;
 /** A browser RPC trade of this curve (Buy, Sell or Swapped), with its interpolated time. */
 export type LiveTrade = {block: bigint; logIndex: number; ts: number | undefined; quoteAmount: bigint; tokenAmount: bigint};
 
+/** Which browser trades to add on top of the server candles (the indexedBlock argument of
+ *  mergeLiveCandles, or undefined = add none):
+ *  - candle API down: null = every browser trade;
+ *  - indexer position known: only trades after it;
+ *  - position unknown (null or no summary) and no server candles: null = every browser trade
+ *    (nothing on the server can be counted twice; e.g. just after a version switch);
+ *  - position unknown but server candles exist: undefined = add none (they could be counted twice). */
+export function liveFrom(p: {candlesOk: boolean; serverCount: number; indexedBlock: string | null | undefined}): bigint | null | undefined {
+    if (!p.candlesOk) return null;
+    if (p.indexedBlock !== null && p.indexedBlock !== undefined) return BigInt(p.indexedBlock);
+    return p.serverCount === 0 ? null : undefined;
+}
+
 /** Server candles plus browser trades after indexedBlock, bucketed at `interval` seconds with the
  *  server's price definition (quote * 1e18 / token, bigint). A trade at or below indexedBlock is
  *  already in the server candles and is skipped; with no server index (null) every trade counts.

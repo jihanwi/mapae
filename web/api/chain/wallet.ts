@@ -11,7 +11,7 @@ import {ADDR_V3} from "../../src/contracts/addressesV3.js";
 /** 0x + 40 hex (any case) -> lowercase; null otherwise (same rule as the curve parameter). */
 export const parseAddress = parseCurve;
 
-const h = chainGet("wallet", async (sql, p) => {
+const h = chainGet("wallet", {params: ["address"]}, async (sql, p) => {
     const address = parseAddress(p.get("address"));
     if (!address) return badRequest;
     const f = ADDR_V3.curveFactory;

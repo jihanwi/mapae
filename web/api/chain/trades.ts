@@ -3,7 +3,7 @@ import {badRequest, chainGet} from "../_lib/chainApi.js";
 import {trades} from "../_lib/db.js";
 import {parseBefore, parseCurve, parseLimit} from "../_lib/indexer.js";
 
-const h = chainGet("trades", async (sql, p) => {
+const h = chainGet("trades", {params: ["curve", "before", "limit"]}, async (sql, p) => {
     const curve = parseCurve(p.get("curve"));
     const before = parseBefore(p.get("before"));
     const limit = parseLimit(p.get("limit"));

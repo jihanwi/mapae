@@ -14,6 +14,11 @@ import {
     parseLimit,
     planRanges,
     runCron,
+    indexOnce,
+    CRON_INDEX_OPTS,
+    POKE_INDEX_OPTS,
+    MAX_RANGES,
+    TIME_BUDGET_MS,
     toCurveRows,
     toTradeRows,
     toTransferRows,
@@ -21,7 +26,9 @@ import {
     fillVerified,
     verifiedLookupTargets,
 } from "./indexer.js";
-import {INDEXER_STATE_ID, loadCurves, readNextBlock, readState, Sql, writeRange} from "./db.js";
+import {INDEXER_STATE_ID, loadCurves, PokeClaim, POKE_GAP_SEC, readNextBlock, readState, Sql, writeRange} from "./db.js";
+import {handlePoke} from "./poke.js";
+import {paramsAllowed} from "./chainApi.js";
 
 type A = `0x${string}`;
 const addr = (n: number) => `0x${n.toString(16).padStart(40, "0")}` as A;
@@ -284,5 +291,102 @@ describe("query params", () => {
         expect(parseBefore(null)).toBeUndefined();
         expect(parseBefore("1700000000")).toBe(1_700_000_000n);
         expect(parseBefore("-1")).toBeNull();
+    });
+});
+
+describe("catch-up indexing options", () => {
+    it("the cron defaults are unchanged (12 ranges, 40 s) and the catch-up is 1 range / 8 s", () => {
+        expect(CRON_INDEX_OPTS).toEqual({maxRanges: 12, timeBudgetMs: 40_000});
+        expect(CRON_INDEX_OPTS).toEqual({maxRanges: MAX_RANGES, timeBudgetMs: TIME_BUDGET_MS});
+        expect(POKE_INDEX_OPTS).toEqual({maxRanges: 1, timeBudgetMs: 8_000});
+    });
+    it("runCron without options behaves like runCron with the cron defaults", async () => {
+        const a = deps({next: 1000n, head: 1000n + 50_000n});
+        const b = deps({next: 1000n, head: 1000n + 50_000n});
+        const ra = await runCron("Bearer s3cret", "s3cret", a.d);
+        const rb = await runCron("Bearer s3cret", "s3cret", b.d, CRON_INDEX_OPTS);
+        expect(ra).toEqual(rb);
+        expect(a.writes.map((w) => w.nextBlock)).toEqual(b.writes.map((w) => w.nextBlock));
+    });
+    it("indexOnce with the catch-up options writes at most one range", async () => {
+        const {d, writes} = deps({next: 1000n, head: 1000n + 50_000n});
+        const r = await indexOnce(d, POKE_INDEX_OPTS);
+        expect(r.status).toBe(200);
+        expect(writes.map((w) => w.nextBlock)).toEqual([10_000n]);
+    });
+});
+
+describe("catch-up claim (handlePoke)", () => {
+    /** In-memory stand-in for the one-statement claim: the row's poke_ts and the 20 s gap. */
+    function claimDb(opts: {row?: boolean; missingColumnOnce?: boolean} = {}) {
+        let pokeTs: number | null = null;
+        let row = opts.row ?? true;
+        let missing = opts.missingColumnOnce ?? false;
+        const log: string[] = [];
+        return {
+            log,
+            claim: async (now: number): Promise<PokeClaim> => {
+                if (missing) throw Object.assign(new Error("column poke_ts does not exist"), {code: "42703"});
+                if (!row) return "no_row";
+                if (pokeTs === null || pokeTs <= now - POKE_GAP_SEC) {
+                    pokeTs = now;
+                    return "claimed";
+                }
+                return "throttled";
+            },
+            ensureSchema: async () => {
+                log.push("ensureSchema");
+                missing = false;
+            },
+            index: async () => {
+                log.push("index");
+                row = true;
+                return {status: 200, body: {ok: true}};
+            },
+            indexedBlock: async () => "123",
+        };
+    }
+
+    it("a second request within 20 s does not index (ran false); after 20 s it does", async () => {
+        const db = claimDb();
+        let ms = 1_000_000_000;
+        const p = () => handlePoke({...db, nowMs: () => ms});
+        expect(await p()).toEqual({indexedBlock: "123", ran: true});
+        ms += 5_000;
+        expect(await p()).toEqual({indexedBlock: "123", ran: false});
+        ms += 14_000; // 19 s after the first
+        expect((await p()).ran).toBe(false);
+        ms += 1_000; // 20 s
+        expect((await p()).ran).toBe(true);
+        expect(db.log.filter((x) => x === "index")).toHaveLength(2);
+    });
+    it("no cursor row yet (just after a version switch): ensureSchema, then one run creates it", async () => {
+        const db = claimDb({row: false});
+        const r = await handlePoke({...db, nowMs: () => 0});
+        expect(r.ran).toBe(true);
+        expect(db.log).toEqual(["ensureSchema", "index"]);
+    });
+    it("a missing poke_ts column is migrated once and the claim retried", async () => {
+        const db = claimDb({missingColumnOnce: true});
+        expect((await handlePoke({...db, nowMs: () => 0})).ran).toBe(true);
+        expect(db.log).toEqual(["ensureSchema", "index"]);
+    });
+    it("a failed index run is an error (the route answers 503), not a silent ran:false", async () => {
+        const db = claimDb();
+        await expect(handlePoke({...db, index: async () => ({status: 500, body: {ok: false}}), nowMs: () => 0})).rejects.toThrow(/catch-up index failed/);
+    });
+});
+
+describe("chain API query parameters", () => {
+    const q = (s: string) => new URLSearchParams(s);
+    it("unknown parameters are rejected", () => {
+        expect(paramsAllowed(q("curve=0x1&zzz=1"), ["curve", "before", "limit"])).toBe(false);
+        expect(paramsAllowed(q("curve=0x1&before=5&limit=10"), ["curve", "before", "limit"])).toBe(true);
+        expect(paramsAllowed(q(""), ["curve"])).toBe(true);
+    });
+    it("v must be a digit string of at most 20 characters", () => {
+        expect(paramsAllowed(q("curve=0x1&v=41419458"), ["curve"])).toBe(true);
+        expect(paramsAllowed(q("v=" + "9".repeat(20)), [])).toBe(true);
+        for (const bad of ["", "abc", "-1", "1.5", "9".repeat(21), "0x10"]) expect(paramsAllowed(q("v=" + bad), []), bad).toBe(false);
     });
 });

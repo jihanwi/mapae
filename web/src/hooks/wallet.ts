@@ -1,6 +1,8 @@
 // Wallet profile data: the server profile and trade pages, on-chain balances (one multicall) and
 // the real-name status (the same Dojang read as the comments composer).
 import {useInfiniteQuery, useQuery} from "@tanstack/react-query";
+import {chainUrl} from "../lib/chainUrl";
+import {keepSameBase, useChainVersion} from "./chainData";
 import {Abi} from "viem";
 import {useReadContract, useReadContracts} from "wagmi";
 import {API_BASE} from "./meta";
@@ -35,21 +37,24 @@ async function getJson<T>(path: string): Promise<T> {
 export const walletKey = (address: string) => ["chain", "wallet", address.toLowerCase()];
 
 export function useWalletProfile(address: string) {
+    const v = useChainVersion();
     return useQuery({
-        queryKey: walletKey(address),
-        queryFn: () => getJson<WalletOut>(`/api/chain/wallet?address=${address.toLowerCase()}`),
+        queryKey: [...walletKey(address), v],
+        queryFn: () => getJson<WalletOut>(chainUrl("wallet", {address: address.toLowerCase()}, v)),
         staleTime: 60_000,
         retry: 1,
+        placeholderData: keepSameBase<WalletOut>(walletKey(address)),
     });
 }
 
 /** Trade pages, newest first; the next page starts before the oldest ts seen. */
 export function useWalletTrades(address: string) {
+    const v = useChainVersion();
     return useInfiniteQuery({
-        queryKey: ["chain", "wallet-trades", address.toLowerCase()],
+        queryKey: ["chain", "wallet-trades", address.toLowerCase(), v],
         initialPageParam: undefined as string | undefined,
         queryFn: ({pageParam}) =>
-            getJson<{trades: WalletTrade[]}>(`/api/chain/wallet-trades?address=${address.toLowerCase()}&limit=${WALLET_TRADES_PAGE}${pageParam ? `&before=${pageParam}` : ""}`),
+            getJson<{trades: WalletTrade[]}>(chainUrl("wallet-trades", {address: address.toLowerCase(), limit: WALLET_TRADES_PAGE, before: pageParam}, v)),
         getNextPageParam: (last) => (last.trades.length === WALLET_TRADES_PAGE ? last.trades[last.trades.length - 1].ts : undefined),
         staleTime: 60_000,
         retry: 1,
