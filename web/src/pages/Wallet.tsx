@@ -358,7 +358,8 @@ function WalletView({address}: {address: Address}) {
                     {own && verified.data === false && <span className="text-[12px] text-hanji-400">{tr.nickname.errors.not_verified}</span>}
                 </div>
                 <div className="flex items-center gap-x-3 gap-y-2 flex-wrap min-w-0 text-[13px]">
-                    <CopyAddress address={address} label={`${shortAddr(address)} ${tr.tokenPage.copy}`} />
+                    {/* without a nickname the h1 already shows the short address: the button just says "Copy address" */}
+                    <CopyAddress address={address} label={`${shortAddr(address)} ${tr.tokenPage.copy}`} text={nick ? undefined : tr.walletPage.copyAddress} />
                     <ExtLink href={explorerAddr(address)}>{tr.walletPage.explorer}</ExtLink>
                 </div>
             </div>
