@@ -3,7 +3,7 @@ import {ADDR_V3} from "../../src/contracts/addressesV3.js";
 import * as db from "./db.js";
 import type {CronDeps} from "./indexer.js";
 import type {L1Deps} from "./indexerL1.js";
-import {ADDR_L1} from "../../src/contracts/addressesV3L1.js";
+import {L1_FACTORIES} from "../../src/contracts/addressesV3L1.js";
 import {giwaRpc, giwaRpcL1} from "./rpc.js";
 
 export function cronDeps(sql: db.Sql): CronDeps {
@@ -21,7 +21,8 @@ export function cronDeps(sql: db.Sql): CronDeps {
     };
 }
 
-/** W-T33: the v3.2-L1 offering indexer (own cursor row; schema is ensured by the L0 run before it). */
+/** W-T33 / W-T40: the L1 offering indexer over every L1 factory (own cursor row; schema is ensured by
+ *  the L0 run before it). */
 export function l1Deps(sql: db.Sql): L1Deps {
     return {
         db: {
@@ -31,7 +32,7 @@ export function l1Deps(sql: db.Sql): L1Deps {
         },
         rpc: giwaRpcL1(),
         nowMs: () => Date.now(),
-        factory: ADDR_L1.mapaeFactory,
-        deployBlock: ADDR_L1.deployBlock,
+        factories: L1_FACTORIES.map((f) => f.mapaeFactory),
+        deployBlock: db.l1IndexStart(),
     };
 }

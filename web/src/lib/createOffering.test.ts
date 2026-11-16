@@ -132,3 +132,12 @@ describe("revert table", async () => {
         for (const k of Object.keys(ko.offeringCreate.revert)) if (k !== "unknown") expect(names.has(k), k).toBe(true);
     });
 });
+
+describe("W-T40: v3.3-L1 offering fee 0", () => {
+    it("derive gives platform 0 KRWs and the rest to the issuer (rows stay, showing 0)", () => {
+        const c = checkCreate(OK, {...B, offeringFeeBps: 0});
+        const d = derive(c.values!, {...B, offeringFeeBps: 0});
+        expect(d.proceeds.platform).toBe(0n);
+        expect(d.proceeds.upfront + d.proceeds.locked + d.proceeds.krwSeed).toBe(d.proceeds.raised);
+    });
+});

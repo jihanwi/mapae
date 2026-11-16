@@ -94,7 +94,7 @@ function TradePanel({o}: {o: OfferingInfo}) {
     const fees = feeParts(pi[2] as number | undefined, pi[3] as number | undefined, pi[4] as number | undefined, tierFees.data as {swapPlatformBps: number; swapLpBps: number} | undefined);
     // W-T33: history from the indexer, the browser reads only the blocks after it
     const swaps = useOfferingHistory<SwapItem>({
-        offering: o.address, feed: "swaps", address: pool, eventSig: SWAPPED, fromApi: swapFromApi, fromLog: swapFromLog,
+        offering: o.address, factory: o.factory, feed: "swaps", address: pool, eventSig: SWAPPED, fromApi: swapFromApi, fromLog: swapFromLog,
     });
 
     // T3: 내 보유 (multicall 배칭으로 부담 없음)

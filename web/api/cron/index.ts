@@ -1,5 +1,5 @@
 // GET /api/cron/index (Vercel Cron, every 15 min): index CurveCreated, Buy/Sell/Graduated,
-// Swapped and token Transfers into Neon, then (W-T33) the v3.2-L1 offerings on their own cursor.
+// Swapped and token Transfers into Neon, then (W-T33, W-T40) the offerings of every L1 factory on their own cursor.
 // CRON_SECRET is checked before anything else. An L1 failure is logged and leaves L0 committed.
 import * as db from "../_lib/db.js";
 import {CRON_INDEX_OPTS, cronAuthorized, runCron} from "../_lib/indexer.js";

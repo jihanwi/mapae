@@ -18,7 +18,7 @@ import {useNickname} from "./hooks/comments";
 import {ActivityProvider} from "./hooks/activity";
 import {PokeWatcher} from "./hooks/poke";
 
-/** Fixed-price offering section (v3.2-L1 MapaeFactory, W-T32): /offerings and the pages under it. */
+/** Fixed-price offering section (every L1 MapaeFactory, W-T32 / W-T40): /offerings and the pages under it. */
 export function isOfferingSection(pathname: string): boolean {
     return ["/offerings", "/offering/", "/membership", "/redeem", "/trade"].some((p) => pathname === p || pathname.startsWith(p.endsWith("/") ? p : `${p}/`));
 }
@@ -84,7 +84,7 @@ function Nav() {
     const globalBusy = useGlobalTxBusy();
     const wrongChain = isConnected && chainId !== giwaSepolia.id;
 
-    // 상시 KRWs 재충전 (v3.2-L1 결제 토큰 ADDR_L1.mockKRW) — 공모 섹션에서만 노출
+    // 상시 KRWs 재충전 (L1 결제 토큰 ADDR_L1.mockKRW) — 공모 섹션에서만 노출
     const faucetBtn = legacy && isConnected && !wrongChain ? (
         <button
             onClick={() => void run(tr.nav.faucetTxLabel, () =>

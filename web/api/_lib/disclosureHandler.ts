@@ -30,7 +30,7 @@ import {issuedAtValid} from "./validate.js";
 export type Address = `0x${string}`;
 
 export interface DisclosureChain {
-    /** MapaeFactory(v3.2-L1).redeemManagerOf(offering) != 0 */
+    /** redeemManagerOf(offering) != 0 on any L1 MapaeFactory (W-T40) */
     isOffering(offering: Address): Promise<boolean>;
     creatorOf(offering: Address): Promise<Address>;
     totalCommitted(offering: Address): Promise<bigint>;

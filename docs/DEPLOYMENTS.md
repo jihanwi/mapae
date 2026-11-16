@@ -2,6 +2,52 @@
 
 체인: GIWA Sepolia (chain ID `91342`) · Explorer: https://sepolia-explorer.giwa.io
 
+## v3.3-L1 배포 (L1 공모 수수료 범위 0~5%, 처음 값 0%), 2026-11-17 완료
+
+- 바뀐 것: L1/L2 공모 수수료(offeringFeeBps)의 허용 범위가 0~500 bps가 됐고 처음 값은 0이다(결정 59). 거래 수수료는 그대로다
+  (L1 플랫폼 0.40% · 발행자 0.60% · 소각 0.30% · 유동성 0.20%, 합 1.50%). 범위가 FeeRouter의 상수이고 FeeRouter가 MapaeFactory에
+  고정돼 있어서 FeeRouter와 L1 MapaeFactory를 새로 배포했다.
+- 배포 절차: [`docs/DEPLOY_V3_3_L1.md`](DEPLOY_V3_3_L1.md). 주소 기록: [`deployments/giwa-sepolia-v3_3_l1.json`](../deployments/giwa-sepolia-v3_3_l1.json)
+- 배포 블록 `41506506` · 배포자 테스트 지갑 [`0x45D52d167d22970f69dCd127dFc38D875A29EFb0`](https://sepolia-explorer.giwa.io/address/0x45D52d167d22970f69dCd127dFc38D875A29EFb0) · owner와 platformOwner
+  [`0x67a29AE83f3320C5E9b81D8a1531dE8FcCBED00C`](https://sepolia-explorer.giwa.io/address/0x67a29AE83f3320C5E9b81D8a1531dE8FcCBED00C)
+- 체인에서 읽은 값: 새 FeeRouter `getFees(L1)` = (0, 40, 60, 30, 20, 400), `getFees(L2)` = (0, 40, 60, 30, 20, 300), `getFees(L0)` =
+  (500, 40, 30, 0, 30, 0), `swapTotalBps(L1)` = 150. owner와 platformTreasury는 옛 FeeRouter와 같다. 새 팩토리의 dojang, proceedsBand
+  (3000, 3600, 94608000, 15552000), minRaise 500000e18, guide, feeRecipients, buybackVault, proceedsLockDeployer는 옛 L1 팩토리와 같다.
+- 네 컨트랙트(FeeRouter, MapaeFactory, OfferingDeployer, StackDeployer) 모두 Blockscout에서 소스 검증됐다.
+
+| 컨트랙트 | 주소 | 비고 |
+|---|---|---|
+| FeeRouter | [`0xC8EF125aa945aF92144ECadc39CeE1a0b7415a70`](https://sepolia-explorer.giwa.io/address/0xC8EF125aa945aF92144ECadc39CeE1a0b7415a70) | 신규 · 블록 `41506506` · 배포 tx [`0x65dbca57…`](https://sepolia-explorer.giwa.io/tx/0x65dbca573b7c7194a312c26e876e920f560de4f62854cae13eb56b33669424f0) |
+| MapaeFactory (v3.3-L1) | [`0x3b1D679d6CFA5f2e92832aFfBf516319204D767f`](https://sepolia-explorer.giwa.io/address/0x3b1D679d6CFA5f2e92832aFfBf516319204D767f) | 신규 · 블록 `41506509` · 배포 tx [`0x586f0028…`](https://sepolia-explorer.giwa.io/tx/0x586f0028c7081569f9caba59bd250c1b4a863a150d5941172cd7df366fcc96e3). 웹이 새 공모를 여는 팩토리 |
+| OfferingDeployer | [`0x08c51863170835Cb86a9e214f5B0b13F0380086b`](https://sepolia-explorer.giwa.io/address/0x08c51863170835Cb86a9e214f5B0b13F0380086b) | 신규 (팩토리 생성자가 만듦) |
+| StackDeployer | [`0x5EE46f45af61270b5738e78ccad51b89dAC9F792`](https://sepolia-explorer.giwa.io/address/0x5EE46f45af61270b5738e78ccad51b89dAC9F792) | 신규 (팩토리 생성자가 만듦) |
+| ProceedsLockDeployer | [`0x755568f5BB314DD67c0ffB91Db491d1f63AA97C9`](https://sepolia-explorer.giwa.io/address/0x755568f5BB314DD67c0ffB91Db491d1f63AA97C9) | v3.2-L1 주소 재사용 |
+| DojangAnyOf | [`0x87326FbbF76e724bA2bA954dAc04c3B939999f84`](https://sepolia-explorer.giwa.io/address/0x87326FbbF76e724bA2bA954dAc04c3B939999f84) | v3.2 주소 재사용 |
+| MockKRW | [`0x74eC9141afAd51F346BA5B841Ba93D573e8786fD`](https://sepolia-explorer.giwa.io/address/0x74eC9141afAd51F346BA5B841Ba93D573e8786fD) | 재사용 |
+| PoolFactory | [`0xf4E7Bf1ACe429400AC23E271E4409D212677e44F`](https://sepolia-explorer.giwa.io/address/0xf4E7Bf1ACe429400AC23E271E4409D212677e44F) | 재사용 |
+| BuybackVault | [`0x3Ed11f7Bcc36B3603d51736652884800daa2f54c`](https://sepolia-explorer.giwa.io/address/0x3Ed11f7Bcc36B3603d51736652884800daa2f54c) | 재사용 |
+| MembershipTokenDeployer (라이브러리) | [`0x9F011858B85b93a73330B56319Dc76a6f3255279`](https://sepolia-explorer.giwa.io/address/0x9F011858B85b93a73330B56319Dc76a6f3255279) | 재사용 (`--libraries`로 링크) |
+
+옛 L1 팩토리 [`0xa9CA0C10Cd6B6398679B578DCE192cb4cAA5bc71`](https://sepolia-explorer.giwa.io/address/0xa9CA0C10Cd6B6398679B578DCE192cb4cAA5bc71)와 L0 CurveFactory는 옛 FeeRouter
+[`0xAB665B7867080cd62Aa316717400f3Cc094E7bd6`](https://sepolia-explorer.giwa.io/address/0xAB665B7867080cd62Aa316717400f3Cc094E7bd6)를 그대로 쓴다. 옛 팩토리의 공모 두 건(`0xA1AA…bB9f`, `0xa090…CB86`)은
+옛 조건 그대로 남고 웹에 계속 나온다(W-T40).
+
+## v3.2-L1 배포 (정가 공모 구역)
+
+- 주소 기록: [`deployments/giwa-sepolia-v3_2_l1.json`](../deployments/giwa-sepolia-v3_2_l1.json) · 배포 절차: [`docs/DEPLOY_V3_2_L1.md`](DEPLOY_V3_2_L1.md)
+- 배포 블록 `41489012` · 배포자 테스트 지갑 [`0x45D52d167d22970f69dCd127dFc38D875A29EFb0`](https://sepolia-explorer.giwa.io/address/0x45D52d167d22970f69dCd127dFc38D875A29EFb0) · platformOwner
+  [`0x67a29AE83f3320C5E9b81D8a1531dE8FcCBED00C`](https://sepolia-explorer.giwa.io/address/0x67a29AE83f3320C5E9b81D8a1531dE8FcCBED00C)
+- 모금액 잠금 밴드 proceedsBand (3000, 3600, 94608000, 15552000)
+
+| 컨트랙트 | 주소 | 비고 |
+|---|---|---|
+| MapaeFactory (v3.2-L1) | [`0xa9CA0C10Cd6B6398679B578DCE192cb4cAA5bc71`](https://sepolia-explorer.giwa.io/address/0xa9CA0C10Cd6B6398679B578DCE192cb4cAA5bc71) | 신규. v3.3-L1 이후로는 새 공모를 열지 않는다 |
+| OfferingDeployer | [`0x8F224d8C3271c45Cc2d84bcF7efC40b52C4e04BD`](https://sepolia-explorer.giwa.io/address/0x8F224d8C3271c45Cc2d84bcF7efC40b52C4e04BD) | 신규 (팩토리 생성자가 만듦) |
+| StackDeployer | [`0x279A14b4e891Af8ae08FaF9014Eceb87691a6a1a`](https://sepolia-explorer.giwa.io/address/0x279A14b4e891Af8ae08FaF9014Eceb87691a6a1a) | 신규 (팩토리 생성자가 만듦) |
+| ProceedsLockDeployer | [`0x755568f5BB314DD67c0ffB91Db491d1f63AA97C9`](https://sepolia-explorer.giwa.io/address/0x755568f5BB314DD67c0ffB91Db491d1f63AA97C9) | 신규 |
+| FeeRouter | [`0xAB665B7867080cd62Aa316717400f3Cc094E7bd6`](https://sepolia-explorer.giwa.io/address/0xAB665B7867080cd62Aa316717400f3Cc094E7bd6) | v3.1 주소 재사용 |
+| DojangAnyOf, MockKRW, PoolFactory, BuybackVault, MembershipTokenDeployer | 위 v3.3-L1 표와 같은 주소 | 재사용 |
+
 ## v3.2 배포 (공식 도장 인식, 둘 다 인정, Dev 첫 매수 5% 상한), 2026-11-16 완료
 
 - 규칙: 실명 판정은 `DojangAnyOf`. GIWA 공식 도장(TESTNET_FAUCET 발행자, `DojangEASAdapter`)과 MockDojang 중 하나라도 true면 실명이다

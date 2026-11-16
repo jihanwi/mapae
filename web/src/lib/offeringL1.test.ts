@@ -18,16 +18,18 @@ import PROCEEDS from "../components/ProceedsPanel.tsx?raw";
 
 const names = (abi: readonly {type: string; name?: string}[]) => abi.filter((x) => x.type === "function" || x.type === "event").map((x) => x.name);
 
-describe("v3.2-L1 address record", () => {
-    it("the deployed factory, block and reused contracts", () => {
-        expect(ADDR_L1.mapaeFactory).toBe("0xa9CA0C10Cd6B6398679B578DCE192cb4cAA5bc71");
+describe("L1 address record (v3.3-L1 current, W-T40)", () => {
+    it("the current factory, block and reused contracts", () => {
+        expect(ADDR_L1.mapaeFactory).toBe("0x3b1D679d6CFA5f2e92832aFfBf516319204D767f");
         expect(ADDR_L1.proceedsLockDeployer).toBe("0x755568f5BB314DD67c0ffB91Db491d1f63AA97C9");
-        expect(ADDR_L1.deployBlock).toBe(41_489_012n);
+        expect(ADDR_L1.deployBlock).toBe(41_506_506n);
+        expect(ADDR_L1.firstBlock).toBe(41_489_012n);
         expect(ADDR_L1.dojangAnyOf).toBe("0x87326FbbF76e724bA2bA954dAc04c3B939999f84");
         expect(ADDR_L1.buybackVault).toBe("0x3Ed11f7Bcc36B3603d51736652884800daa2f54c");
-        // same payment token, feeRouter, poolFactory and real-name check as the v3.2 stack
+        // same payment token, poolFactory and real-name check as the v3.2 stack; a new FeeRouter
         expect(ADDR_L1.mockKRW).toBe(ADDR_V3.mockKRW);
-        expect(ADDR_L1.feeRouter).toBe(ADDR_V3.feeRouter);
+        expect(ADDR_L1.feeRouter).toBe("0xC8EF125aa945aF92144ECadc39CeE1a0b7415a70");
+        expect(ADDR_L1.feeRouter).not.toBe(ADDR_V3.feeRouter);
         expect(ADDR_L1.poolFactory).toBe(ADDR_V3.poolFactory);
         expect(ADDR_L1.mockDojang).toBe(ADDR_V3.mockDojang);
     });

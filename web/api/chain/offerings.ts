@@ -1,4 +1,5 @@
-// GET /api/chain/offerings (W-T33): v3.2-L1 fixed-price offerings from the L1 indexer.
+// GET /api/chain/offerings (W-T33, W-T40): fixed-price offerings of every L1 factory from the L1 indexer
+//   (each row carries its lowercase `factory`).
 //   (no params)                        -> {offerings: [...], indexedBlock}
 //   ?offering=0x..                     -> {offering, commitments, redeemItems, indexedBlock}; 404 when unknown
 //   ?offering=0x..&feed=swaps|sponsors|commits[&before=<block>] -> {rows (newest first, 50), indexedBlock}

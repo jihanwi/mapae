@@ -3,7 +3,7 @@ import {createPublicClient, http} from "viem";
 import {ADDR_V3} from "../../src/contracts/addressesV3.js";
 import {CurveFactoryAbi, CurveSaleAbi, MockDojangV3Abi} from "../../src/contracts/abisV3.js";
 import {MapaeFactoryL1Abi, OfferingL1Abi} from "../../src/contracts/abisV3L1.js";
-import {ADDR_L1} from "../../src/contracts/addressesV3L1.js";
+import {L1_FACTORIES} from "../../src/contracts/addressesV3L1.js";
 import type {DisclosureChain} from "./disclosureHandler.js";
 import {giwaSepolia} from "../../src/config/chain.js";
 import type {Address, Chain} from "./handler.js";
@@ -26,14 +26,26 @@ export function socialChain(): import("./social.js").SocialChain {
     };
 }
 
-/** W-T34: chain reads for disclosure saves: v3.2-L1 factory membership (redeemManagerOf != 0),
+const ZERO = "0x0000000000000000000000000000000000000000";
+
+/** W-T40: an offering of any L1 factory (L1_FACTORIES): redeemManagerOf(offering) != 0 on at least one.
+ *  The factories are read in parallel (one call each, not per offering); a failed read throws. */
+export async function isOfferingOfAny(
+    redeemManagerOf: (factory: Address, offering: Address) => Promise<string>,
+    offering: Address,
+    factories: readonly string[] = L1_FACTORIES.map((f) => f.mapaeFactory)
+): Promise<boolean> {
+    const rms = await Promise.all(factories.map((f) => redeemManagerOf(f as Address, offering)));
+    return rms.some((rm) => rm.toLowerCase() !== ZERO);
+}
+
+/** W-T34: chain reads for disclosure saves: membership in any L1 factory (redeemManagerOf != 0, W-T40),
  *  the offering's creator and totalCommitted. */
 export function disclosureChain(): DisclosureChain {
     const client = createPublicClient({chain: giwaSepolia, transport: http(process.env.GIWA_RPC_URL || undefined)});
+    const rmOf = (factory: Address, o: Address) => client.readContract({address: factory, abi: MapaeFactoryL1Abi, functionName: "redeemManagerOf", args: [o]}) as Promise<string>;
     return {
-        isOffering: async (o) =>
-            ((await client.readContract({address: ADDR_L1.mapaeFactory, abi: MapaeFactoryL1Abi, functionName: "redeemManagerOf", args: [o]})) as string).toLowerCase() !==
-            "0x0000000000000000000000000000000000000000",
+        isOffering: (o) => isOfferingOfAny(rmOf, o),
         creatorOf: (o) => client.readContract({address: o, abi: OfferingL1Abi, functionName: "creator"}) as Promise<Address>,
         totalCommitted: (o) => client.readContract({address: o, abi: OfferingL1Abi, functionName: "totalCommitted"}) as Promise<bigint>,
     };

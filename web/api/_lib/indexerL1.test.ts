@@ -18,7 +18,7 @@ import {
     withL1,
 } from "./indexerL1.js";
 import {CRON_INDEX_OPTS, POKE_INDEX_OPTS} from "./indexer.js";
-import {L1_INDEXER_STATE_ID, INDEXER_STATE_ID, offeringDetail, offeringFeed, offeringList, readNextBlockL1, Sql, writeRangeL1} from "./db.js";
+import {ensureSchema, L1_INDEXER_STATE_ID, L1_PREV_STATE_ID, INDEXER_STATE_ID, l1IndexStart, l1Resume, offeringDetail, offeringFeed, offeringList, readNextBlockL1, Sql, writeRangeL1} from "./db.js";
 import {parseFeed} from "../chain/offerings.js";
 import {paramsAllowed} from "./chainApi.js";
 
@@ -27,6 +27,9 @@ const addr = (n: number) => `0x${n.toString(16).padStart(40, "0")}` as A;
 const tx = (n: number) => `0x${n.toString(16).padStart(64, "0")}` as Hex;
 const E18 = 10n ** 18n;
 const FACTORY = addr(0xfac);
+/** W-T40: a second L1 factory (the indexer reads both in one call) */
+const FACTORY2 = addr(0xfac2);
+const OFFERING2 = addr(0x0f2);
 const OFFERING = addr(0x0f1);
 const TOKEN = addr(0x70);
 const CREATOR = addr(0xc0);
@@ -44,8 +47,8 @@ const raw = (address: A, topics: Hex[], data: Hex, block: bigint, i: number, txn
 const ev = (abi: readonly unknown[], eventName: string, args: Record<string, unknown>) => encodeEventTopics({abi, eventName, args} as never) as Hex[];
 const data = (types: string[], values: unknown[]) => encodeAbiParameters(types.map((type) => ({type})), values);
 
-function createdLog(block: bigint, sponsorship = SP, offering = OFFERING, token = TOKEN): RawLog {
-    return raw(FACTORY, ev(MapaeFactoryL1Abi, "OfferingCreated", {creator: CREATOR, offering, token}), data(["address", "address", "address", "address"], [RM, VEST, sponsorship, LOCK]), block, 0);
+function createdLog(block: bigint, sponsorship = SP, offering = OFFERING, token = TOKEN, factory: A = FACTORY, i = 0): RawLog {
+    return raw(factory, ev(MapaeFactoryL1Abi, "OfferingCreated", {creator: CREATOR, offering, token}), data(["address", "address", "address", "address"], [RM, VEST, sponsorship, LOCK]), block, i);
 }
 const committed = (who: A, amount: bigint, cumulative: bigint, block: bigint, i: number, o = OFFERING) =>
     raw(o, ev(OfferingL1Abi, "Committed", {participant: who}), data(["uint256", "uint256"], [amount, cumulative]), block, i);
@@ -69,11 +72,15 @@ const KNOWN: KnownOffering = {offering: OFFERING, redeemManager: RM, sponsorship
 
 describe("L1 rows", () => {
     it("OfferingCreated -> offering row, lowercase, zero sponsorship kept as zero", () => {
-        const rows = toOfferingRows([createdLog(150n), createdLog(160n, addr(0))], FACTORY, T0, T1);
-        expect(rows[0]).toEqual({offering: OFFERING, token: TOKEN, creator: CREATOR, redeemManager: RM, vesting: VEST, sponsorship: SP, proceedsLock: LOCK, createdBlock: "150", createdTs: "1050"});
+        const rows = toOfferingRows([createdLog(150n), createdLog(160n, addr(0))], [FACTORY], T0, T1);
+        expect(rows[0]).toEqual({offering: OFFERING, factory: FACTORY, token: TOKEN, creator: CREATOR, redeemManager: RM, vesting: VEST, sponsorship: SP, proceedsLock: LOCK, createdBlock: "150", createdTs: "1050"});
         expect(rows[1].sponsorship).toBe(addr(0));
         // another emitter is ignored
-        expect(toOfferingRows([{...createdLog(150n), address: addr(0xbad)}], FACTORY, T0, T1)).toEqual([]);
+        expect(toOfferingRows([{...createdLog(150n), address: addr(0xbad)}], [FACTORY, FACTORY2], T0, T1)).toEqual([]);
+    });
+    it("W-T40: OfferingCreated of both factories, each row carries its own factory", () => {
+        const rows = toOfferingRows([createdLog(150n), createdLog(151n, SP, OFFERING2, addr(0x71), FACTORY2)], [FACTORY, FACTORY2], T0, T1);
+        expect(rows.map((r) => [r.offering, r.factory])).toEqual([[OFFERING, FACTORY], [OFFERING2, FACTORY2]]);
     });
     it("offering events by kind (commit, cancel, claim, refund, refunds_enabled)", () => {
         const {events} = toOfferingEventRows(
@@ -172,7 +179,7 @@ function deps(o: {logs?: RawLog[]; next?: bigint | null; head?: bigint; failName
             },
         },
         nowMs: () => 0,
-        factory: FACTORY,
+        factories: [FACTORY2, FACTORY],
         deployBlock: 1_000n,
     };
     return {d, calls, writes};
@@ -185,8 +192,8 @@ describe("indexL1Once", () => {
         const r = await indexL1Once(d, CRON_INDEX_OPTS);
         expect(r.status).toBe(200);
         expect(r.body).toMatchObject({ok: true, from: "1000", to: "1003", ranges: 1, offerings: 1, next_block: "1004"});
-        // 2 headers, OfferingCreated, names (new offering), offerings, children: 3 getLogs
-        expect(calls).toEqual(["readNextBlock", "blockNumber", "loadOfferings", "blockTime", "blockTime", "getLogs:1", "tokenNames", "getLogs:1", "getLogs:3", "writeRange"]);
+        // 2 headers, OfferingCreated (both factories, one call), names (new offering), offerings, children: 3 getLogs
+        expect(calls).toEqual(["readNextBlock", "blockNumber", "loadOfferings", "blockTime", "blockTime", "getLogs:2", "tokenNames", "getLogs:1", "getLogs:3", "writeRange"]);
         const w = writes[0];
         expect(w.offerings.map((x) => [x.offering, x.name, x.symbol])).toEqual([[OFFERING, "노들 프로토콜", "NODL"]]);
         expect(w.events.map((e) => e.kind)).toEqual(["commit", "redeemable_created"]);
@@ -197,7 +204,7 @@ describe("indexL1Once", () => {
     it("no known offering and none created: only OfferingCreated is read (no address-less getLogs)", async () => {
         const {d, calls} = deps({head: 1_013n});
         await indexL1Once(d, CRON_INDEX_OPTS);
-        expect(calls.filter((c) => c.startsWith("getLogs"))).toEqual(["getLogs:1"]);
+        expect(calls.filter((c) => c.startsWith("getLogs"))).toEqual(["getLogs:2"]);
     });
     it("reading the same range again produces the same keyed rows (idempotent writes)", async () => {
         const logs = [createdLog(1_000n), committed(ALICE, 300n, 300n, 1_001n, 0)];
@@ -228,12 +235,32 @@ describe("indexL1Once", () => {
         await indexL1Once(d, POKE_INDEX_OPTS);
         expect(writes).toHaveLength(1);
     });
+    it("W-T40: one range with OfferingCreated of both factories: both offerings and their commits go in; reading it again adds no row", async () => {
+        const logs = [createdLog(1_000n), createdLog(1_000n, SP, OFFERING2, addr(0x71), FACTORY2, 1), committed(ALICE, 300n, 300n, 1_001n, 0), committed(BOB, 200n, 200n, 1_001n, 1, OFFERING2)];
+        const a = deps({logs, head: 1_013n});
+        await indexL1Once(a.d, CRON_INDEX_OPTS);
+        // OfferingCreated: one getLogs over the two factories (same count per range as one factory)
+        expect(a.calls.filter((c) => c.startsWith("getLogs"))[0]).toBe("getLogs:2");
+        expect(a.writes[0].offerings.map((o) => [o.offering, o.factory])).toEqual([[OFFERING, FACTORY], [OFFERING2, FACTORY2]]);
+        expect(a.writes[0].events.map((e) => [e.offering, e.actor])).toEqual([[OFFERING, ALICE], [OFFERING2, BOB]]);
+        // the same range again (both offerings now known): same keys, so keyed tables keep one row each
+        const b = deps({logs, head: 1_013n, known: [{offering: OFFERING, redeemManager: RM, sponsorship: SP, pool: null}, {offering: OFFERING2, redeemManager: RM, sponsorship: SP, pool: null}]});
+        await indexL1Once(b.d, CRON_INDEX_OPTS);
+        const offeringsTable = new Map<string, unknown>();
+        const eventsTable = new Map<string, unknown>();
+        for (const w of [...a.writes, ...b.writes]) {
+            for (const o of w.offerings) if (!offeringsTable.has(o.offering)) offeringsTable.set(o.offering, o);
+            for (const e of w.events) if (!eventsTable.has(`${e.tx}:${e.logIndex}`)) eventsTable.set(`${e.tx}:${e.logIndex}`, e);
+        }
+        expect(offeringsTable.size).toBe(2);
+        expect(eventsTable.size).toBe(2);
+    });
     it("100 offerings still cost 3 getLogs per range (address lists, chunked at 200)", async () => {
         const known = Array.from({length: 100}, (_, i) => ({offering: addr(0x1000 + i), redeemManager: addr(0x2000 + i), sponsorship: addr(0x3000 + i), pool: addr(0x4000 + i)}));
         const {d, calls} = deps({head: 1_013n, known});
         await indexL1Once(d, CRON_INDEX_OPTS);
         // offerings: 100 addresses (1 call); children: 300 addresses (2 calls of <= 200)
-        expect(calls.filter((c) => c.startsWith("getLogs"))).toEqual(["getLogs:1", "getLogs:100", "getLogs:200", "getLogs:100"]);
+        expect(calls.filter((c) => c.startsWith("getLogs"))).toEqual(["getLogs:2", "getLogs:100", "getLogs:200", "getLogs:100"]);
     });
 });
 
@@ -263,12 +290,45 @@ function recorder(answer: (q: string, p: unknown[]) => unknown[] = () => []) {
     return {sql, qs};
 }
 
+describe("W-T40: L1 cursor row 133", () => {
+    it("row 133 continues; without it, row 132's position or the v3.3-L1 deployment block, whichever is earlier", async () => {
+        expect(L1_INDEXER_STATE_ID).toBe(133);
+        expect(L1_PREV_STATE_ID).toBe(132);
+        expect(l1Resume(41_520_000n, 41_530_000n, 41_506_506n)).toBe(41_520_000n);
+        // row 132 already past the new factory: start at its deployment (no OfferingCreated missed)
+        expect(l1Resume(null, 41_530_000n, 41_506_506n)).toBe(41_506_506n);
+        // row 132 behind it: continue from row 132 (no block of either factory skipped)
+        expect(l1Resume(null, 41_500_000n, 41_506_506n)).toBe(41_500_000n);
+        // empty database: the indexer starts at the oldest L1 deployment
+        expect(l1Resume(null, null, 41_506_506n)).toBeNull();
+        expect(l1IndexStart()).toBe(41_489_012n);
+        const {sql} = recorder(() => [{id: 132, n: "41530000"}]);
+        expect(await readNextBlockL1(sql)).toBe(41_506_506n);
+        const empty = recorder(() => []);
+        expect(await readNextBlockL1(empty.sql)).toBeNull();
+    });
+    it("schema: factory column, old rows filled with the v3.2-L1 factory; list and detail return it", async () => {
+        const {sql, qs} = recorder();
+        await ensureSchema(sql);
+        expect(qs.some((x) => x.q === "ALTER TABLE mapae_offerings ADD COLUMN IF NOT EXISTS factory text")).toBe(true);
+        expect(qs.find((x) => x.q.startsWith("UPDATE mapae_offerings SET factory"))!.q).toBe("UPDATE mapae_offerings SET factory = '0xa9ca0c10cd6b6398679b578dce192cb4caa5bc71' WHERE factory IS NULL");
+        const l = recorder();
+        await offeringList(l.sql);
+        expect(l.qs[0].q).toContain("o.factory");
+        const w = recorder();
+        await writeRangeL1(w.sql, {offerings: [{offering: OFFERING, factory: FACTORY2, token: TOKEN, creator: CREATOR, redeemManager: RM, vesting: VEST, sponsorship: SP, proceedsLock: LOCK, name: "a", symbol: "A", createdBlock: "1", createdTs: "2"}], settlements: [], events: [], swaps: [], nextBlock: 5n, indexedTs: 9});
+        const ins = w.qs.find((x) => x.q.includes("INSERT INTO mapae_offerings"))!;
+        expect(ins.q).toContain("created_ts, factory)");
+        expect(ins.p[11]).toEqual([FACTORY2]);
+    });
+});
+
 describe("db: L1 tables and cursor", () => {
     it("own cursor row, never the L0 row", async () => {
         expect(L1_INDEXER_STATE_ID).not.toBe(INDEXER_STATE_ID);
-        const {sql, qs} = recorder(() => [{n: "41489012"}]);
-        expect(await readNextBlockL1(sql)).toBe(41_489_012n);
-        expect(qs[0].p).toEqual([L1_INDEXER_STATE_ID]);
+        const {sql, qs} = recorder(() => [{id: 133, n: "41510000"}, {id: 132, n: "41509000"}]);
+        expect(await readNextBlockL1(sql)).toBe(41_510_000n);
+        expect(qs[0].p).toEqual([[L1_INDEXER_STATE_ID, L1_PREV_STATE_ID]]);
         const w = recorder();
         await writeRangeL1(w.sql, {offerings: [], settlements: [], events: [], swaps: [], nextBlock: 5n, indexedTs: 9});
         const state = w.qs.find((x) => x.q.includes("mapae_indexer_state"))!;

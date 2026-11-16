@@ -1,9 +1,11 @@
-// Fixed-price offering section (W-T32): reads the v3.2-L1 MapaeFactory (ADDR_L1) and its children.
-// Every per-offering read is one multicall over the whole list (no per-offering request chains).
+// Fixed-price offering section (W-T32, W-T40): reads every L1 MapaeFactory (L1_FACTORIES) and their
+// offerings' children; each offering carries its own factory. Every per-offering read is one multicall
+// over the whole list (no per-offering request chains).
 import {useQuery, useQueryClient} from "@tanstack/react-query";
-import {useAccount, useBalance, usePublicClient, useReadContract, useReadContracts} from "wagmi";
+import {useAccount, useBalance, usePublicClient, useReadContracts} from "wagmi";
 import {Abi, AbiEvent, Log, parseAbiItem} from "viem";
-import {ADDR_L1} from "./contracts/addressesV3L1";
+import {ADDR_L1, L1_FACTORIES} from "./contracts/addressesV3L1";
+import {pairOfferings, scanStartFor} from "./lib/l1Factories";
 import {MapaeFactoryL1Abi, OfferingL1Abi} from "./contracts/abisV3L1";
 import {MapaePoolV3Abi, MembershipTokenV3Abi, MockDojangV3Abi, MockKRWV3Abi} from "./contracts/abisV3";
 import {giwaSepolia} from "./config/chain";
@@ -17,6 +19,8 @@ const nonZero = (a: unknown): `0x${string}` | undefined =>
 
 export type OfferingInfo = {
     address: `0x${string}`;
+    /** the L1 MapaeFactory that created it (factory reads and scan start go there) */
+    factory: `0x${string}`;
     creator: `0x${string}`;
     price: bigint;
     raiseTarget: bigint;
@@ -54,9 +58,9 @@ const OFFERING_FNS = [
 const FACTORY_FNS = ["sponsorshipOf", "redeemManagerOf"] as const;
 const PER = OFFERING_FNS.length + FACTORY_FNS.length;
 
-const offeringReads = (addr: `0x${string}`) => [
+const offeringReads = ({address: addr, factory}: {address: `0x${string}`; factory: `0x${string}`}) => [
     ...OFFERING_FNS.map((fn) => ({address: addr, abi: OfferingL1Abi as Abi, functionName: fn, chainId: giwaSepolia.id})),
-    ...FACTORY_FNS.map((fn) => ({address: ADDR_L1.mapaeFactory, abi: MapaeFactoryL1Abi as Abi, functionName: fn, args: [addr], chainId: giwaSepolia.id})),
+    ...FACTORY_FNS.map((fn) => ({address: factory, abi: MapaeFactoryL1Abi as Abi, functionName: fn, args: [addr], chainId: giwaSepolia.id})),
 ];
 
 /** Display label of an offering: its token's name and symbol (no screen-side name table). */
@@ -66,10 +70,16 @@ export function labelOf(o: Pick<OfferingInfo, "tokenName" | "tokenSymbol">): {na
 }
 
 export function useOfferings(enabled = true) {
-    const list = useReadContract({address: ADDR_L1.mapaeFactory, abi: MapaeFactoryL1Abi, functionName: "allOfferings", chainId: giwaSepolia.id, query: {enabled}});
-    const addrs = (list.data ?? []) as `0x${string}`[];
+    // allOfferings() of every L1 factory in one multicall; the list is complete only when all answered
+    const list = useReadContracts({
+        contracts: L1_FACTORIES.map((f) => ({address: f.mapaeFactory, abi: MapaeFactoryL1Abi as Abi, functionName: "allOfferings", chainId: giwaSepolia.id})),
+        query: {enabled},
+    });
+    const listOk = list.isSuccess && (list.data?.every((x) => x.status === "success") ?? false);
+    const listed = listOk ? pairOfferings(L1_FACTORIES, list.data!.map((x) => x.result as readonly string[])) : [];
+    const addrs = listed.map((x) => x.address);
     const reads = useReadContracts({
-        contracts: addrs.flatMap(offeringReads),
+        contracts: listed.flatMap(offeringReads),
         query: {enabled: enabled && addrs.length > 0, refetchInterval: 15_000},
     });
     const base = addrs.map((address, i) => {
@@ -79,6 +89,7 @@ export function useOfferings(enabled = true) {
         const recips = v.recipients as readonly [`0x${string}`, `0x${string}`];
         return {
             address,
+            factory: listed[i].factory,
             creator: v.creator, price: v.price, raiseTarget: v.raiseTarget, deadline: v.deadline, totalCommitted: v.totalCommitted,
             settled: v.settled, refunding: v.refunding, refundMode: Number(v.refundMode), qSale: v.qSale, totalSold: v.totalSold,
             totalRaised: v.totalRaised, fBps: Number(v.fBps), token: v.token, pool: v.pool, phase: Number(v.phase), tier: Number(v.tier),
@@ -117,9 +128,9 @@ export function useOfferings(enabled = true) {
     return {
         offerings,
         /** allOfferings() answered with an empty list */
-        empty: list.isSuccess && addrs.length === 0,
+        empty: listOk && addrs.length === 0,
         isLoading: list.isLoading || (addrs.length > 0 && (reads.isLoading || tokenReads.isLoading)),
-        isError: list.isError || reads.isError || readFailed,
+        isError: list.isError || (list.isSuccess && !listOk) || reads.isError || readFailed,
         refetch: () => { list.refetch(); reads.refetch(); tokenReads.refetch(); poolReads.refetch(); },
     };
 }
@@ -138,15 +149,15 @@ export type EventLogsResult = {
 const SCAN_CONCURRENCY = 3;
 
 /** Chunked event scan (lib/logRange): at most 9,000 blocks per request, the first read covers the
- *  newest 12 windows (~30 h) back to the v3.2-L1 deployment at most, later reads continue from the
- *  last block. A failed request fails the read (an error state, never an empty list). */
+ *  newest 12 windows (~30 h) back to the start block at most, later reads continue from the last
+ *  block. A failed request fails the read (an error state, never an empty list). */
 export function useEventLogs(
     address: `0x${string}` | readonly `0x${string}`[] | undefined,
     eventSig: string | readonly string[],
     enabled = true,
     /** W-T33: first block to read (the indexer's indexedBlock + 1 when the API answered); the scan
-     *  is complete when it reaches this block. Default: the v3.2-L1 deployment. */
-    startBlock: bigint = ADDR_L1.deployBlock
+     *  is complete when it reaches this block. Default: the oldest L1 deployment. */
+    startBlock: bigint = ADDR_L1.firstBlock
 ): EventLogsResult {
     const client = usePublicClient({chainId: giwaSepolia.id});
     const qc = useQueryClient();
@@ -226,13 +237,14 @@ const CANCELLED = "event Cancelled(address indexed participant, uint256 amount, 
 /** Wallets with a nonzero final commitment per offering, from one scan of Committed + Cancelled over
  *  every listed offering (the last cumulative of each wallet counts, same rule as snapshot.js).
  *  A count is given only when the scan reached the deployment block (complete). */
-export function useParticipantCounts(offerings: readonly `0x${string}`[]) {
+export function useParticipantCounts(offerings: readonly Pick<OfferingInfo, "address" | "factory">[]) {
     // W-T33: the indexer's counts; the browser scans only offerings the API does not know yet
     const api = useOfferingsApi(offerings.length > 0);
     const apiDone = api.data !== undefined || api.isError;
     const byApi = new Map((api.data?.offerings ?? []).map((r) => [r.offering.toLowerCase(), r.participants]));
-    const missing = offerings.filter((o) => !byApi.has(o.toLowerCase()));
-    const scan = useEventLogs(missing, [COMMITTED, CANCELLED], apiDone && missing.length > 0);
+    const missingRows = offerings.filter((o) => !byApi.has(o.address.toLowerCase()));
+    const missing = missingRows.map((o) => o.address);
+    const scan = useEventLogs(missing, [COMMITTED, CANCELLED], apiDone && missing.length > 0, scanStartFor(missingRows.map((o) => o.factory)));
     const countOf = (offering: `0x${string}` | undefined): number | undefined => {
         if (offering && byApi.has(offering.toLowerCase())) return byApi.get(offering.toLowerCase());
         if (!offering || scan.state !== "complete" || !scan.logs) return undefined;
@@ -251,7 +263,7 @@ export function useParticipantCounts(offerings: readonly `0x${string}`[]) {
     return {countOf, state: scan.state};
 }
 
-/** Offering-section onboarding: v3.2-L1 payment token balance and the factory's real-name check
+/** Offering-section onboarding: L1 payment token balance and the factory's real-name check
  *  (DojangAnyOf: official Dojang OR MockDojang). */
 export function useOnboarding() {
     const {address} = useAccount();
@@ -284,6 +296,7 @@ export const REDEEMABLE_CREATED = "event RedeemableCreated(uint256 indexed id, a
 export function useRedeemPeripherals(enabled = true) {
     const {offerings, isLoading, isError, empty} = useOfferings(enabled);
     const per = offerings.map((o) => ({offering: o.address, redeemManager: o.redeemManager, sponsorship: o.sponsorship}));
+    const managerStart = scanStartFor(offerings.filter((o) => o.redeemManager).map((o) => o.factory));
     const managers = per.map((p) => p.redeemManager).filter((m): m is `0x${string}` => !!m);
     const sponsors = per.filter((p) => p.sponsorship).length;
     const loaded = empty || (!isLoading && offerings.length > 0);
@@ -292,7 +305,7 @@ export function useRedeemPeripherals(enabled = true) {
     const apiItems = new Map((api.data?.offerings ?? []).map((r) => [r.offering.toLowerCase(), r.redeemItems]));
     const apiCovers = api.data !== undefined && api.data !== null && offerings.every((o) => apiItems.has(o.address.toLowerCase()));
     const apiDone = api.data !== undefined || api.isError || offerings.length === 0;
-    const logs = useEventLogs(managers, REDEEMABLE_CREATED, enabled && loaded && !isError && sponsors === 0 && apiDone && !apiCovers);
+    const logs = useEventLogs(managers, REDEEMABLE_CREATED, enabled && loaded && !isError && sponsors === 0 && apiDone && !apiCovers, managerStart);
     const itemCount = (m?: `0x${string}`) =>
         new Set((logs.logs ?? []).filter((l) => !m || l.address.toLowerCase() === m.toLowerCase()).map((l) => `${l.address.toLowerCase()}:${String(l.args.id)}`)).size;
     const known = logs.state === "complete" || (logs.state === "partial" && itemCount() > 0);
@@ -317,6 +330,8 @@ export function useRedeemPeripherals(enabled = true) {
 
 export type ApiOfferingRow = {
     offering: string;
+    /** W-T40: the offering's L1 factory (lowercase) */
+    factory?: string;
     participants: number;
     totalCommitted: string;
     redeemItems: number;
@@ -367,6 +382,8 @@ export function useOfferingDetailApi(offering: `0x${string}` | undefined) {
  *  browser reads from the deployment as before (W-T32 window and states). */
 export function useOfferingHistory<T extends Keyed>(p: {
     offering: `0x${string}` | undefined;
+    /** the offering's factory (scan start); undefined starts at the oldest L1 deployment */
+    factory: `0x${string}` | undefined;
     feed: "swaps" | "sponsors" | "commits";
     /** contract whose events the browser reads (pool, sponsorship or the offering) */
     address: `0x${string}` | undefined;
@@ -385,7 +402,8 @@ export function useOfferingHistory<T extends Keyed>(p: {
     });
     const apiOk = api.data !== undefined && api.data !== null;
     const apiDone = api.data !== undefined || api.isError;
-    const start = apiOk ? liveStart(api.data!.indexedBlock, ADDR_L1.deployBlock) : ADDR_L1.deployBlock;
+    const from = scanStartFor([p.factory]);
+    const start = apiOk ? liveStart(api.data!.indexedBlock, from) : from;
     const live = useEventLogs(p.address, p.eventSig, enabled && apiDone, start);
     const liveItems = (live.logs ?? []).map(p.fromLog);
     if (apiOk) {
@@ -404,11 +422,12 @@ const commitFromLog = (l: EventLog): Commit => {
 /** One offering's participant count: the API's last commitment per wallet plus the browser's
  *  Committed / Cancelled after indexedBlock, so a commit just made counts at once. Without the API
  *  it is the W-T32 count (only from a scan that reached the deployment). */
-export function useParticipantCount(offering: `0x${string}` | undefined): number | undefined {
+export function useParticipantCount(offering: `0x${string}` | undefined, factory: `0x${string}` | undefined): number | undefined {
     const detail = useOfferingDetailApi(offering);
     const apiOk = detail.data !== undefined && detail.data !== null;
     const apiDone = detail.data !== undefined || detail.isError;
-    const start = apiOk ? liveStart(detail.data!.indexedBlock, ADDR_L1.deployBlock) : ADDR_L1.deployBlock;
+    const from = scanStartFor([factory]);
+    const start = apiOk ? liveStart(detail.data!.indexedBlock, from) : from;
     const live = useEventLogs(offering, [COMMITTED, CANCELLED], !!offering && apiDone, start);
     if (!offering || !apiDone || !live.logs || live.state === "partial") return undefined;
     const apiLast: Commit[] = apiOk
@@ -421,11 +440,12 @@ export type RedeemItemInfo = {id: bigint; burnAmount: bigint; maxClaims: bigint}
 
 /** One offering's redeem items: the API's list plus RedeemableCreated read after indexedBlock
  *  (dedup by id). Without the API: the W-T32 scan of the manager from the deployment. */
-export function useRedeemItems(offering: `0x${string}` | undefined, redeemManager: `0x${string}` | undefined) {
+export function useRedeemItems(offering: `0x${string}` | undefined, redeemManager: `0x${string}` | undefined, factory: `0x${string}` | undefined) {
     const detail = useOfferingDetailApi(offering);
     const apiOk = detail.data !== undefined && detail.data !== null;
     const apiDone = detail.data !== undefined || detail.isError;
-    const start = apiOk ? liveStart(detail.data!.indexedBlock, ADDR_L1.deployBlock) : ADDR_L1.deployBlock;
+    const from = scanStartFor([factory]);
+    const start = apiOk ? liveStart(detail.data!.indexedBlock, from) : from;
     const live = useEventLogs(redeemManager, REDEEMABLE_CREATED, !!redeemManager && apiDone, start);
     const byId = new Map<string, RedeemItemInfo>();
     if (apiOk) for (const r of detail.data!.redeemItems) byId.set(r.id, {id: BigInt(r.id), burnAmount: BigInt(r.burnAmount), maxClaims: BigInt(r.maxClaims)});
