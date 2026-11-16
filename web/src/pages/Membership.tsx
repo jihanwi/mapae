@@ -2,7 +2,7 @@ import {Link} from "react-router-dom";
 import {useAccount, useReadContracts} from "wagmi";
 import {Abi} from "viem";
 import {copy} from "../copy";
-import {useOfferings, OfferingInfo} from "../hooks";
+import {useOfferings, useRedeemPeripherals, OfferingInfo} from "../hooks";
 import {Medallion, NetError, PrimaryBtn, Skeleton, TextSkeleton} from "../components/ui";
 import {fmt} from "../lib/format";
 import {creatorOf} from "../lib/creators";
@@ -10,6 +10,10 @@ import {TIERS, tierIndex, toNextTier} from "../lib/tier";
 import {MembershipTokenAbi} from "../contracts/abis";
 import {explorerAddr} from "../config/chain";
 import {DEFAULT_TITLE, useTitle} from "../lib/title";
+
+/** Decision 55: the tier ladder (一馬 to 五馬) is a screen constant (lib/tier.ts, not a contract or
+ *  per-offering setting) from the fan-membership era; hidden for every offering, code kept. */
+const SHOW_TIERS = false;
 
 export default function Membership() {
     useTitle(DEFAULT_TITLE);
@@ -23,6 +27,13 @@ export default function Membership() {
         query: {enabled: !!address && offerings.length > 0, refetchInterval: 15_000},
     });
 
+    // redeem button per offering: only with redeem items or a sponsorship (shown when unknown)
+    const peripherals = useRedeemPeripherals();
+    const canRedeem = (o: OfferingInfo) => {
+        if (peripherals.status !== "done") return peripherals.status === "error";
+        const p = peripherals.per.find((x) => x.offering.toLowerCase() === o.address.toLowerCase());
+        return !p || !!p.sponsorship || (p.items ?? 0) > 0;
+    };
     const holdings = offerings
         .map((o, i) => ({o, balance: (balances.data?.[i]?.result as bigint) ?? 0n}))
         .filter((h) => h.balance > 0n && h.o.totalSupply > 0n);
@@ -37,13 +48,13 @@ export default function Membership() {
     return (
         <div className="max-w-page mx-auto px-4 sm:px-8 pt-8 sm:pt-10 pb-16 sm:pb-20">
             <h1 className="m-0 mb-6 sm:mb-8 text-[24px] sm:text-[28px] font-bold">{copy.membership.title}</h1>
-            {holdings.length === 0 ? <Empty /> : holdings.map((h) => <Holding key={h.o.address} o={h.o} balance={h.balance} />)}
-            <Ladder holdings={holdings} />
+            {holdings.length === 0 ? <Empty /> : holdings.map((h) => <Holding key={h.o.address} o={h.o} balance={h.balance} canRedeem={canRedeem(h.o)} />)}
+            {SHOW_TIERS && <Ladder holdings={holdings} />}
         </div>
     );
 }
 
-function Holding({o, balance}: {o: OfferingInfo; balance: bigint}) {
+function Holding({o, balance, canRedeem}: {o: OfferingInfo; balance: bigint; canRedeem: boolean}) {
     const c = creatorOf(o);
     const idx = tierIndex(balance, o.totalSupply);
     const tier = idx >= 0 ? TIERS[idx] : null;
@@ -53,23 +64,23 @@ function Holding({o, balance}: {o: OfferingInfo; balance: bigint}) {
     return (
         <div className="flex flex-wrap gap-6 sm:gap-7 items-start bg-ink-800 border border-ink-700 rounded-card p-4 sm:p-8 mb-6">
             <div className="flex flex-col items-center gap-4 flex-none mx-auto sm:mx-0">
-                <Medallion char={tier?.hanja ?? "馬"} size={132} glow />
+                <Medallion char={SHOW_TIERS ? (tier?.hanja ?? "馬") : c ? c.name[0] : "馬"} size={132} glow />
                 <div className="text-center">
-                    <div className="font-serif text-[21px] font-bold text-brass-400">{tier?.hanja} 등급</div>
-                    <div className="text-[13px] text-hanji-400 mt-1">{copy.membership.share(shareBps.toFixed(1))} 보유</div>
+                    {SHOW_TIERS && <div className="font-serif text-[21px] font-bold text-brass-400">{tier?.hanja} 등급</div>}
+                    <div className="text-[13px] text-hanji-400 mt-1">{copy.membership.share(shareBps.toFixed(1))} {copy.membership.holding}</div>
                 </div>
             </div>
             <div className="w-full sm:flex-1" style={{minWidth: 0}}>
                 <div className="flex justify-between items-baseline flex-wrap gap-2 mb-3">
                     <div className="text-[17px] font-bold">
-                        {c ? <>{c.name} <span className="text-hanji-400 font-normal">{c.en}</span> 회원권</> : <TextSkeleton w={160} h={17} />}
+                        {c ? <>{c.name} <span className="text-hanji-400 font-normal">{c.en}</span> {copy.membership.tokenLabel}</> : <TextSkeleton w={160} h={17} />}
                     </div>
                     <a href={explorerAddr(o.token)} target="_blank" rel="noreferrer" className="text-[13px]">{copy.tx.viewOnChain}</a>
                 </div>
                 <div className="font-serif text-[44px] font-semibold tabular-nums leading-none mb-5">
                     {fmt(balance, 2)}<span className="text-[20px] text-hanji-400 font-sans"> {copy.membership.unit}</span>
                 </div>
-                {next ? (
+                {!SHOW_TIERS ? null : next ? (
                     <div className="mb-5">
                         <div className="flex justify-between text-[13px] mb-2">
                             <span className="text-hanji-400">다음 등급까지</span>
@@ -87,7 +98,7 @@ function Holding({o, balance}: {o: OfferingInfo; balance: bigint}) {
                     <div className="text-[13px] text-brass-400 mb-5">{copy.membership.maxTier}</div>
                 )}
                 <div className="flex gap-3 flex-wrap">
-                    <Link to="/redeem"><PrimaryBtn>{copy.redeem.redeemCta}</PrimaryBtn></Link>
+                    {canRedeem && <Link to="/redeem"><PrimaryBtn>{copy.redeem.redeemCta}</PrimaryBtn></Link>}
                     <Link to={`/trade?o=${o.address}`}
                         className="rounded-input border border-ink-700 text-hanji-100 text-[14px] px-5 py-3 hover:border-brass-600">
                         {copy.nav.trade}
@@ -132,7 +143,7 @@ function Empty() {
             <Medallion char="馬" size={104} dashed />
             <div className="flex-1" style={{minWidth: 200}}>
                 <div className="text-[17px] font-bold mb-1">{copy.membership.empty}</div>
-                <div className="text-[13px] text-hanji-400">진행 중인 공모에 응모하면 여기에 표시돼요</div>
+                <div className="text-[13px] text-hanji-400">{copy.membership.emptyNote}</div>
             </div>
             <Link to="/offerings"><PrimaryBtn>{copy.membership.emptyCta}</PrimaryBtn></Link>
         </div>

@@ -87,13 +87,13 @@ export type EventLog = Log & {args: Record<string, unknown>};
 type LogScan = {lastScanned: bigint; logs: EventLog[]};
 
 /** GIWA getLogs 100k 상한 대응 청크 스캔 — 초회 전체, 이후 lastScanned+1부터 증분 누적 */
-export function useEventLogs(address: `0x${string}` | undefined, eventSig: string, enabled = true) {
+export function useEventLogs(address: `0x${string}` | readonly `0x${string}`[] | undefined, eventSig: string, enabled = true) {
     const client = usePublicClient();
     const qc = useQueryClient();
     const queryKey = ["logs", address, eventSig];
     return useQuery({
         queryKey,
-        enabled: !!client && !!address && enabled,
+        enabled: !!client && !!address && (!Array.isArray(address) || address.length > 0) && enabled,
         refetchInterval: 12_000, // 9-f: 본인 tx 직후 체감 지연 완화 (증분 스캔이라 부하 낮음)
         structuralSharing: false,
         select: (d: LogScan) => d.logs,
@@ -106,7 +106,7 @@ export function useEventLogs(address: `0x${string}` | undefined, eventSig: strin
             const logs = prev ? [...prev.logs] : [];
             for (let from = start; from <= latest; from += 90_000n) {
                 const to = from + 89_999n < latest ? from + 89_999n : latest;
-                logs.push(...((await client!.getLogs({address, event, fromBlock: from, toBlock: to})) as EventLog[]));
+                logs.push(...((await client!.getLogs({address: address as `0x${string}` | `0x${string}`[], event, fromBlock: from, toBlock: to})) as EventLog[]));
             }
             return {lastScanned: latest, logs} as LogScan;
         },
@@ -173,5 +173,47 @@ export function useOnboarding() {
         verified: (verified.data as boolean) ?? false,
         ethBalance: eth.data?.value,
         isError: krw.isError || verified.isError,
+    };
+}
+
+export const REDEEMABLE_CREATED = "event RedeemableCreated(uint256 indexed id, address indexed creator, uint256 burnAmount, uint256 maxClaims, uint256 deadline)";
+const ZERO_ADDR = "0x0000000000000000000000000000000000000000";
+
+/** Redeem peripherals of every listed offering (decision 55): one multicall of
+ *  MapaeFactory.redeemManagerOf + sponsorshipOf for all offerings, and, only when no offering has a
+ *  sponsorship, one getLogs scan of RedeemableCreated over every redeem manager (the redeem page's
+ *  item read, all managers in one request). Per offering: manager, sponsorship and item count. */
+export function useRedeemPeripherals(enabled = true) {
+    const list = useReadContract({address: ADDR.factory, abi: MapaeFactoryAbi, functionName: "allOfferings", query: {enabled}});
+    const addrs = (list.data ?? []) as `0x${string}`[];
+    const reads = useReadContracts({
+        contracts: addrs.flatMap((o) => [
+            {address: ADDR.factory, abi: MapaeFactoryAbi as Abi, functionName: "redeemManagerOf", args: [o]},
+            {address: ADDR.factory, abi: MapaeFactoryAbi as Abi, functionName: "sponsorshipOf", args: [o]},
+        ]),
+        query: {enabled: enabled && addrs.length > 0},
+    });
+    const failed = list.isError || reads.isError || (reads.data?.some((x) => x.status !== "success") ?? false);
+    const per = addrs.map((o, i) => {
+        const rm = reads.data?.[i * 2]?.result as `0x${string}` | undefined;
+        const sp = reads.data?.[i * 2 + 1]?.result as `0x${string}` | undefined;
+        return {offering: o, redeemManager: rm && rm !== ZERO_ADDR ? rm : undefined, sponsorship: sp && sp !== ZERO_ADDR ? sp : undefined};
+    });
+    const managers = per.map((p) => p.redeemManager).filter((m): m is `0x${string}` => !!m);
+    const sponsors = per.filter((p) => p.sponsorship).length;
+    const loaded = list.isSuccess && (addrs.length === 0 || reads.isSuccess);
+    const logs = useEventLogs(managers, REDEEMABLE_CREATED, enabled && loaded && !failed && sponsors === 0);
+    const countOf = (m: `0x${string}` | undefined) => {
+        if (!m || !logs.data) return undefined;
+        return new Set(logs.data.filter((l) => l.address.toLowerCase() === m.toLowerCase()).map((l) => String(l.args.id))).size;
+    };
+    const items = managers.length === 0 ? 0 : logs.data ? new Set(logs.data.map((l) => `${l.address.toLowerCase()}:${String(l.args.id)}`)).size : undefined;
+    const status: "loading" | "error" | "done" = failed ? "error" : !loaded ? "loading" : "done";
+    return {
+        status,
+        sponsors,
+        items,
+        itemsError: logs.isError,
+        per: per.map((p) => ({...p, items: countOf(p.redeemManager)})),
     };
 }

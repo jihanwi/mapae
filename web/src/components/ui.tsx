@@ -137,7 +137,7 @@ export function Skeleton({h = 120}: {h?: number}) {
     return <div className="rounded-card bg-ink-800 border border-ink-700 shimmer" style={{height: h}} />;
 }
 
-/** 인라인 텍스트 스켈레톤 — 크리에이터명 등 로드 전 자리 표시 */
+/** 인라인 텍스트 스켈레톤 — 발행자명 등 로드 전 자리 표시 */
 export function TextSkeleton({w = 80, h = 14}: {w?: number; h?: number}) {
     return <span className="inline-block rounded bg-ink-700 shimmer align-middle" style={{width: w, height: h}} />;
 }

@@ -20,12 +20,12 @@ export const ko = {
         staleBand: "실시간 연결이 늦어지고 있어요. 조금 전 기준으로 보여 드려요",
     },
     appTitle: "MAPAE",
-    heroTitle: "사고팔 수 있는 팬 멤버십",
-    heroSub: "발행은 공모주처럼 · 유통은 시장처럼 · 소비는 정가처럼",
+    heroTitle: "같은 가격, 같은 기회로 받는 공모",
+    heroSub: "정가 응모 · 균등 배정과 추첨 · 미달 시 환불 · 유동성 영구 잠금",
     nav: {
         disconnect: "연결 해제",
         logoAlt: "MAPAE 로고",
-        curves: "토큰", create: "발행", wallet: "내 지갑", feed: "피드", home: "공모", offeringList: "공모 목록", membership: "내 멤버십", redeem: "리딤 & 후원", trade: "거래",
+        curves: "토큰", create: "발행", wallet: "내 지갑", feed: "피드", home: "공모", offeringList: "공모 목록", membership: "내 보유", redeem: "리딤", trade: "거래",
         faucet: "KRWs 받기", // 상시 재충전 버튼 (데스크톱)
         faucetShort: "+ KRWs", // 모바일 축약
         faucetTitle: "테스트 KRWs 받기 (10만 KRWs)",
@@ -49,14 +49,14 @@ export const ko = {
         loading: "온체인에서 불러오는 중…",
         netError: "네트워크 응답이 없어요. 잠시 후 다시 시도해 주세요",
         retry: "다시 시도",
-        verifiedCreator: "실명 인증 크리에이터",
+        verifiedCreator: "실명 인증 발행자",
         over: "초과 응모",
         price: "정가",
-        perUnit: "/장",
+        perUnit: "/개",
         participants: (n: number) => `참여 ${n}명`,
         offerPrice: "공모가",
         spotPrice: "현재가",
-        burned: (n: string) => `지금까지 ${n}장 소각됨`,
+        burned: (n: string) => `지금까지 ${n}개 소각됨`,
         goTrade: "거래하기 →",
         footnote: "초과 응모 시 전원에게 최소 수량을 먼저 배정하고, 나머지는 추첨으로 보충합니다 · 배정 계산은 누구나 재검증할 수 있습니다",
     },
@@ -70,7 +70,7 @@ export const ko = {
     },
     offering: {
         saleQty: "공모 수량", // C1: 총공급과 분리 표기
-        totalSupplyLine: (s: string) => `총공급 ${s}장, 개설 시점 확정, 추가 발행 불가`,
+        totalSupplyLine: (s: string) => `총공급 ${s}개, 개설 시점 확정, 추가 발행 불가`,
         target: "모금 목표",
         committedTotal: "현재 모금액",
         myCommit: "내 응모액",
@@ -96,38 +96,49 @@ export const ko = {
         notFoundNote: "주소가 올바르지 않거나 존재하지 않는 공모예요",
         backToList: "공모 목록으로",
         connectForAllocation: "지갑을 연결하면 배정 결과를 확인할 수 있어요", // 9-d
+        // 결정 55: 발행자 중립 설명 (팬 멤버십 전제 없음)
+        unit: "개",
+        about: (who: string | null, qty: string) =>
+            `${who ? `${who}의` : "이"} 토큰 공모예요. 공모 수량 ${qty}개를 단 한 번만 발행하고, 총공급은 정산 시점에 확정돼요. 이후 추가 발행은 불가능해요.`,
+        aboutRedeem: "이 공모에는 리딤 항목이 있어요. 토큰을 소각해 리딤 카탈로그의 항목을 사용할 수 있고, 리딤에 사용된 토큰은 소각되어 총공급이 줄어요.",
+        aboutVesting: "발행자 배분 물량은 36개월 베스팅(6개월 클리프)으로 잠겨요.",
     },
     membership: {
-        title: "내 멤버십",
-        empty: "아직 보유한 멤버십이 없어요",
+        title: "내 보유",
+        empty: "아직 보유한 토큰이 없어요",
         emptyCta: "진행 중인 공모 보러 가기",
         holding: "보유",
         share: (p: string) => `총공급의 ${p}%`,
-        nextTier: (t: string, n: string) => `${t}까지 ${n}장 더 필요해요`,
+        nextTier: (t: string, n: string) => `${t}까지 ${n}개 더 필요해요`,
         maxTier: "최고 등급이에요",
         ladder: "등급 사다리",
-        unit: "장",
+        unit: "개",
+        tokenLabel: "토큰",
+        emptyNote: "진행 중인 공모에 응모하면 여기에 표시돼요",
     },
     redeem: {
-        title: "리딤 & 후원",
+        title: "리딤",
         catalog: "리딤 카탈로그",
-        cost: (n: string) => `${n}장 소각`,
+        cost: (n: string) => `${n}개 소각`,
         claims: (used: string, max: string) => `${used} / ${max} 사용됨`,
         unlimited: "무제한",
         redeemCta: "리딤하기", // C7
         closed: "기한 마감",
         soldOut: "소진됨",
         sponsorTitle: "후원하기",
+        noItems: "이 공모에는 리딤 항목이 없어요",
+        approveLabel: "토큰 사용 승인",
+        burnUnit: "개 소각",
         sponsorNote: (pct: string) =>
-            `후원액의 ${pct}%로 시장에서 멤버십을 매수해 소각하고, 나머지는 크리에이터에게 전달돼요`,
+            `후원액의 ${pct}%로 시장에서 토큰을 매수해 소각하고, 나머지는 발행자에게 전달돼요`,
         msgPlaceholder: "응원 메시지를 남겨 주세요 (온체인에 기록됩니다)",
         sponsorCta: "후원 보내기",
         feed: "후원 피드",
-        feedBurned: (n: string) => `${n}장 소각`,
+        feedBurned: (n: string) => `${n}개 소각`,
         // 1-6/3-B: "<토큰심볼>:<id>" → 표시명, 미등록은 "리딤 #N" 폴백 (심볼로 매니저 구분해 id 충돌 방지)
         names: {
-            "MAPA:2": "디지털 팬 배지",
-            "MAPB:1": "디지털 팬 배지",
+            "MAPA:2": "디지털 배지",
+            "MAPB:1": "디지털 배지",
         } as Record<string, string>,
     },
     trade: {
@@ -138,21 +149,23 @@ export const ko = {
         circulating: "유통 공급",
         buy: "매수",
         sell: "매도",
-        buyLabel: "KRWs → 멤버십",
-        sellLabel: "멤버십 → KRWs",
+        buyLabel: "KRWs → 토큰",
+        sellLabel: "토큰 → KRWs",
         quote: "예상 수령",
         priceImpact: "가격 영향", // 1-3a
         shallowPool: "테스트넷 얕은 풀이라 소액 체결에도 가격이 크게 움직여요", // 1-3b
         buyPlaceholder: "10,000", // 1-2: 매수 소액 예시
-        feeNote: "수수료 2% = 크리에이터 1% + 소각 0.5% + 유동성 0.5%",
+        feeNote: "수수료 2% = 발행자 1% + 소각 0.5% + 유동성 0.5%",
         history: "거래 히스토리",
         lpTrust: "유동성은 영구 잠금. LP 지분 전량이 0xdEaD 주소에 있어 누구도 회수할 수 없습니다", // C5
         swapCta: "스왑",
         amountIn: "수량",
-        myStrip: (n: string, m: string) => `보유 ${n}장 · KRWs 잔액 ${m}`,
+        myStrip: (n: string, m: string) => `보유 ${n}개 · KRWs 잔액 ${m}`,
         maxBtn: "최대",
-        afterSwap: (n: string) => `스왑 후 약 ${n}장`,
-        noHoldings: "보유한 회원권이 없어요",
+        afterSwap: (n: string) => `스왑 후 약 ${n}개`,
+        noHoldings: "보유한 토큰이 없어요",
+        noListed: "아직 상장된 토큰이 없어요",
+        unit: "개",
         chartTitle: "체결가",
         chartEmpty: "체결이 쌓이면 차트가 그려져요",
         chartOfferLabel: (p: string) => `공모가 ${p}`,
@@ -667,7 +680,7 @@ export const ko = {
         NotVerifiedCreator: "실명 인증이 필요해요",
     },
     creators: {
-        // 데모 크리에이터 표시명 (offering 주소 → 이름) — 미등록 주소는 토큰명 사용
+        // 데모 발행자 표시명 (offering 주소 → 이름), 미등록 주소는 토큰명 사용
         byOffering: {} as Record<string, {name: string; en: string}>,
     },
 };

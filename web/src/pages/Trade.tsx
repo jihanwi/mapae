@@ -32,7 +32,7 @@ export default function Trade() {
     // #8: RPC 장애 시 "상장된 회원권이 없어요"(거짓) 대신 네트워크 에러로 분기
     if (!o) {
         if (isError) return <div className="max-w-page mx-auto px-4 sm:px-8 pt-12"><NetError onRetry={refetch} /></div>;
-        return <div className="max-w-page mx-auto px-4 sm:px-8 pt-12 text-hanji-400 text-[14px]">아직 상장된 회원권이 없어요</div>;
+        return <div className="max-w-page mx-auto px-4 sm:px-8 pt-12 text-hanji-400 text-[14px]">{copy.trade.noListed}</div>;
     }
 
     return (
@@ -158,8 +158,8 @@ function TradePanel({o}: {o: OfferingInfo}) {
                 {/* 스팟 vs 공모가 병렬 — 등락색 금지 */}
                 <Stat label={copy.trade.spot} value={o.spotPrice > 0n ? fmt(o.spotPrice, 0) : "—"} unit="KRWs" />
                 <Stat label={copy.trade.offer} value={fmt(o.price, 0)} unit="KRWs" />
-                <Stat label={copy.trade.burnedTotal} value={fmt(burned, 2)} unit="장" />
-                <Stat label={copy.trade.circulating} value={fmt(o.totalSupply, 2)} unit="장" />
+                <Stat label={copy.trade.burnedTotal} value={fmt(burned, 2)} unit={copy.trade.unit} />
+                <Stat label={copy.trade.circulating} value={fmt(o.totalSupply, 2)} unit={copy.trade.unit} />
             </div>
 
             {/* T4: 후행 체결가 라인 차트 — 정가 기준선 위 유통 프리미엄의 시각화 */}
@@ -198,13 +198,13 @@ function TradePanel({o}: {o: OfferingInfo}) {
                                     {copy.trade.maxBtn}
                                 </button>
                             )}
-                            <span className="text-hanji-400 text-[14px] flex-none">{dir === "buy" ? "KRWs" : "장"}</span>
+                            <span className="text-hanji-400 text-[14px] flex-none">{dir === "buy" ? "KRWs" : copy.trade.unit}</span>
                         </div>
                         {sellEmpty && <div className="text-[13px] text-hanji-400 mb-3">{copy.trade.noHoldings}</div>}
                         <div className="flex justify-between text-[13px] mb-1">
                             <span className="text-hanji-400">{copy.trade.quote}</span>
                             <span className="text-hanji-100 font-semibold tabular-nums">
-                                {quote.data !== undefined ? `${fmt(quote.data as bigint, dir === "buy" ? 4 : 0)} ${dir === "buy" ? "장" : "KRWs"}` : "—"}
+                                {quote.data !== undefined ? `${fmt(quote.data as bigint, dir === "buy" ? 4 : 0)} ${dir === "buy" ? copy.trade.unit : "KRWs"}` : "—"}
                             </span>
                         </div>
                         {impact !== undefined && (
@@ -251,8 +251,8 @@ function TradePanel({o}: {o: OfferingInfo}) {
                                 </span>
                                 <span className="text-hanji-100 tabular-nums text-right">
                                     {a.krwIn
-                                        ? `${fmt(a.amountIn, 0)} KRWs → ${fmt(a.amountOut, 3)}장`
-                                        : `${fmt(a.amountIn, 3)}장 → ${fmt(a.amountOut, 0)} KRWs`}
+                                        ? `${fmt(a.amountIn, 0)} KRWs → ${fmt(a.amountOut, 3)}${copy.trade.unit}`
+                                        : `${fmt(a.amountIn, 3)}${copy.trade.unit} → ${fmt(a.amountOut, 0)} KRWs`}
                                 </span>
                                 <span className="text-hanji-400 tabular-nums hidden sm:inline">{shortAddr(a.sender)}</span>
                             </div>
