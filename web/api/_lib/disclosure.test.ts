@@ -84,6 +84,7 @@ async function signedAddendum(text: string, account = issuer) {
     return {kind: "addendum", offering: OFFERING, text, issuedAt, signature};
 }
 const deps = (store: Store, c: Parameters<typeof chainOf>[0] = {}, indexed = false, indexFail = false) => ({
+    sleep: async () => {},
     store,
     chain: chainOf(c),
     indexedCommit: async () => {
@@ -149,6 +150,21 @@ describe("POST disclosure", () => {
         const body = await signedDoc();
         const r = await handlePostDisclosure({...body, doc: {...DOC, summary: "바뀐 내용"}}, deps(memStore()));
         expect(r).toEqual({status: 403, body: {error: "not_issuer"}});
+    });
+    it("W-T36: an offering the RPC does not see yet is read again (4 tries, 1.5 s apart) before not_offering", async () => {
+        const slept: number[] = [];
+        let calls = 0;
+        const late: DisclosureChain = {...chainOf(), isOffering: async () => ++calls >= 3};
+        const r = await handlePostDisclosure(await signedDoc(), {...deps(memStore()), chain: late, sleep: async (ms: number) => void slept.push(ms)});
+        expect(r.status).toBe(201);
+        expect(calls).toBe(3);
+        expect(slept).toEqual([1500, 1500]);
+        const never: DisclosureChain = {...chainOf(), isOffering: async () => (calls++, false)};
+        calls = 0;
+        slept.length = 0;
+        expect(await handlePostDisclosure(await signedDoc(), {...deps(memStore()), chain: never, sleep: async (ms: number) => void slept.push(ms)})).toEqual({status: 404, body: {error: "not_offering"}});
+        expect(calls).toBe(4);
+        expect(slept).toEqual([1500, 1500, 1500]);
     });
     it("an offering of another factory is refused", async () => {
         expect(await handlePostDisclosure(await signedDoc(), deps(memStore(), {isOffering: false}))).toEqual({status: 404, body: {error: "not_offering"}});

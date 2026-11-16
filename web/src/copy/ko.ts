@@ -317,6 +317,7 @@ export const ko = {
         cancelCta: "응모 취소",
         cancelFrozenNote: "마감 2시간 전부터는 취소할 수 없어요", // C3
         commitStillOpenNote: "신규 응모와 증액은 마감까지 가능해요",
+        issuerCannotCommit: "발행자는 자기 공모에 응모할 수 없어요", // W-T36
         approveThen: "먼저 KRWs 사용 승인이 필요해요",
         claimCta: "배정 받기",
         claimed: "배정 수령 완료",
@@ -593,6 +594,7 @@ export const ko = {
         BelowMinCommit: "최소 응모 금액보다 적어요",
         ResidualBelowMinCommit: "취소 후 남는 금액이 최소 응모 금액보다 적을 수 없어요",
         DeadlinePassed: "이 공모는 마감됐어요",
+        IssuerCannotCommit: "발행자는 자기 공모에 응모할 수 없어요",
         RedeemClosed: "리딤 기한이 지났어요",
         MaxClaimsReached: "준비된 수량이 모두 소진됐어요",
         InsufficientOutput: "그사이 가격이 변해서 거래하지 않았어요. 금액을 줄이거나 다시 시도해 주세요",

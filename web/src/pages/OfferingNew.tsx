@@ -38,6 +38,14 @@ const CREATE_ABI = [
 const DRAFT_ID = "new";
 const inputCls = "w-full box-border bg-ink-900 border border-ink-700 rounded-input px-3.5 py-3 text-[15px] text-hanji-100 outline-none focus:border-brass-400";
 
+/** Fields whose change can raise another field's cross error (cliff vs length). */
+export const RELATED: Partial<Record<keyof CreateForm | "allocation", readonly (keyof CreateForm)[]>> = {
+    lockCliffValue: ["lockValue", "lockUnit", "lockCliffUnit"],
+    vestingCliffDays: ["vestingDays"],
+    minCommit: ["walletLimit"],
+    walletLimit: ["raiseTarget"],
+};
+
 /** Factory bands, the FeeRouter L1 table and the name limit, in one multicall. */
 function useBounds(): {bounds: ChainBounds | null; failed: boolean} {
     const r = useReadContracts({
@@ -216,7 +224,10 @@ export default function OfferingNew() {
         setTouched((s) => new Set(s).add(k));
         setForm((f) => ({...f, [k]: v}));
     };
-    const errOf = (k: keyof CreateForm | "allocation") => (check && (showAll || touched.has(k) || k === "allocation") ? check.errors[k] : undefined);
+    // W-T36: a cross check shows as soon as either field of the pair was touched (the error sits
+    // on the cliff field, which the issuer may never edit when only the length changes)
+    const errOf = (k: keyof CreateForm | "allocation") =>
+        check && (showAll || k === "allocation" || [k, ...(RELATED[k] ?? [])].some((f) => touched.has(f))) ? check.errors[k] : undefined;
 
     if (!bounds) {
         return (
@@ -261,7 +272,9 @@ export default function OfferingNew() {
         saveDraft(offering, doc);
         clearDraft(DRAFT_ID);
         setStatus({kind: "info", text: t.confirm.savingDisclosure, offering});
-        const r = await save(offering, "disclosure", doc);
+        // the server's RPC may not see the new offering for a few seconds: resend the same signed
+        // request twice, 2 s apart (one wallet signature)
+        const r = await save(offering, "disclosure", doc, {resends: 2});
         if (r.ok) {
             clearDraft(offering);
             navigate(`/offering/${offering}`);
