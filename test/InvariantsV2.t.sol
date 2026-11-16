@@ -380,11 +380,13 @@ contract InvariantsV2Test is Test {
     // ==================================================================
 
     function test_Inv11_OfferingFeeSnapshot() public {
-        // Create at L1 (offering fee 750 snapshot), THEN raise the L1 fee to 1000.
+        // Create at L1 with a 2.5% offering fee snapshot, THEN raise the L1 fee to the 5% ceiling
+        // (decision 59 band [0,500]).
+        feeRouter.setFees(IFeeRouter.UtilityTier.L1, IFeeRouter.TierFees(250, 40, 60, 30, 20, 400));
         (Offering o, MembershipToken t) = _create(IFeeRouter.UtilityTier.L1);
-        assertEq(o.offeringFeeBps(), 750);
-        feeRouter.setFees(IFeeRouter.UtilityTier.L1, IFeeRouter.TierFees(1000, 40, 60, 30, 20, 400));
-        assertEq(o.offeringFeeBps(), 750); // immutable snapshot unaffected
+        assertEq(o.offeringFeeBps(), 250);
+        feeRouter.setFees(IFeeRouter.UtilityTier.L1, IFeeRouter.TierFees(500, 40, 60, 30, 20, 400));
+        assertEq(o.offeringFeeBps(), 250); // immutable snapshot unaffected
 
         vm.startPrank(fan);
         krw.faucet(WALLET_LIMIT);
@@ -394,8 +396,8 @@ contract InvariantsV2Test is Test {
         vm.warp(o.deadline());
         o.settle(_leaf(fan, 15e18, 0), 15e18, WALLET_LIMIT, bytes32(uint256(1)));
 
-        // Platform proceeds used the 7.5% snapshot, not the new 10%.
-        assertEq(krw.balanceOf(platform), WALLET_LIMIT * 750 / 10_000);
+        // Platform proceeds used the 2.5% snapshot, not the new 5%.
+        assertEq(krw.balanceOf(platform), WALLET_LIMIT * 250 / 10_000);
         t; // silence unused
     }
 

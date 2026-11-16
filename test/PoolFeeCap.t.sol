@@ -59,7 +59,7 @@ contract PoolFeeCapTest is OfferingTestBase {
         uint16 b = uint16(bound(poolBurn, 0, 90 - r));
         MapaePool pool = _pool(tier, r, b);
         IFeeRouter.TierFees memory f = _f(
-            750,
+            0,
             uint16(bound(plat, 0, 160)),
             uint16(bound(roy, 0, 160)),
             uint16(bound(burn, 0, 160)),
@@ -82,10 +82,10 @@ contract PoolFeeCapTest is OfferingTestBase {
     // F4 L1 router share platform 60 + lp 20 rejected
     function test_F4_PremiumRouterShareOver60() public {
         vm.expectRevert(FeeRouter.OutOfBand.selector);
-        feeRouter.setFees(IFeeRouter.UtilityTier.L1, _f(750, 60, 40, 30, 20, 400));
+        feeRouter.setFees(IFeeRouter.UtilityTier.L1, _f(0, 60, 40, 30, 20, 400));
         vm.expectRevert(FeeRouter.OutOfBand.selector);
-        feeRouter.setFees(IFeeRouter.UtilityTier.L2, _f(750, 60, 40, 30, 20, 300));
-        feeRouter.setFees(IFeeRouter.UtilityTier.L1, _f(750, 40, 60, 30, 20, 400)); // preset, router 60
+        feeRouter.setFees(IFeeRouter.UtilityTier.L2, _f(0, 60, 40, 30, 20, 300));
+        feeRouter.setFees(IFeeRouter.UtilityTier.L1, _f(0, 40, 60, 30, 20, 400)); // preset, router 60
     }
 
     // F5 direct pool construction enforces the pool-share caps
