@@ -7,7 +7,10 @@ import {getAddress, isAddress} from "viem";
 export const DISCLOSURE_CHAIN_ID = 91342;
 
 /** Phrases that promise a result. Checked in the document and in every addendum, on both sides. */
-export const FORBIDDEN_PHRASES: readonly string[] = ["원금 보장", "수익 보장", "확정 수익", "손실 없", "guaranteed return", "risk-free"];
+export const FORBIDDEN_PHRASES: readonly string[] = ["원금 보장", "수익 보장", "확정 수익", "손실 없", "guaranteed return", "risk-free",
+    // W-T42: English
+    "guaranteed profit", "guaranteed yield", "guaranteed income", "guaranteed apy", "principal guaranteed", "principal protected",
+    "capital guaranteed", "fixed return", "zero risk", "can't lose", "cannot lose"];
 
 export const LIMITS = {
     summary: 80,
@@ -97,7 +100,8 @@ export const canonicalJson = (doc: DisclosureDoc) => JSON.stringify(doc);
 
 /** First forbidden phrase in `text` (case-insensitive, spaces collapsed), or null. */
 export function forbiddenPhrase(text: string): string | null {
-    const t = text.toLowerCase().replace(/\s+/g, " ");
+    // curly apostrophes count as straight ones ("can’t lose" = "can't lose")
+    const t = text.toLowerCase().replace(/[\u2018\u2019]/g, "'").replace(/\s+/g, " ");
     for (const p of FORBIDDEN_PHRASES) if (t.includes(p.toLowerCase())) return p;
     return null;
 }

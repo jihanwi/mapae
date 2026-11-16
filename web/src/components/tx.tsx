@@ -121,14 +121,14 @@ export function useTx() {
             setBusy(true);
             setBusyCount((n) => n + 1);
             setPhase("wallet"); // ① 지갑 서명 대기
-            const id = push({kind: "pending", text: `${label} — ${tr.tx.pendingWallet}`});
+            const id = push({kind: "pending", text: `${label}${tr.tx.sep}${tr.tx.pendingWallet}`});
             try {
                 const hash = await fn();
                 setPhase("confirming"); // ② 컨펌 대기
-                update(id, {kind: "pending", text: `${label} — ${tr.tx.pendingTx}`, hash});
+                update(id, {kind: "pending", text: `${label}${tr.tx.sep}${tr.tx.pendingTx}`, hash});
                 const receipt = await client.waitForTransactionReceipt({hash});
                 if (receipt.status !== "success") throw new Error("reverted");
-                update(id, {kind: "success", text: opts?.successMessage ?? `${label} — ${tr.tx.success}`, hash}); // ③ 완료 (H3)
+                update(id, {kind: "success", text: opts?.successMessage ?? `${label}${tr.tx.sep}${tr.tx.success}`, hash}); // ③ 완료 (H3)
                 // ask the server to catch up 12 s after the last successful tx (the indexer reads 10
                 // blocks behind the head), so indexed numbers include this tx
                 catchUpAfterTx(qc, receipt.blockNumber);

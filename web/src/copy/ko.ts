@@ -660,6 +660,8 @@ export const ko = {
         failed: "실패했어요",
         notReady: "지갑 연결을 확인하고 다시 시도해 주세요",
         viewOnChain: "온체인에서 확인 ↗", // C4
+        /** 알림에서 동작 이름과 상태 사이 (W-T42) */
+        sep: " — ",
     },
     errors: {
         NotVerified: "실명 인증이 필요해요. 상단 ‘실명 인증 (데모)’를 먼저 눌러 주세요",
