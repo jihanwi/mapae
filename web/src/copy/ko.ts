@@ -238,6 +238,9 @@ export const ko = {
         namePlaceholder: "토큰 이름",
         symbol: "티커",
         symbolPlaceholder: "예: MAPA",
+        // 결정 54: 티커 글자 규칙
+        symbolRule: "티커는 영문 대문자, 숫자, 한글만 쓸 수 있어요",
+        sameTicker: (n: string) => `같은 티커의 토큰이 이미 ${n}개 있어요`,
         bytes: (n: number, max: number) => `${n} / ${max} 바이트`,
         quote: "거래 통화",
         startPrice: "시작가 (1개당)",
@@ -624,6 +627,9 @@ export const ko = {
         verifiedSellers: (n: number) => `실명 매도자 ${n}명`,
         devLaunched: (n: number) => `Dev 발행 토큰 ${n}개`,
         flowAria: (p: number, q: number) => `매수 ${p}%, 매도 ${q}%`,
+        otherSameTicker: (n: string) => `같은 티커의 다른 토큰 ${n}개`,
+        nonStandardTicker: "비표준 티커",
+        nonStandardTickerNote: "발행 화면의 티커 규칙을 따르지 않은 토큰이에요",
         // 신뢰 신호 카드 (결정 51): 사실만, 평가 문구 없음
         trust: {
             title: "신뢰 신호",

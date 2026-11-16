@@ -25,6 +25,8 @@ import {CurveAvatar, draftValid, linkDomain, MetaFields, SaveStatus} from "../co
 import {API_BASE, CurveMeta, draftHasContent, emptyDraft, MetaDraft, useCurveMeta, useSaveMeta} from "../hooks/meta";
 import {CurveTradePanel} from "../components/CurveTradePanel";
 import {TrustSignals} from "../components/TrustSignals";
+import {NonStandardTicker, useSameTicker} from "../components/TickerBadge";
+import {normalizeTicker} from "../lib/ticker";
 import {CopyAddress} from "../components/CopyAddress";
 import {DevFeeBand} from "../components/DevFees";
 import {WalletLink} from "../components/WalletLink";
@@ -209,14 +211,24 @@ function FlowCard({c}: {c: CurveDetail}) {
 
 function Header({c, imageUrl}: {c: CurveDetail; imageUrl?: string | null}) {
     const tr = useCopy();
+    // decision 54: other tokens with the same ticker (from the summary list already loaded)
+    const same = useSameTicker(c.symbol, c.address);
     return (
         <div className="flex flex-col gap-3 min-w-0">
             <div className="flex items-center gap-4 min-w-0">
                 <CurveAvatar char={c.symbol.slice(0, 1) || "馬"} imageUrl={imageUrl} size={64} />
                 <div className="min-w-0 flex-1">
                     <h1 className="m-0 text-[24px] sm:text-[28px] font-bold break-all">{c.name}</h1>
-                    <div className="text-[13px] text-hanji-400 truncate">
-                        {c.symbol} · {quoteUnit(c)}
+                    <div className="text-[13px] text-hanji-400 flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
+                        <span className="min-w-0 break-all">
+                            {c.symbol} · {quoteUnit(c)}
+                        </span>
+                        <NonStandardTicker symbol={c.symbol} />
+                        {same !== null && (
+                            <Link to={`/?q=${encodeURIComponent(normalizeTicker(c.symbol))}`} className="text-brass-400 hover:text-hanji-100 whitespace-nowrap">
+                                {tr.tokenPage.otherSameTicker(same)}
+                            </Link>
+                        )}
                     </div>
                 </div>
             </div>

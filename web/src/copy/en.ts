@@ -124,6 +124,8 @@ export const en = {
         namePlaceholder: "Token name",
         symbol: "Ticker",
         symbolPlaceholder: "e.g. MAPA",
+        symbolRule: "Tickers can use A–Z, 0–9 and Korean letters only",
+        sameTicker: (n: string) => `${n} token${n === "1" ? "" : "s"} already use${n === "1" ? "s" : ""} this ticker`,
         bytes: (n: number, max: number) => `${n} / ${max} bytes`,
         quote: "Paired asset",
         startPrice: "Starting price (per token)",
@@ -486,6 +488,9 @@ export const en = {
         verifiedSellers: (n: number) => `${n} verified seller${n === 1 ? "" : "s"}`,
         devLaunched: (n: number) => `${n} token${n === 1 ? "" : "s"} launched by this Dev`,
         flowAria: (p: number, q: number) => `Buys ${p}%, sells ${q}%`,
+        otherSameTicker: (n: string) => `${n} other token${n === "1" ? "" : "s"} with this ticker`,
+        nonStandardTicker: "Non-standard ticker",
+        nonStandardTickerNote: "This token does not follow the ticker rule of the launch form",
         trust: {
             title: "Trust signals",
             none: "None",

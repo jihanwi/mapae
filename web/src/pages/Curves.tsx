@@ -1,5 +1,5 @@
 import {ClipboardEvent, KeyboardEvent, useEffect, useRef, useState} from "react";
-import {Link, useNavigate} from "react-router-dom";
+import {Link, useNavigate, useSearchParams} from "react-router-dom";
 import {useCopy} from "../copy";
 import {Address, CurveInfo, useCurves} from "../hooks/curves";
 import {useActivity} from "../hooks/activity";
@@ -18,6 +18,7 @@ import {useCurveMeta} from "../hooks/meta";
 import {useNicknames} from "../hooks/nicknames";
 import {WalletLink} from "../components/WalletLink";
 import {useTitle} from "../lib/title";
+import {NonStandardTicker} from "../components/TickerBadge";
 
 // Layout note (390px): fluid padding, every text block is min-w-0 + truncate, and below lg each row
 // is a two-line flex row (no table), so nothing asks for more width than the viewport. The sort tabs
@@ -97,8 +98,11 @@ function CurveRow({c, stats, tsOf, now, imageUrl, change}: RowProps) {
                                 <StatusBadge c={c} />
                             </span>
                         </div>
-                        <div className="text-[12px] text-hanji-400 truncate">
-                            {c.symbol} · {unit}
+                        <div className="text-[12px] text-hanji-400 flex items-center gap-1.5 min-w-0">
+                            <span className="truncate">
+                                {c.symbol} · {unit}
+                            </span>
+                            <NonStandardTicker symbol={c.symbol} />
                         </div>
                     </div>
                 </div>
@@ -125,8 +129,9 @@ function CurveRow({c, stats, tsOf, now, imageUrl, change}: RowProps) {
                             <StatusBadge c={c} />
                         </span>
                     </div>
-                    <div className="text-[12px] text-hanji-400 truncate tabular-nums">
-                        {[c.symbol, tr.homeRows.verifiedShort(c.verifiedBuyerCount), ago].filter(Boolean).join(" · ")}
+                    <div className="text-[12px] text-hanji-400 flex items-center gap-1.5 min-w-0 tabular-nums">
+                        <span className="truncate">{[c.symbol, tr.homeRows.verifiedShort(c.verifiedBuyerCount), ago].filter(Boolean).join(" · ")}</span>
+                        <NonStandardTicker symbol={c.symbol} />
                     </div>
                     <div className="mt-1.5">
                         <Gauge committed={bps} target={10_000n} height={3} />
@@ -359,7 +364,9 @@ export default function Curves() {
     const meta = useCurveMeta(); // one request for every curve; no metadata on failure
     const [tab, setTab] = useState<Tab>("latest");
     const [period, setPeriod] = useState<SummaryWindow>(86400);
-    const [query, setQuery] = useState("");
+    // ?q= prefills the search (the token page's "other tokens with this ticker" link)
+    const [params] = useSearchParams();
+    const [query, setQuery] = useState(() => params.get("q") ?? "");
     // live trades (panel: 8, mobile line: the newest of them) and one bulk nickname lookup for both
     const live = useLiveRows(curves, 8);
     const liveNicks = useNicknames(live.filter((r) => !r.t.isDev).map((r) => r.t.trader));
