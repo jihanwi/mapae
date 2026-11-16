@@ -10,7 +10,7 @@ export const ko = {
     /** BCP 47 locale for numbers and dates */
     locale: "ko-KR",
     lang: {label: "언어", ko: "KO", en: "EN"},
-    /** Shown above the legacy v2 section when the UI is not Korean (empty in Korean). */
+    /** Shown above the offering section when the UI is not Korean (empty in Korean). */
     legacyNotice: "",
     common: {
         netError: "네트워크 응답이 없어요. 잠시 후 다시 시도해 주세요",
@@ -59,6 +59,23 @@ export const ko = {
         burned: (n: string) => `지금까지 ${n}개 소각됨`,
         goTrade: "거래하기 →",
         footnote: "초과 응모 시 전원에게 최소 수량을 먼저 배정하고, 나머지는 추첨으로 보충합니다 · 배정 계산은 누구나 재검증할 수 있습니다",
+        // W-T32: 새 팩토리에 공모가 0건일 때
+        emptyTitle: "아직 열린 공모가 없어요",
+        emptyNote: "공모가 열리면 여기에 표시돼요",
+        proceedsShort: (up: string, span: string) => `모금액 즉시 지급 ${up}% · 나머지 ${span} 잠금`,
+        proceedsAllUpfront: "모금액 즉시 지급 100%",
+    },
+    // W-T32: 이벤트 기록 읽기 상태 (거래 히스토리, 후원 피드, 리딤 카탈로그)
+    logs: {
+        failed: "기록을 불러오지 못했어요",
+        recentHours: (h: string) => `최근 약 ${h}시간`,
+        noTradesRecent: (h: string) => `최근 약 ${h}시간 안에는 거래가 없어요`,
+        noTrades: "아직 거래가 없어요",
+        noSponsorsRecent: (h: string) => `최근 약 ${h}시간 안에는 후원이 없어요`,
+        noSponsors: "아직 후원이 없어요. 첫 후원을 남겨 보세요",
+        noItemsRecent: (h: string) => `최근 약 ${h}시간 안에는 등록된 리딤이 없어요`,
+        noItems: "아직 등록된 리딤이 없어요",
+        partialNote: (h: string) => `최근 약 ${h}시간의 기록만 보여요`,
     },
     badge: {
         open: "응모중",
@@ -101,7 +118,28 @@ export const ko = {
         about: (who: string | null, qty: string) =>
             `${who ? `${who}의` : "이"} 토큰 공모예요. 공모 수량 ${qty}개를 단 한 번만 발행하고, 총공급은 정산 시점에 확정돼요. 이후 추가 발행은 불가능해요.`,
         aboutRedeem: "이 공모에는 리딤 항목이 있어요. 토큰을 소각해 리딤 카탈로그의 항목을 사용할 수 있고, 리딤에 사용된 토큰은 소각되어 총공급이 줄어요.",
-        aboutVesting: "발행자 배분 물량은 36개월 베스팅(6개월 클리프)으로 잠겨요.",
+        // W-T32: 기간과 클리프는 그 공모의 MapaeVesting 에서 읽는다 (고정 문구 없음)
+        aboutVesting: (dur: string, cliff: string | null) =>
+            `발행자 배분 물량은 ${dur}에 걸쳐 풀려요${cliff ? `. 처음 ${cliff} 동안은 풀리지 않아요` : ""}.`,
+        days: (n: string) => `${n}일`,
+        hours: (n: string) => `${n}시간`,
+        // W-T32: 모금액 지급 (ProceedsLock, 결정 56)
+        proceedsTitle: "모금액 지급",
+        proceedsTerms: (up: string, span: string) => `즉시 지급 ${up}% · 나머지는 ${span}에 걸쳐 지급`,
+        proceedsAllUpfront: "즉시 지급 100% · 정산 때 발행자에게 전액 지급",
+        proceedsCliff: (k: string) => `지급 시작까지 ${k}`,
+        proceedsUpfront: "즉시 지급액",
+        proceedsLocked: "잠긴 금액",
+        proceedsUnlocked: "지금까지 풀린 금액",
+        proceedsReleasable: "지금 찾을 수 있는 금액",
+        proceedsRemaining: "남은 금액",
+        proceedsUntilStart: (k: string) => `지급 시작까지 ${k} 남았어요`,
+        proceedsUntilEnd: (k: string) => `전액이 풀리기까지 ${k} 남았어요`,
+        proceedsDone: "잠긴 금액이 모두 풀렸어요",
+        releaseCta: "풀린 금액 찾아가기",
+        releaseLabel: "풀린 금액 찾아가기",
+        proceedsNote: "잠긴 금액은 정해진 일정에 따라 발행자에게만 지급돼요. 플랫폼은 이 금액을 옮길 수 없어요",
+        proceedsReadError: "지급 현황을 불러오지 못했어요",
     },
     membership: {
         title: "내 보유",
@@ -135,11 +173,7 @@ export const ko = {
         sponsorCta: "후원 보내기",
         feed: "후원 피드",
         feedBurned: (n: string) => `${n}개 소각`,
-        // 1-6/3-B: "<토큰심볼>:<id>" → 표시명, 미등록은 "리딤 #N" 폴백 (심볼로 매니저 구분해 id 충돌 방지)
-        names: {
-            "MAPA:2": "디지털 배지",
-            "MAPB:1": "디지털 배지",
-        } as Record<string, string>,
+        itemName: (id: string) => `리딤 #${id}`,
     },
     trade: {
         title: "거래",
@@ -155,7 +189,9 @@ export const ko = {
         priceImpact: "가격 영향", // 1-3a
         shallowPool: "테스트넷 얕은 풀이라 소액 체결에도 가격이 크게 움직여요", // 1-3b
         buyPlaceholder: "10,000", // 1-2: 매수 소액 예시
-        feeNote: "수수료 2% = 발행자 1% + 소각 0.5% + 유동성 0.5%",
+        // W-T32: 그 풀이 실제로 쓰는 요율 (FeeRouter 등급 요율 + 풀의 로열티·소각 몫)
+        feeNote: (total: string, royalty: string, burn: string, lp: string, platform: string) =>
+            `수수료 ${total}% = 발행자 ${royalty}% + 소각 ${burn}% + 유동성 ${lp}% + 플랫폼 ${platform}%`,
         history: "거래 히스토리",
         lpTrust: "유동성은 영구 잠금. LP 지분 전량이 0xdEaD 주소에 있어 누구도 회수할 수 없습니다", // C5
         swapCta: "스왑",
@@ -678,10 +714,6 @@ export const ko = {
     errorsV3: {
         NotVerified: "실명 인증이 필요해요",
         NotVerifiedCreator: "실명 인증이 필요해요",
-    },
-    creators: {
-        // 데모 발행자 표시명 (offering 주소 → 이름), 미등록 주소는 토큰명 사용
-        byOffering: {} as Record<string, {name: string; en: string}>,
     },
 };
 

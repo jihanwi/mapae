@@ -30,7 +30,7 @@ describe("offering copy is issuer-neutral (decision 55)", () => {
         if (v && typeof v === "object") return Object.values(v).flatMap(texts);
         return [];
     };
-    const scope = {heroTitle: ko.heroTitle, heroSub: ko.heroSub, nav: [ko.nav.offeringList, ko.nav.membership, ko.nav.redeem, ko.nav.trade], home: ko.home, badge: ko.badge, offering: ko.offering, membership: ko.membership, redeem: ko.redeem, trade: ko.trade};
+    const scope = {heroTitle: ko.heroTitle, heroSub: ko.heroSub, nav: [ko.nav.offeringList, ko.nav.membership, ko.nav.redeem, ko.nav.trade], home: ko.home, badge: ko.badge, offering: ko.offering, membership: ko.membership, redeem: ko.redeem, trade: ko.trade, logs: ko.logs};
     it.each(["크리에이터", "팬", "멤버십", "회원권"])("no %s", (word) => {
         expect(texts(scope).filter((t) => t.includes(word))).toEqual([]);
     });

@@ -1,10 +1,14 @@
 import {useEffect, useState} from "react";
 import {Link} from "react-router-dom";
+import {useReadContracts} from "wagmi";
+import {Abi} from "viem";
+import {ProceedsLockAbi} from "../contracts/abisV3L1";
+import {giwaSepolia} from "../config/chain";
 import {copy} from "../copy";
-import {useOfferings, useParticipantCount, OfferingInfo} from "../hooks";
+import {labelOf, useOfferings, useParticipantCounts, OfferingInfo} from "../hooks";
 import {Badge, Card, CardSkeleton, Gauge, Medallion, NetError, Stat, TextSkeleton} from "../components/ui";
 import {countdown, fmt} from "../lib/format";
-import {creatorOf} from "../lib/creators";
+import {bpsPct, spanText} from "../lib/proceedsText";
 import {DEFAULT_TITLE, useTitle} from "../lib/title";
 
 function useNow() {
@@ -16,10 +20,16 @@ function useNow() {
     return now;
 }
 
-function OfferingCard({o}: {o: OfferingInfo}) {
+/** Proceeds terms line for the list card (W-T32): upfront share and the lock length. */
+function ProceedsLine({o, lockDuration}: {o: OfferingInfo; lockDuration: bigint | undefined}) {
+    if (!o.proceedsLock) return <div className="text-[12px] text-hanji-400 mb-[18px]">{copy.home.proceedsAllUpfront}</div>;
+    if (lockDuration === undefined) return <div className="mb-[18px]" />;
+    return <div className="text-[12px] text-hanji-400 mb-[18px]">{copy.home.proceedsShort(bpsPct(o.proceedsUpfrontBps), spanText(lockDuration))}</div>;
+}
+
+function OfferingCard({o, participants, lockDuration}: {o: OfferingInfo; participants: number | undefined; lockDuration: bigint | undefined}) {
     const now = useNow();
-    const c = creatorOf(o);
-    const participants = useParticipantCount(o.address);
+    const c = labelOf(o);
     const live = !o.settled && !o.refunding && Number(o.deadline) * 1000 > now;
     const frozen = live && Number(o.deadline) * 1000 - now < 2 * 3600 * 1000;
     const ended = !o.settled && !o.refunding && !live; // P0 2-a: 마감 후 정산 전
@@ -27,10 +37,10 @@ function OfferingCard({o}: {o: OfferingInfo}) {
 
     const header = (
         <div className="flex items-center gap-3.5 mb-[18px]">
-            <Medallion char={c ? c.name[0] : "…"} active={live} />
+            <Medallion char={c ? [...c.name][0] : "…"} active={live} />
             <div className="flex-1 min-w-0">
-                <div className="text-[17px] font-bold">
-                    {c ? <>{c.name} <span className="text-hanji-400 font-normal">{c.en}</span></> : <TextSkeleton w={120} h={17} />}
+                <div className="text-[17px] font-bold break-words">
+                    {c ? <>{c.name} <span className="text-hanji-400 font-normal">{c.symbol}</span></> : <TextSkeleton w={120} h={17} />}
                 </div>
                 <div className="text-[12px] text-hanji-400 mt-0.5">{copy.home.verifiedCreator}</div>
             </div>
@@ -74,12 +84,13 @@ function OfferingCard({o}: {o: OfferingInfo}) {
             <Card className="hover:border-brass-600">
                 {header}
                 <div className="mb-2"><Gauge committed={o.totalCommitted} target={o.raiseTarget} /></div>
-                <div className="flex justify-between text-[13px] mb-[18px]">
+                <div className="flex justify-between text-[13px] mb-2">
                     <span className="text-hanji-400 tabular-nums">{fmt(o.totalCommitted, 0)} / {fmt(o.raiseTarget, 0)} KRWs</span>
                     <span className={`font-semibold ${pctNum > 100 ? "text-brass-400" : "text-hanji-400"}`}>
                         {pctNum.toFixed(0)}%{pctNum > 100 ? ` · ${copy.home.over}` : ""}
                     </span>
                 </div>
+                <ProceedsLine o={o} lockDuration={lockDuration} />
                 <div className="flex justify-between items-center pt-4 border-t border-ink-700 text-[13px] flex-wrap gap-2">
                     <span className="text-hanji-400">
                         {copy.home.price} <span className="text-hanji-100 font-semibold">{fmt(o.price, 0)} KRWs</span>{copy.home.perUnit}
@@ -104,7 +115,18 @@ export function computeBurned(o: OfferingInfo): bigint {
 
 export default function Home() {
     useTitle(DEFAULT_TITLE);
-    const {offerings, isLoading, isError, refetch} = useOfferings();
+    const {offerings, empty, isLoading, isError, refetch} = useOfferings();
+    const participants = useParticipantCounts(offerings.map((o) => o.address));
+    // lock length per offering: one multicall over every ProceedsLock in the list
+    const locks = offerings.map((o) => o.proceedsLock).filter((l): l is `0x${string}` => !!l);
+    const lockReads = useReadContracts({
+        contracts: locks.map((l) => ({address: l, abi: ProceedsLockAbi as Abi, functionName: "duration", chainId: giwaSepolia.id})),
+        query: {enabled: locks.length > 0},
+    });
+    const durationOf = (o: OfferingInfo) => {
+        const i = o.proceedsLock ? locks.indexOf(o.proceedsLock) : -1;
+        return i >= 0 ? (lockReads.data?.[i]?.result as bigint | undefined) : undefined;
+    };
     return (
         <div className="max-w-page mx-auto px-4 sm:px-8 pt-10 sm:pt-16 pb-16 sm:pb-20">
             <div className="mb-10 sm:mb-14">
@@ -126,10 +148,18 @@ export default function Home() {
             </div>
             {isError && offerings.length === 0 ? (
                 <NetError onRetry={refetch} />
+            ) : empty ? (
+                <div className="flex flex-wrap items-center gap-6 bg-ink-800 border border-ink-700 rounded-card p-5 sm:p-8">
+                    <Medallion char="馬" size={88} dashed />
+                    <div className="flex-1" style={{minWidth: 200}}>
+                        <div className="text-[17px] font-bold mb-1">{copy.home.emptyTitle}</div>
+                        <div className="text-[13px] text-hanji-400">{copy.home.emptyNote}</div>
+                    </div>
+                </div>
             ) : (
                 <div className="grid gap-4 sm:gap-5" style={{gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))"}}>
                     {isLoading && [1, 2, 3].map((i) => <CardSkeleton key={i} />)}
-                    {offerings.map((o) => <OfferingCard key={o.address} o={o} />)}
+                    {offerings.map((o) => <OfferingCard key={o.address} o={o} participants={participants.countOf(o.address)} lockDuration={durationOf(o)} />)}
                 </div>
             )}
             <p className="mt-12 mb-0 text-[12px] text-hanji-400 text-center">{copy.home.footnote}</p>

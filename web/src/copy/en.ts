@@ -7,7 +7,7 @@ const verifiedTraders = (n: number) => `${n} verified trader${n === 1 ? "" : "s"
 export const en = {
     locale: "en-US",
     lang: {label: "Language", ko: "KO", en: "EN"},
-    legacyNotice: "This section is a v2 demo and is available in Korean only.",
+    legacyNotice: "This section is available in Korean only.",
     common: {
         netError: "The network isn't responding. Try again in a moment.",
         retry: "Try again",
@@ -48,6 +48,7 @@ export const en = {
     membership: ko.membership,
     redeem: ko.redeem,
     trade: ko.trade,
+    logs: ko.logs,
     curve: {
         listTitle: "Tokens",
         listSub: `For the first ${PRIORITY_MINUTES} minutes after launch, only verified wallets can buy. After that, anyone can. When a token sells out, it graduates to a pool in the same transaction.`,
@@ -528,5 +529,4 @@ export const en = {
         NotVerifiedCreator: "Verification required.",
     },
     // legacy v2 section, Korean only
-    creators: ko.creators,
 } satisfies Copy;

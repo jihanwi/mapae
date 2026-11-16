@@ -5,10 +5,9 @@ import {useSwitchToGiwa} from "./hooks/useSwitchToGiwa";
 import {OpenInWalletApp, WalletPicker} from "./components/WalletPicker";
 import {giwaSepolia} from "./config/chain";
 import {useCopy, useLang, copy} from "./copy";
-import {ADDR} from "./contracts/addresses";
-import {MockKRWAbi, MockDojangAbi} from "./contracts/abis";
 import {ADDR_V3} from "./contracts/addressesV3";
-import {MockKRWV3Abi} from "./contracts/abisV3";
+import {ADDR_L1} from "./contracts/addressesV3L1";
+import {MockDojangV3Abi, MockKRWV3Abi} from "./contracts/abisV3";
 import {useOnboarding, useRedeemPeripherals} from "./hooks";
 import {redeemTabVisible} from "./lib/redeemTab";
 import {ToastRouteReset, useTx, useGlobalTxBusy} from "./components/tx";
@@ -19,7 +18,7 @@ import {useNickname} from "./hooks/comments";
 import {ActivityProvider} from "./hooks/activity";
 import {PokeWatcher} from "./hooks/poke";
 
-/** Fixed-price offering section (v1/v2 contracts): /offerings and the legacy pages under it. */
+/** Fixed-price offering section (v3.2-L1 MapaeFactory, W-T32): /offerings and the pages under it. */
 export function isOfferingSection(pathname: string): boolean {
     return ["/offerings", "/offering/", "/membership", "/redeem", "/trade"].some((p) => pathname === p || pathname.startsWith(p.endsWith("/") ? p : `${p}/`));
 }
@@ -70,7 +69,7 @@ function Nav() {
     const wc = useWalletConnect();
     const {disconnect} = useDisconnect();
     const {switchToGiwa} = useSwitchToGiwa();
-    const {krwBalance, ethBalance} = useOnboarding(); // legacy (ADDR) balances
+    const {krwBalance, ethBalance} = useOnboarding(); // offering section (ADDR_L1) balances
     // v3 screens show the v3 MockKRW balance (ADDR_V3); the two deployments are never mixed.
     const krwV3 = useReadContract({
         address: ADDR_V3.mockKRW,
@@ -85,11 +84,11 @@ function Nav() {
     const globalBusy = useGlobalTxBusy();
     const wrongChain = isConnected && chainId !== giwaSepolia.id;
 
-    // 상시 KRWs 재충전 (v1/v2 ADDR 기반) — 공모 섹션에서만 노출
+    // 상시 KRWs 재충전 (v3.2-L1 결제 토큰 ADDR_L1.mockKRW) — 공모 섹션에서만 노출
     const faucetBtn = legacy && isConnected && !wrongChain ? (
         <button
             onClick={() => void run(tr.nav.faucetTxLabel, () =>
-                writeContractAsync({address: ADDR.mockKRW, abi: MockKRWAbi, functionName: "faucet", args: [tr.onboarding.faucetAmount], chainId: giwaSepolia.id}))}
+                writeContractAsync({address: ADDR_L1.mockKRW, abi: MockKRWV3Abi, functionName: "faucet", args: [tr.onboarding.faucetAmount], chainId: giwaSepolia.id}))}
             disabled={busy || globalBusy || ethBalance === 0n}
             aria-label={tr.nav.faucetTitle}
             title={ethBalance === 0n ? tr.onboarding.needGas : tr.nav.faucetTitle}
@@ -198,7 +197,7 @@ function Nav() {
 function OnboardingStep({done, n, label, txLabel, tx, blocked}: {
     done: boolean; n: string; label: string; txLabel: string; tx: () => Promise<`0x${string}`>; blocked?: boolean;
 }) {
-    const tr = copy; // legacy v2 section, Korean only
+    const tr = copy; // offering section, Korean only
     const {run, busy, phase} = useTx();
     const globalBusy = useGlobalTxBusy();
     const text = phase === "wallet" ? tr.tx.pendingWallet : phase === "confirming" ? tr.tx.pendingTx : label;
@@ -213,7 +212,7 @@ function OnboardingStep({done, n, label, txLabel, tx, blocked}: {
 }
 
 function OnboardingStrip() {
-    const tr = copy; // legacy v2 section, Korean only
+    const tr = copy; // offering section, Korean only
     const {isConnected, chainId} = useAccount();
     const {krwBalance, verified, ethBalance, isError} = useOnboarding();
     const {writeContractAsync} = useWriteContract();
@@ -233,10 +232,10 @@ function OnboardingStrip() {
                 <div className="flex items-center gap-x-5 gap-y-1 flex-wrap text-[13px]">
                     <span className="text-hanji-400 font-semibold">{tr.onboarding.title}</span>
                     <OnboardingStep done={krwBalance > 0n} blocked={noGas} n="1" label={tr.onboarding.faucet} txLabel="테스트 KRWs 받기"
-                        tx={() => writeContractAsync({address: ADDR.mockKRW, abi: MockKRWAbi, functionName: "faucet", args: [tr.onboarding.faucetAmount], chainId: giwaSepolia.id})} />
+                        tx={() => writeContractAsync({address: ADDR_L1.mockKRW, abi: MockKRWV3Abi, functionName: "faucet", args: [tr.onboarding.faucetAmount], chainId: giwaSepolia.id})} />
                     <span className="text-ink-700 hidden sm:inline">→</span>
                     <OnboardingStep done={verified} blocked={noGas} n="2" label={tr.onboarding.verify} txLabel="실명 인증 (데모)"
-                        tx={() => writeContractAsync({address: ADDR.mockDojang, abi: MockDojangAbi, functionName: "selfVerify", chainId: giwaSepolia.id})} />
+                        tx={() => writeContractAsync({address: ADDR_L1.mockDojang, abi: MockDojangV3Abi, functionName: "selfVerify", chainId: giwaSepolia.id})} />
                 </div>
             </div>
         </div>
@@ -251,7 +250,7 @@ export default function App() {
             <NicknameProvider>
                 <ToastRouteReset pathname={pathname} />
                 <Nav />
-                {/* legacy v2 section: Korean-only notice in other languages, ADDR-based strip */}
+                {/* offering section: Korean-only notice in other languages, ADDR_L1-based strip */}
                 {isOfferingSection(pathname) && tr.legacyNotice && (
                     <div className="bg-ink-900 border-b border-ink-700">
                         <div className="max-w-page mx-auto px-4 sm:px-8 py-2 text-[13px] text-hanji-400">{tr.legacyNotice}</div>
