@@ -675,6 +675,18 @@ export async function insertFollow(sql: Sql, follower: string, target: string, v
     );
 }
 
+/** State right after a follow write (the POST answer): target's verified followers, follower's
+ *  following count, relation exists. One query, never cached. */
+export async function afterFollow(sql: Sql, follower: string, target: string): Promise<{isFollowing: boolean; targetFollowers: number; myFollowing: number}> {
+    const rows = (await sql.query(
+        `SELECT EXISTS (SELECT 1 FROM mapae_follows WHERE follower = $1 AND target = $2) AS "isFollowing",
+                (SELECT count(*)::int FROM mapae_follows WHERE target = $2 AND verified) AS "targetFollowers",
+                (SELECT count(*)::int FROM mapae_follows WHERE follower = $1) AS "myFollowing"`,
+        [follower, target]
+    )) as {isFollowing: boolean; targetFollowers: number; myFollowing: number}[];
+    return rows[0];
+}
+
 export async function deleteFollow(sql: Sql, follower: string, target: string): Promise<void> {
     await sql.query(`DELETE FROM mapae_follows WHERE follower = $1 AND target = $2`, [follower, target]);
 }

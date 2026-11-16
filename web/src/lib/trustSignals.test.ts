@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {marksByCandle, MarkerTrade, pctText, ratioBps, ServerSignals, trustView} from "./trustSignals";
+import {markSources, marksByCandle, MarkerTrade, pctText, ratioBps, ServerSignals, trustView} from "./trustSignals";
 
 const E18 = 10n ** 18n;
 const tok = (n: number) => (BigInt(n) * E18).toString();
@@ -86,5 +86,26 @@ describe("chart marks per candle", () => {
     it("trades outside the shown candles are dropped", () => {
         const m = marksByCandle([t(10, "buy", "dev"), t(10_000, "sell", "me")], [300, 600], 300);
         expect(m.size).toBe(0);
+    });
+});
+
+describe("chart mark sources", () => {
+    const DEV = "0x00000000000000000000000000000000000000De";
+    const ME = "0x00000000000000000000000000000000000000a1";
+    it("a wallet that is not the Dev: each toggle drives its own marks", () => {
+        expect(markSources({dev: DEV, me: ME, showDev: true, showMine: true})).toEqual({dev: true, mine: true});
+        expect(markSources({dev: DEV, me: ME, showDev: false, showMine: true})).toEqual({dev: false, mine: true});
+        expect(markSources({dev: DEV, me: ME, showDev: true, showMine: false})).toEqual({dev: true, mine: false});
+    });
+    it("the Dev's own wallet: one D per trade while either toggle is on, none with both off", () => {
+        const me = DEV.toLowerCase();
+        expect(markSources({dev: DEV, me, showDev: true, showMine: true})).toEqual({dev: true, mine: false});
+        expect(markSources({dev: DEV, me, showDev: false, showMine: true})).toEqual({dev: true, mine: false});
+        expect(markSources({dev: DEV, me, showDev: true, showMine: false})).toEqual({dev: true, mine: false});
+        expect(markSources({dev: DEV, me, showDev: false, showMine: false})).toEqual({dev: false, mine: false});
+    });
+    it("no wallet connected: Dev marks only", () => {
+        expect(markSources({dev: DEV, me: undefined, showDev: true, showMine: true})).toEqual({dev: true, mine: false});
+        expect(markSources({dev: DEV, me: undefined, showDev: false, showMine: true})).toEqual({dev: false, mine: false});
     });
 });

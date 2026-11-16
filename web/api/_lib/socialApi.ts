@@ -31,6 +31,7 @@ export function followDeps(sql: db.Sql): FollowDeps {
             followState: (f, t) => db.followState(sql, f, t),
             insertFollow: (f, t, v, ts) => db.insertFollow(sql, f, t, v, ts),
             deleteFollow: (f, t) => db.deleteFollow(sql, f, t),
+            afterFollow: (f, t) => db.afterFollow(sql, f, t),
         },
         chain: socialChain(),
         nowSec: Math.floor(Date.now() / 1000),

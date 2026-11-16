@@ -11,7 +11,7 @@ import {useCandles, useChainSummary} from "../hooks/chainData";
 import {useActivity} from "../hooks/activity";
 import {useWalletTrades, WalletTrade} from "../hooks/wallet";
 import {Trade, tradePriceWad} from "../lib/activity";
-import {CandleMarks, MarkerTrade, marksByCandle} from "../lib/trustSignals";
+import {CandleMarks, MarkerTrade, markSources, marksByCandle} from "../lib/trustSignals";
 import {AREA_GAP, barIndexAt, connectOpens, fitView, layoutCandles, liveFrom, LiveTrade, mergeLiveCandles, panBy, parseCandles, TIME_LABEL_W, timeLabels, toMarketCap, View, zoomAt} from "../lib/candles";
 import {fmtAxisMcap, fmtAxisPrice, fmtRound} from "../lib/format";
 
@@ -148,9 +148,11 @@ export function CandleChart({curve, unit, virtualQuote, graduated = false, dev}:
     const indexed = liveFrom({candlesOk: q.isSuccess, serverCount: server.length, indexedBlock: summary.isSuccess ? summary.data.indexedBlock : undefined});
     const priced = connectOpens(indexed === undefined ? server : mergeLiveCandles(server, live, indexed, interval));
     const candles = axis === "mcap" ? toMarketCap(priced) : priced;
+    // the Dev's own wallet: one "D" per trade (never D and B / S for the same trade)
+    const sources = markSources({dev, me, showDev, showMine});
     const markTrades = [
-        ...(showDev ? walletMarks(devTrades.data?.pages, activity.trades, curve, dev, "dev", activity.tsOf, true) : []),
-        ...(showMine ? walletMarks(myTrades.data?.pages, activity.trades, curve, me, "me", activity.tsOf, false) : []),
+        ...(sources.dev ? walletMarks(devTrades.data?.pages, activity.trades, curve, dev, "dev", activity.tsOf, true) : []),
+        ...(sources.mine ? walletMarks(myTrades.data?.pages, activity.trades, curve, me, "me", activity.tsOf, false) : []),
     ];
     const marks: Map<number, CandleMarks> = marksByCandle(
         markTrades,

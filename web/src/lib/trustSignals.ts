@@ -92,3 +92,12 @@ export function marksByCandle(trades: readonly MarkerTrade[], candleTimes: reado
     }
     return out;
 }
+
+/** Which mark sources the chart draws. A connected wallet that is the Dev gets one "D" per trade
+ *  (its trades are the Dev's), drawn while either toggle is on; otherwise Dev marks follow the
+ *  "Dev trades" toggle and B / S marks the "My trades" toggle (with a wallet connected). */
+export function markSources(p: {dev: string | undefined; me: string | undefined; showDev: boolean; showMine: boolean}): {dev: boolean; mine: boolean} {
+    const meIsDev = !!p.me && !!p.dev && p.me.toLowerCase() === p.dev.toLowerCase();
+    if (meIsDev) return {dev: p.showDev || p.showMine, mine: false};
+    return {dev: p.showDev && !!p.dev, mine: p.showMine && !!p.me};
+}

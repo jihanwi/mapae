@@ -198,7 +198,11 @@ export interface FollowDb {
     followState(follower: Address, target: Address): Promise<{exists: boolean; count: number}>;
     insertFollow(follower: Address, target: Address, verified: boolean, ts: number): Promise<void>;
     deleteFollow(follower: Address, target: Address): Promise<void>;
+    /** After a write, one query: the target's verified followers, the follower's following count,
+     *  and whether the relation exists. Returned by POST so the page never needs the cached GET. */
+    afterFollow(follower: Address, target: Address): Promise<FollowAfter>;
 }
+export type FollowAfter = {isFollowing: boolean; targetFollowers: number; myFollowing: number};
 export type FollowDeps = {db: FollowDb; chain: Pick<SocialChain, "isVerified">; nowSec: number};
 
 const ADDR = /^0x[0-9a-fA-F]{40}$/;
@@ -218,14 +222,18 @@ export async function handleFollow(body: unknown, deps: FollowDeps): Promise<Res
     if (!r.ok) return err(401, r.code);
     const target = lc(b.target);
     if (target === r.wallet) return err(400, "self_follow");
+    const done = async (): Promise<Result> => {
+        const a = await deps.db.afterFollow(r.wallet, target);
+        return {status: 200, body: {following: a.isFollowing, ...a}};
+    };
     if (kind === "unfollow") {
         await deps.db.deleteFollow(r.wallet, target);
-        return {status: 200, body: {following: false}};
+        return done();
     }
     const st = await deps.db.followState(r.wallet, target);
-    if (st.exists) return {status: 200, body: {following: true}};
+    if (st.exists) return done();
     if (st.count >= FOLLOW_LIMIT) return err(409, "follow_limit", {limit: FOLLOW_LIMIT});
     const verified = await deps.chain.isVerified(r.wallet);
     await deps.db.insertFollow(r.wallet, target, verified, deps.nowSec);
-    return {status: 200, body: {following: true}};
+    return done();
 }
