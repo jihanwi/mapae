@@ -10,7 +10,7 @@ export const ACTION_SKEW_SEC = 5 * 60;
 /** Clock tolerance when checking that a delegation does not exceed 7 days from now. */
 export const SESSION_SKEW_SEC = 5 * 60;
 
-export type SocialAction = "set-nickname" | "post-comment" | "delete-comment";
+export type SocialAction = "set-nickname" | "post-comment" | "delete-comment" | "follow" | "unfollow";
 
 export type SessionProof = {delegate: string; expires: number; signature: string};
 export type ActionProof = {issuedAt: number; signature: string};
@@ -23,10 +23,12 @@ export function buildSessionMessage(m: {wallet: string; delegate: string; expire
 export function actionPayload(action: "set-nickname", f: {wallet: string; nickname: string}): string;
 export function actionPayload(action: "post-comment", f: {wallet: string; curve: string; body: string}): string;
 export function actionPayload(action: "delete-comment", f: {wallet: string; id: number}): string;
+export function actionPayload(action: "follow" | "unfollow", f: {wallet: string; target: string}): string;
 export function actionPayload(action: SocialAction, f: Record<string, unknown>): string {
     const wallet = String(f.wallet).toLowerCase();
     if (action === "set-nickname") return JSON.stringify({wallet, nickname: f.nickname});
     if (action === "post-comment") return JSON.stringify({wallet, curve: String(f.curve).toLowerCase(), body: f.body});
+    if (action === "follow" || action === "unfollow") return JSON.stringify({wallet, target: String(f.target).toLowerCase()});
     return JSON.stringify({wallet, id: f.id});
 }
 

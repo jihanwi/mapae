@@ -185,3 +185,47 @@ export function parseCommentQuery(p: URLSearchParams): {curve: Address; before: 
     if (limit !== null && (!/^\d+$/.test(limit) || Number(limit) < 1 || Number(limit) > 50)) return null;
     return {curve: lc(curve), before: before === null ? undefined : Number(before), limit: limit === null ? 30 : Number(limit)};
 }
+
+// ---------------------------------------------------------------------------------------------
+// Follows (decision 53). Anyone with a session may follow; the follower's real-name status at
+// follow time is stored, and only verified follows count as followers on profiles.
+// ---------------------------------------------------------------------------------------------
+
+export const FOLLOW_LIMIT = 500;
+
+export interface FollowDb {
+    /** Whether follower already follows target, and how many wallets follower follows (one query). */
+    followState(follower: Address, target: Address): Promise<{exists: boolean; count: number}>;
+    insertFollow(follower: Address, target: Address, verified: boolean, ts: number): Promise<void>;
+    deleteFollow(follower: Address, target: Address): Promise<void>;
+}
+export type FollowDeps = {db: FollowDb; chain: Pick<SocialChain, "isVerified">; nowSec: number};
+
+const ADDR = /^0x[0-9a-fA-F]{40}$/;
+
+/** POST /api/profile/follow {action: "follow" | "unfollow", target, wallet, session, action proof
+ *  in `proof`}. Order: shape, session (steps 2-4), self check, then the DB / chain. Idempotent: an
+ *  existing follow answers 200 unchanged; unfollowing a missing relation answers 200. A failed
+ *  isVerified read throws (the caller answers 503); a follow is never stored as unverified for it. */
+export async function handleFollow(body: unknown, deps: FollowDeps): Promise<Result> {
+    const b = asObj(body);
+    const kind = b?.action;
+    if (!b || (kind !== "follow" && kind !== "unfollow") || typeof b.target !== "string" || !ADDR.test(b.target) || !authShapeOk(b.wallet, b.session, b.proof)) {
+        return err(400, "bad_request");
+    }
+    const payload = actionPayload(kind, {wallet: String(b.wallet), target: b.target});
+    const r = await verifyAuth({wallet: String(b.wallet), action: kind, payload, session: b.session as SessionProof, proof: b.proof as ActionProof}, deps.nowSec);
+    if (!r.ok) return err(401, r.code);
+    const target = lc(b.target);
+    if (target === r.wallet) return err(400, "self_follow");
+    if (kind === "unfollow") {
+        await deps.db.deleteFollow(r.wallet, target);
+        return {status: 200, body: {following: false}};
+    }
+    const st = await deps.db.followState(r.wallet, target);
+    if (st.exists) return {status: 200, body: {following: true}};
+    if (st.count >= FOLLOW_LIMIT) return err(409, "follow_limit", {limit: FOLLOW_LIMIT});
+    const verified = await deps.chain.isVerified(r.wallet);
+    await deps.db.insertFollow(r.wallet, target, verified, deps.nowSec);
+    return {status: 200, body: {following: true}};
+}

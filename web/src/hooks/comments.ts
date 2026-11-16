@@ -14,12 +14,12 @@ export class ApiError extends Error {
     }
 }
 
-async function getJson<T>(path: string): Promise<T> {
+export async function getJson<T>(path: string): Promise<T> {
     const r = await fetch(`${API_BASE}${path}`);
     if (!r.ok) throw new ApiError(r.status === 503 ? "unavailable" : `http_${r.status}`);
     return (await r.json()) as T;
 }
-async function postJson<T>(path: string, body: unknown): Promise<T> {
+export async function postJson<T>(path: string, body: unknown): Promise<T> {
     let r: Response;
     try {
         r = await fetch(`${API_BASE}${path}`, {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify(body)});
@@ -71,7 +71,7 @@ export function removeComment(data: Pages | undefined, id: number): Pages | unde
 const now = () => Math.floor(Date.now() / 1000);
 
 /** Wallet-signature cancellations surface as "rejected". */
-async function withSession<T>(ensure: () => Promise<T>): Promise<T> {
+export async function withSession<T>(ensure: () => Promise<T>): Promise<T> {
     try {
         return await ensure();
     } catch (e) {

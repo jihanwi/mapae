@@ -95,6 +95,15 @@ const SCHEMA = [
     // wallet profile (/api/chain/wallet, /api/chain/wallet-trades)
     `CREATE INDEX IF NOT EXISTS mapae_trades_trader_ts ON mapae_trades (trader, ts DESC)`,
     `CREATE INDEX IF NOT EXISTS mapae_transfers_to ON mapae_transfers (to_addr)`,
+    // decision 53: public follows; verified = the follower's real-name status at follow time
+    `CREATE TABLE IF NOT EXISTS mapae_follows (
+        follower text NOT NULL,
+        target text NOT NULL,
+        verified boolean NOT NULL,
+        ts bigint NOT NULL,
+        PRIMARY KEY (follower, target)
+    )`,
+    `CREATE INDEX IF NOT EXISTS mapae_follows_target ON mapae_follows (target)`,
 ];
 
 export async function ensureSchema(sql: Sql): Promise<void> {
@@ -644,4 +653,64 @@ export async function hideComment(sql: Sql, id: number, hidden: boolean): Promis
 export async function curveName(sql: Sql, curve: string, factory: string): Promise<{name: string; symbol: string} | null> {
     const rows = (await sql.query(`SELECT name, symbol FROM mapae_curves WHERE curve = $1 AND factory = $2`, [curve.toLowerCase(), factory.toLowerCase()])) as {name: string; symbol: string}[];
     return rows[0] ?? null;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Follows and the feed (decision 53; lowercase addresses)
+// ---------------------------------------------------------------------------------------------
+
+export async function followState(sql: Sql, follower: string, target: string): Promise<{exists: boolean; count: number}> {
+    const rows = (await sql.query(
+        `SELECT count(*)::int AS n, bool_or(target = $2) AS e FROM mapae_follows WHERE follower = $1`,
+        [follower, target]
+    )) as {n: number; e: boolean | null}[];
+    return {exists: rows[0]?.e === true, count: rows[0]?.n ?? 0};
+}
+
+export async function insertFollow(sql: Sql, follower: string, target: string, verified: boolean, ts: number): Promise<void> {
+    await sql.query(
+        `INSERT INTO mapae_follows (follower, target, verified, ts) VALUES ($1, $2, $3::boolean, $4::bigint)
+         ON CONFLICT (follower, target) DO NOTHING`,
+        [follower, target, verified, ts]
+    );
+}
+
+export async function deleteFollow(sql: Sql, follower: string, target: string): Promise<void> {
+    await sql.query(`DELETE FROM mapae_follows WHERE follower = $1 AND target = $2`, [follower, target]);
+}
+
+/** Verified followers of `wallet`, wallets it follows, and whether `viewer` follows it (null
+ *  without a viewer), in one query. */
+export async function followCounts(sql: Sql, wallet: string, viewer: string | null): Promise<{followers: number; following: number; isFollowing: boolean | null}> {
+    const rows = (await sql.query(
+        `SELECT (SELECT count(*)::int FROM mapae_follows WHERE target = $1 AND verified) AS followers,
+                (SELECT count(*)::int FROM mapae_follows WHERE follower = $1) AS following,
+                CASE WHEN $2::text IS NULL THEN NULL
+                     ELSE EXISTS (SELECT 1 FROM mapae_follows WHERE follower = $2::text AND target = $1) END AS "isFollowing"`,
+        [wallet, viewer]
+    )) as {followers: number; following: number; isFollowing: boolean | null}[];
+    return rows[0];
+}
+
+export const FEED_PAGE = 50;
+export type FeedOut = WalletTradeOut & {name: string; nickname: string | null};
+
+/** Trades of every wallet `wallet` follows, newest first, one page (FEED_PAGE), current factory.
+ *  One statement: trader IN (follows of wallet, PK prefix) drives mapae_trades_trader_ts
+ *  (trader, ts DESC) per followed wallet; the newest FEED_PAGE are then taken by ts. */
+export async function feed(sql: Sql, wallet: string, factory: string, before: bigint | undefined): Promise<FeedOut[]> {
+    return (await sql.query(
+        `SELECT t.tx, t.log_index AS "logIndex", t.side, t.venue, t.trader, t.is_dev AS "isDev",
+                t.quote_amount::text AS "quoteAmount", t.token_amount::text AS "tokenAmount",
+                div(t.quote_amount * 1000000000000000000::numeric, t.token_amount)::text AS "priceWad",
+                t.ts::text AS ts, t.block::text AS block, t.verified, t.curve, m.symbol, m.name, n.nickname
+         FROM mapae_trades t
+         JOIN mapae_curves m ON m.curve = t.curve AND m.factory = $2
+         LEFT JOIN mapae_nicknames n ON n.address = t.trader
+         WHERE t.trader IN (SELECT f.target FROM mapae_follows f WHERE f.follower = $1)
+           AND ($3::bigint IS NULL OR t.ts < $3::bigint)
+         ORDER BY t.ts DESC, t.block DESC, t.log_index DESC
+         LIMIT $4`,
+        [wallet, factory.toLowerCase(), before === undefined ? null : before.toString(), FEED_PAGE]
+    )) as FeedOut[];
 }

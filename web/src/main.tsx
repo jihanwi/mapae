@@ -12,6 +12,7 @@ import Curves from "./pages/Curves";
 import Token from "./pages/Token";
 import Wallet from "./pages/Wallet";
 import Create from "./pages/Create";
+import Feed from "./pages/Feed";
 import Offering from "./pages/Offering";
 import Membership from "./pages/Membership";
 import Redeem from "./pages/Redeem";
@@ -31,6 +32,7 @@ const router = createHashRouter([
             {path: "t/:curve", element: <Token />}, // v3 token page
             {path: "w/:address", element: <Wallet />}, // public wallet profile
             {path: "create", element: <Create />}, // v3 curve creation
+            {path: "feed", element: <Feed />}, // trades of followed wallets (decision 53)
             {path: "offerings", element: <Home />}, // legacy fixed-price offerings (was "/")
             {path: "offering/:addr", element: <Offering />},
             {path: "membership", element: <Membership />},

@@ -2,7 +2,7 @@
 import * as db from "./db.js";
 import {socialChain} from "./chain.js";
 import {cors, forbiddenOrigin, json, preflight} from "./http.js";
-import type {Result, SocialDeps} from "./social.js";
+import type {FollowDeps, Result, SocialDeps} from "./social.js";
 
 export const MAX_SOCIAL_BODY = 16 * 1024;
 
@@ -19,6 +19,18 @@ export function socialDeps(sql: db.Sql): SocialDeps {
             deleteComment: (i, a) => db.deleteComment(sql, i, a),
             hideComment: (i, h) => db.hideComment(sql, i, h),
             listComments: (c, b, l) => db.listComments(sql, c, b, l),
+        },
+        chain: socialChain(),
+        nowSec: Math.floor(Date.now() / 1000),
+    };
+}
+
+export function followDeps(sql: db.Sql): FollowDeps {
+    return {
+        db: {
+            followState: (f, t) => db.followState(sql, f, t),
+            insertFollow: (f, t, v, ts) => db.insertFollow(sql, f, t, v, ts),
+            deleteFollow: (f, t) => db.deleteFollow(sql, f, t),
         },
         chain: socialChain(),
         nowSec: Math.floor(Date.now() / 1000),
