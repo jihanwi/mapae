@@ -28,7 +28,7 @@ import {
     fillVerified,
     verifiedLookupTargets,
 } from "./indexer.js";
-import {curveList, holderSignals, INDEXER_STATE_ID, LIST_MAX, loadCurves, PokeClaim, POKE_GAP_SEC, readNextBlock, readState, Sql, trades as tradesQuery, walletTradeRows, walletTrades, writeRange} from "./db.js";
+import {curveList, feed, FEED_PAGE, followCounts, holderSignals, INDEXER_STATE_ID, LIST_MAX, loadCurves, PokeClaim, POKE_GAP_SEC, readNextBlock, readState, Sql, trades as tradesQuery, walletTradeRows, walletTrades, writeRange} from "./db.js";
 import {handlePoke} from "./poke.js";
 import {paramsAllowed} from "./chainApi.js";
 
@@ -316,6 +316,34 @@ describe("db: v3.1 cursor row and factory filter", () => {
         expect(seen[2].text).toContain("WHERE factory = $1");
         const state = seen.find((q) => q.text.includes("mapae_indexer_state (id"))!;
         expect(state.params).toEqual(["5", "7", 33]);
+    });
+});
+
+describe("db: follows and feed (decision 53)", () => {
+    const capture = () => {
+        const seen: {text: string; params: unknown[]}[] = [];
+        const sql = {query: (text: string, params: unknown[] = []) => (seen.push({text, params}), Promise.resolve([{followers: 1, following: 2, isFollowing: null}]))} as unknown as Sql;
+        return {sql, seen};
+    };
+    it("feed: one statement over the followed wallets, before is exclusive, 50 per page", async () => {
+        const {sql, seen} = capture();
+        await feed(sql, ALICE, FACTORY, undefined);
+        await feed(sql, ALICE, FACTORY, 1_700_000_000n);
+        expect(seen).toHaveLength(2);
+        expect(seen[0].params).toEqual([ALICE, FACTORY, null, FEED_PAGE]);
+        expect(seen[1].params).toEqual([ALICE, FACTORY, "1700000000", 50]);
+        const q = seen[0].text;
+        expect(q).toContain("t.trader IN (SELECT f.target FROM mapae_follows f WHERE f.follower = $1)");
+        expect(q).toContain("($3::bigint IS NULL OR t.ts < $3::bigint)");
+        expect(q).toContain("ORDER BY t.ts DESC, t.block DESC, t.log_index DESC");
+        expect(q).toContain("LEFT JOIN mapae_nicknames n ON n.address = t.trader");
+    });
+    it("counts: verified followers only, following all, isFollowing only with a viewer", async () => {
+        const {sql, seen} = capture();
+        await followCounts(sql, ALICE, null);
+        expect(seen[0].params).toEqual([ALICE, null]);
+        expect(seen[0].text).toContain("WHERE target = $1 AND verified");
+        expect(seen[0].text).toContain("WHERE follower = $1) AS following");
     });
 });
 

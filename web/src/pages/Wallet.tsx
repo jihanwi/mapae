@@ -32,6 +32,7 @@ import {devFeeUnit} from "../lib/devFees";
 import {CurveSaleAbi} from "../contracts/abisV3";
 import {useNicknameModal} from "../components/NicknameModal";
 import {pctLabel, quoteUnit} from "./Curves";
+import {FollowBar} from "../components/FollowBar";
 
 type Address = `0x${string}`;
 const lc = (a: string) => a.toLowerCase() as Address;
@@ -365,6 +366,7 @@ function WalletView({address}: {address: Address}) {
                     <CopyAddress address={address} label={`${shortAddr(address)} ${tr.tokenPage.copy}`} text={nick ? undefined : tr.walletPage.copyAddress} />
                     <ExtLink href={explorerAddr(address)}>{tr.walletPage.explorer}</ExtLink>
                 </div>
+                <FollowBar target={address} />
             </div>
             {/* my profile only: WETH from selling ETH-paired tokens, and the unwrap button */}
             {own && <UnwrapWethBand owner={address} />}

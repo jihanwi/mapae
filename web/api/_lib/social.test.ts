@@ -9,6 +9,9 @@ import {
     handleHideComment,
     handlePostComment,
     handleSetNickname,
+    handleFollow,
+    FOLLOW_LIMIT,
+    FollowDeps,
     nicknameProblem,
     NICK_COOLDOWN_SEC,
     parseCommentQuery,
@@ -183,5 +186,79 @@ describe("comments", () => {
         expect(parseCommentQuery(new URLSearchParams(`curve=${CURVE}&before=12&limit=50`))).toEqual({curve: CURVE, before: 12, limit: 50});
         expect(parseCommentQuery(new URLSearchParams(`curve=${CURVE}&limit=51`))).toBeNull();
         expect(parseCommentQuery(new URLSearchParams(`curve=0x12`))).toBeNull();
+    });
+});
+
+describe("follow (decision 53)", () => {
+    const T = ("0x" + "b0".repeat(20)) as Address;
+    function followDeps(o: {exists?: boolean; count?: number; verified?: boolean; verifyFails?: boolean} = {}) {
+        const calls: string[] = [];
+        const stored: {verified: boolean}[] = [];
+        const deps: FollowDeps = {
+            db: {
+                followState: async () => (calls.push("state"), {exists: o.exists ?? false, count: o.count ?? 0}),
+                insertFollow: async (_f, _t, verified) => void (calls.push("insert"), stored.push({verified})),
+                deleteFollow: async () => void calls.push("delete"),
+            },
+            chain: {
+                isVerified: async () => {
+                    calls.push("isVerified");
+                    if (o.verifyFails) throw new Error("rpc down");
+                    return o.verified ?? true;
+                },
+            },
+            nowSec: NOW,
+        };
+        return {deps, calls, stored};
+    }
+    async function body(action: "follow" | "unfollow", target: string = T, o: {signedTarget?: string; signedAction?: "follow" | "unfollow"} = {}) {
+        const payload = actionPayload(o.signedAction ?? action, {wallet: W, target: o.signedTarget ?? target});
+        return {action, target, wallet: W, session: await sessionProof(), proof: await actionProof(o.signedAction ?? action, payload)};
+    }
+    it("follows and stores the follower's real-name status (unverified wallets may follow too)", async () => {
+        const a = followDeps({verified: true});
+        expect(await handleFollow(await body("follow"), a.deps)).toEqual({status: 200, body: {following: true}});
+        expect(a.stored).toEqual([{verified: true}]);
+        const b = followDeps({verified: false});
+        expect((await handleFollow(await body("follow"), b.deps)).status).toBe(200);
+        expect(b.stored).toEqual([{verified: false}]);
+    });
+    it("refuses to follow oneself", async () => {
+        const a = followDeps();
+        expect(await handleFollow(await body("follow", W), a.deps)).toEqual({status: 400, body: {error: "self_follow"}});
+        expect(a.calls).toEqual([]);
+    });
+    it("refuses a follow past the limit", async () => {
+        const a = followDeps({count: FOLLOW_LIMIT});
+        expect((await handleFollow(await body("follow"), a.deps)).status).toBe(409);
+        expect(a.calls).toEqual(["state"]);
+        expect(FOLLOW_LIMIT).toBe(500);
+    });
+    it("is idempotent: an existing follow answers 200 and writes nothing", async () => {
+        const a = followDeps({exists: true, count: FOLLOW_LIMIT});
+        expect(await handleFollow(await body("follow"), a.deps)).toEqual({status: 200, body: {following: true}});
+        expect(a.calls).toEqual(["state"]);
+    });
+    it("unfollow answers 200 even without a relation", async () => {
+        const a = followDeps();
+        expect(await handleFollow(await body("unfollow"), a.deps)).toEqual({status: 200, body: {following: false}});
+        expect(a.calls).toEqual(["delete"]);
+    });
+    it("rejects a signature over another target or another action, and a missing proof", async () => {
+        const a = followDeps();
+        expect((await handleFollow(await body("follow", T, {signedTarget: "0x" + "b1".repeat(20)}), a.deps)).status).toBe(401);
+        expect((await handleFollow(await body("follow", T, {signedAction: "unfollow"}), a.deps)).status).toBe(401);
+        const {proof: _p, ...noProof} = await body("follow"); // eslint-disable-line @typescript-eslint/no-unused-vars
+        expect((await handleFollow(noProof, a.deps)).status).toBe(400);
+        expect((await handleFollow({...(await body("follow")), action: "block"}, a.deps)).status).toBe(400);
+        expect(a.calls).toEqual([]);
+    });
+    it("a failed real-name read throws (503 upstream) and stores nothing", async () => {
+        const a = followDeps({verifyFails: true});
+        await expect(handleFollow(await body("follow"), a.deps)).rejects.toThrow("rpc down");
+        expect(a.stored).toEqual([]);
+    });
+    it("follow payload: lowercase wallet and target, fixed key order", () => {
+        expect(actionPayload("follow", {wallet: "0xAB", target: "0xCD"})).toBe('{"wallet":"0xab","target":"0xcd"}');
     });
 });

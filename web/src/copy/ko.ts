@@ -25,7 +25,7 @@ export const ko = {
     nav: {
         disconnect: "연결 해제",
         logoAlt: "MAPAE 로고",
-        curves: "토큰", create: "발행", wallet: "내 지갑", home: "공모", offeringList: "공모 목록", membership: "내 멤버십", redeem: "리딤 & 후원", trade: "거래",
+        curves: "토큰", create: "발행", wallet: "내 지갑", feed: "피드", home: "공모", offeringList: "공모 목록", membership: "내 멤버십", redeem: "리딤 & 후원", trade: "거래",
         faucet: "KRWs 받기", // 상시 재충전 버튼 (데스크톱)
         faucetShort: "+ KRWs", // 모바일 축약
         faucetTitle: "테스트 KRWs 받기 (10만 KRWs)",
@@ -575,6 +575,21 @@ export const ko = {
         livePanel: "실시간 거래",
     },
     // 지갑 프로필 (/w/:address). 닉네임은 공개 프로필 (오너 결정 2026-11-15)
+    // 팔로우와 피드 (결정 53): 따라 사기, 추천, 손익 순위 없음
+    follow: {
+        counts: (followers: number, following: number) => `팔로워 ${followers} · 팔로잉 ${following}`,
+        followersNote: "실명 지갑 기준",
+        follow: "팔로우",
+        following: "팔로잉",
+        publicNote: "팔로우는 공개돼요. 누구나 이 지갑의 팔로잉 목록을 볼 수 있어요",
+        failed: "팔로우를 바꾸지 못했어요. 잠시 후 다시 시도해 주세요",
+        limit: "팔로우는 500개까지 할 수 있어요",
+        feedTitle: "피드",
+        feedSub: "팔로우한 지갑의 최근 거래예요",
+        feedConnect: "지갑을 연결하면 팔로우한 지갑의 거래를 볼 수 있어요",
+        feedNoFollows: "아직 팔로우한 지갑이 없어요. 토큰 페이지의 보유자나 거래 내역에서 지갑을 눌러 팔로우해 보세요",
+        feedEmpty: "팔로우한 지갑의 거래가 아직 없어요",
+    },
     walletPage: {
         mine: "내 지갑",
         value: "평가 금액",

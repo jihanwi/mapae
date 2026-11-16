@@ -36,3 +36,15 @@ describe("wallet-trades parameters", () => {
         expect(parseWalletTradesParams(q(`address=${LOWER}&limit=51`))).toBeNull();
     });
 });
+
+import {parseFeedParams} from "./feed";
+
+describe("feed params", () => {
+    it("wallet required, before optional and numeric", () => {
+        const A = "0x" + "AB".repeat(20);
+        expect(parseFeedParams(new URLSearchParams({wallet: A}))).toEqual({wallet: A.toLowerCase(), before: undefined});
+        expect(parseFeedParams(new URLSearchParams({wallet: A, before: "1700000000"}))).toEqual({wallet: A.toLowerCase(), before: 1_700_000_000n});
+        expect(parseFeedParams(new URLSearchParams({wallet: A, before: "-1"}))).toBeNull();
+        expect(parseFeedParams(new URLSearchParams({wallet: "0x12"}))).toBeNull();
+    });
+});
