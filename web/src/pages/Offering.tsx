@@ -42,7 +42,20 @@ function useAllocation(offering: string | undefined, account: string | undefined
     });
 }
 
+/** W-T39: the detail page's local state (commit amount, refund panel "started" / "refunded" /
+ *  error, disclosure editor mode, draft, addendum text and message, form touch state, the approval
+ *  bookkeeping) belongs to one offering and one wallet: a new key drops all of it. */
+export function offeringViewKey(addr: string | undefined, account: string | undefined): string {
+    return `${(addr ?? "").toLowerCase()}:${(account ?? "").toLowerCase()}`;
+}
+
 export default function Offering() {
+    const {addr} = useParams<{addr: `0x${string}`}>();
+    const {address: account} = useAccount();
+    return <OfferingView key={offeringViewKey(addr, account)} />;
+}
+
+function OfferingView() {
     useTitle(DEFAULT_TITLE);
     const {addr} = useParams<{addr: `0x${string}`}>();
     const {offerings, isLoading, isError, refetch} = useOfferings();
@@ -251,7 +264,7 @@ export default function Offering() {
 
                         {/* W-T38: after the deadline (unsettled): start refunds, take a refund, or wait for settle */}
                         {(ended || o.refunding) && (
-                            <RefundPanel o={o} myCommitted={account ? (myCommit.data as bigint | undefined) : undefined} onChanged={() => { refetch(); void detail.refetch(); }} />
+                            <RefundPanel key={offeringViewKey(o.address, account)} o={o} myCommitted={account ? (myCommit.data as bigint | undefined) : undefined} onChanged={() => { refetch(); void detail.refetch(); }} />
                         )}
 
                         {o.settled && <SettledPanel o={o} account={account} alloc={alloc.data ?? null} claimed={(claimed.data as boolean) ?? false}
