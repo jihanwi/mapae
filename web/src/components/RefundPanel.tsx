@@ -6,7 +6,9 @@
 import {useState} from "react";
 import {useQuery} from "@tanstack/react-query";
 import {useAccount, usePublicClient, useWriteContract} from "wagmi";
-import {copy} from "../copy";
+import {useCopy, type Copy} from "../copy";
+import {ko} from "../copy/ko";
+import {fmtWhen} from "../lib/format";
 import {OfferingL1Abi} from "../contracts/abisV3L1";
 import {giwaSepolia} from "../config/chain";
 import {OfferingInfo, useOfferingDetailApi} from "../hooks";
@@ -15,7 +17,6 @@ import {revertName} from "../lib/errors";
 import {fmt} from "../lib/format";
 import {RunFn, TxButton} from "./tx";
 
-const t = copy.refund;
 
 /** Latest block time (seconds), re-read every 15 s. */
 export function useChainTime() {
@@ -29,14 +30,17 @@ export function useChainTime() {
 }
 
 /** Revert name -> Korean (ko.ts refund.errors); unknown names get the generic sentence. */
-export function refundErrorText(e: unknown): string {
+export function refundErrorText(e: unknown, copy: Copy = ko): string {
+    const t = copy.refund;
     const name = revertName(e);
     return (name && t.errors[name]) || t.errors.unknown;
 }
 
-const date = (sec: bigint) => new Date(Number(sec) * 1000).toLocaleString("ko-KR", {year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit"});
+const date = (sec: bigint, locale: string) => fmtWhen(Number(sec) * 1000, locale, true);
 
 export function RefundPanel({o, myCommitted, onChanged}: {o: OfferingInfo; myCommitted: bigint | undefined; onChanged: () => void}) {
+    const copy = useCopy();
+    const t = copy.refund;
     const {address} = useAccount();
     const client = usePublicClient({chainId: giwaSepolia.id});
     const {writeContractAsync} = useWriteContract();
@@ -84,7 +88,7 @@ export function RefundPanel({o, myCommitted, onChanged}: {o: OfferingInfo; myCom
             await client.simulateContract({address: o.address, abi: OfferingL1Abi, functionName: fn, account: address});
         } catch (e) {
             console.warn(`${fn} simulation reverted`, e);
-            setError(refundErrorText(e));
+            setError(refundErrorText(e, copy));
             return;
         }
         const ok = await run(label, () => writeContractAsync({address: o.address, abi: OfferingL1Abi, functionName: fn, chainId: giwaSepolia.id}));
@@ -128,7 +132,7 @@ export function RefundPanel({o, myCommitted, onChanged}: {o: OfferingInfo; myCom
                 : note(t.refundingOther);
             break;
         case "awaitSettle":
-            body = note(t.awaitSettle(date(state.emergencyAt)));
+            body = note(t.awaitSettle(date(state.emergencyAt, copy.locale)));
             break;
         case "canEmergencyRefund":
             body = (

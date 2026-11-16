@@ -5,7 +5,7 @@
 import {useEffect, useState} from "react";
 import {useAccount, useReadContracts, useWriteContract} from "wagmi";
 import {Abi} from "viem";
-import {copy} from "../copy";
+import {useCopy} from "../copy";
 import {ADDR_L1} from "../contracts/addressesV3L1";
 import {ProceedsLockAbi} from "../contracts/abisV3L1";
 import {MockKRWV3Abi} from "../contracts/abisV3";
@@ -39,6 +39,7 @@ function Row({k, v}: {k: string; v: React.ReactNode}) {
 }
 
 export function ProceedsPanel({o}: {o: OfferingInfo}) {
+    const copy = useCopy();
     const {address: account} = useAccount();
     const {writeContractAsync} = useWriteContract();
     const now = useNowSec();
@@ -76,8 +77,8 @@ export function ProceedsPanel({o}: {o: OfferingInfo}) {
         <p className="m-0 text-[13px] text-hanji-100">{copy.offering.proceedsAllUpfront}</p>
     ) : termsKnown ? (
         <>
-            <p className="m-0 text-[13px] text-hanji-100">{copy.offering.proceedsTerms(bpsPct(o.proceedsUpfrontBps), spanText(duration!))}</p>
-            {cliffAt! > start! && <p className="m-0 mt-1 text-[13px] text-hanji-400">{copy.offering.proceedsCliff(spanText(cliffAt! - start!))}</p>}
+            <p className="m-0 text-[13px] text-hanji-100">{copy.offering.proceedsTerms(bpsPct(o.proceedsUpfrontBps), spanText(duration!, copy))}</p>
+            {cliffAt! > start! && <p className="m-0 mt-1 text-[13px] text-hanji-400">{copy.offering.proceedsCliff(spanText(cliffAt! - start!, copy))}</p>}
         </>
     ) : readFailed ? (
         <p className="m-0 text-[13px] text-hanji-400">{copy.offering.proceedsReadError}</p>
@@ -91,8 +92,8 @@ export function ProceedsPanel({o}: {o: OfferingInfo}) {
         const s = amountsKnown ? proceedsStatus({start: start!, duration: duration!, cliff: cliffAt!}, {balance: balance!, released: released!, releasable: releasable!}, now) : undefined;
         const isIssuer = !!account && !!beneficiary && account.toLowerCase() === beneficiary.toLowerCase();
         const phaseLine = !s ? null
-            : s.phase === "beforeCliff" ? copy.offering.proceedsUntilStart(spanText(s.nextAt! - now))
-            : s.phase === "vesting" ? copy.offering.proceedsUntilEnd(spanText(s.endAt - now))
+            : s.phase === "beforeCliff" ? copy.offering.proceedsUntilStart(spanText(s.nextAt! - now, copy))
+            : s.phase === "vesting" ? copy.offering.proceedsUntilEnd(spanText(s.endAt - now, copy))
             : copy.offering.proceedsDone;
         settledBlock = (
             <>

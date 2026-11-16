@@ -1,7 +1,7 @@
 import {useMemo, useState} from "react";
 import {useAccount, useReadContract, useReadContracts, useWriteContract} from "wagmi";
 import {Abi, parseUnits} from "viem";
-import {copy} from "../copy";
+import {useCopy} from "../copy";
 import {ADDR_L1} from "../contracts/addressesV3L1";
 import {RedeemManagerL1Abi, SponsorshipL1Abi} from "../contracts/abisV3L1";
 import {MembershipTokenV3Abi} from "../contracts/abisV3";
@@ -17,6 +17,7 @@ import {giwaSepolia} from "../config/chain";
 import {DEFAULT_TITLE, useTitle} from "../lib/title";
 
 export default function Redeem() {
+    const copy = useCopy();
     useTitle(DEFAULT_TITLE);
     const {offerings, isLoading, isError, refetch} = useOfferings();
     const settled = offerings.filter((o) => o.settled);
@@ -72,6 +73,7 @@ function OfferingTabs({list, sel, onSel}: {list: OfferingInfo[]; sel: number; on
 }
 
 function Catalog({o, redeemManager, ids, scan}: {o: OfferingInfo; redeemManager: `0x${string}`; ids: RedeemItemInfo[]; scan: {state: LogState; window: ScanWindow | undefined; refetch: () => void}}) {
+    const copy = useCopy();
     const {address} = useAccount();
     const {writeContractAsync} = useWriteContract();
     const states = useReadContracts({
@@ -96,7 +98,7 @@ function Catalog({o, redeemManager, ids, scan}: {o: OfferingInfo; redeemManager:
         // W-T37: shared approval step (only when short, then waits until the RPC sees it)
         const ap = await approval.ensure(run, {needsApproval: needs, token: o.token, spender: redeemManager, amount: r.burnAmount});
         if (!ap.ok) return;
-        const ok = await run("리딤", () =>
+        const ok = await run(copy.redeem.redeemLabel, () =>
             writeContractAsync({address: redeemManager, abi: RedeemManagerL1Abi, functionName: "redeem", args: [r.id], chainId: giwaSepolia.id}));
         if (ok) approval.done();
     };
@@ -127,14 +129,14 @@ function Catalog({o, redeemManager, ids, scan}: {o: OfferingInfo; redeemManager:
                                     <div className="text-[12px] text-hanji-400 mt-1 tabular-nums">
                                         {r.maxClaims > 0n
                                             ? copy.redeem.claims(claimCount.toString(), r.maxClaims.toString())
-                                            : `${claimCount.toString()}회 사용 · ${copy.redeem.unlimited}`}
+                                            : `${copy.redeem.usedTimes(claimCount.toString())} · ${copy.redeem.unlimited}`}
                                     </div>
                                 </div>
                             </div>
                             <TxButton className="w-full" disabled={soldOut || expired || reason !== "" || (!!address && needsApproval(allowance.data as bigint | undefined, r.burnAmount) === undefined)} action={doRedeem(r)}>
                                 {expired ? copy.redeem.closed : soldOut ? copy.redeem.soldOut
                                     : !!address && needsApproval(allowance.data as bigint | undefined, r.burnAmount) === undefined ? copy.curve.cta.loading
-                                    : `${needsApproval(allowance.data as bigint | undefined, r.burnAmount) ? copy.redeem.approveRedeemCta : copy.redeem.redeemCta} — ${copy.redeem.cost(fmt(r.burnAmount, 0))}`}
+                                    : copy.redeem.ctaWithCost(needsApproval(allowance.data as bigint | undefined, r.burnAmount) ? copy.redeem.approveRedeemCta : copy.redeem.redeemCta, copy.redeem.cost(fmt(r.burnAmount, 0)))}
                             </TxButton>
                             {reason && !soldOut && !expired && <p className="text-[12px] text-brass-400 mt-2 mb-0">{reason}</p>}
                         </div>
@@ -146,6 +148,7 @@ function Catalog({o, redeemManager, ids, scan}: {o: OfferingInfo; redeemManager:
 }
 
 function SponsorPanel({o, sponsorship}: {o: OfferingInfo; sponsorship: `0x${string}`}) {
+    const copy = useCopy();
     const {address} = useAccount();
     const {krwBalance} = useOnboarding();
     const {writeContractAsync} = useWriteContract();
@@ -181,7 +184,7 @@ function SponsorPanel({o, sponsorship}: {o: OfferingInfo; sponsorship: `0x${stri
         if (amountWei === 0n || !address || needs === undefined) return;
         const ap = await approval.ensure(run, {needsApproval: needs, token: ADDR_L1.mockKRW as `0x${string}`, spender: sponsorship, amount: amountWei});
         if (!ap.ok) return;
-        const done = await run("후원 보내기", () =>
+        const done = await run(copy.redeem.sponsorCta, () =>
             writeContractAsync({address: sponsorship, abi: SponsorshipL1Abi, functionName: "sponsorKRWs", args: [amountWei, message], chainId: giwaSepolia.id}));
         if (done) { approval.done(); setAmount(""); setMessage(""); }
     };

@@ -2,7 +2,7 @@
 // written here: factory bands (guide, proceedsBand, minRaise) come from the chain, contract
 // constants from codegen (contracts/offeringBoundsL1.ts), the default royalty / burn from the
 // FeeRouter tier table. Every check mirrors the contract that would revert on it.
-import {copy} from "../copy";
+import {ko, type Copy} from "../copy/ko";
 import {MAPAEVESTING_CONSTS, OFFERING_CONSTS, SPONSORSHIP_CONSTS} from "../contracts/offeringBoundsL1";
 import {utf8ByteLength} from "./bytes";
 import {isStandardTicker, normalizeTicker} from "./ticker";
@@ -92,9 +92,10 @@ export function parseWhole(s: string): bigint | null {
 }
 const unitSec = (u: "day" | "hour") => (u === "day" ? DAY : HOUR);
 
-const krwText = (wei: bigint) => (wei / WAD).toLocaleString("ko-KR");
+const krwText = (wei: bigint, copy: Copy) => (wei / WAD).toLocaleString(copy.locale);
 const pctText = (bps: bigint | number) => String(Number(bps) / 100);
-const daysText = (sec: bigint) => (sec % DAY === 0n ? `${(sec / DAY).toLocaleString("ko-KR")}일` : `${(sec / HOUR).toLocaleString("ko-KR")}시간`);
+const daysText = (sec: bigint, copy: Copy) =>
+    sec % DAY === 0n ? copy.offering.days((sec / DAY).toLocaleString(copy.locale)) : copy.offering.hours((sec / HOUR).toLocaleString(copy.locale));
 
 export type Values = {
     name: string;
@@ -120,7 +121,8 @@ export type Values = {
 export type Check = {errors: Partial<Record<keyof CreateForm | "allocation", string>>; values: Values | null};
 
 /** Every field checked against the contract's rule; `values` only when there is no error. */
-export function checkCreate(f: CreateForm, b: ChainBounds): Check {
+/** W-T41: messages in `copy`'s language (the screen passes useCopy(); Korean when omitted). */
+export function checkCreate(f: CreateForm, b: ChainBounds, copy: Copy = ko): Check {
     const e: Check["errors"] = {};
     const t = copy.offeringCreate.err;
     const range = (lo: string, hi: string) => t.range(lo, hi);
@@ -134,26 +136,26 @@ export function checkCreate(f: CreateForm, b: ChainBounds): Check {
 
     const price = parseKrw(f.price);
     if (price === null) e.price = t.wholeKrw;
-    else if (price < b.guide.minPrice || price > b.guide.maxPrice) e.price = range(`${krwText(b.guide.minPrice)} KRWs`, `${krwText(b.guide.maxPrice)} KRWs`);
+    else if (price < b.guide.minPrice || price > b.guide.maxPrice) e.price = range(`${krwText(b.guide.minPrice, copy)} KRWs`, `${krwText(b.guide.maxPrice, copy)} KRWs`);
 
     const raise = parseKrw(f.raiseTarget);
     const minRaise = b.guide.minRaise > b.minRaise ? b.guide.minRaise : b.minRaise;
     if (raise === null) e.raiseTarget = t.wholeKrw;
-    else if (raise < minRaise || raise > b.guide.maxRaise) e.raiseTarget = range(`${krwText(minRaise)} KRWs`, `${krwText(b.guide.maxRaise)} KRWs`);
+    else if (raise < minRaise || raise > b.guide.maxRaise) e.raiseTarget = range(`${krwText(minRaise, copy)} KRWs`, `${krwText(b.guide.maxRaise, copy)} KRWs`);
     else if (price !== null && qSaleOf(raise, price) === 0n) e.raiseTarget = t.zeroQuantity;
 
     const hours = parseWhole(f.durationHours);
     const minH = OFFERING_CONSTS.MIN_DURATION / HOUR;
     const maxH = OFFERING_CONSTS.MAX_DURATION / HOUR;
     if (hours === null) e.durationHours = t.whole;
-    else if (hours < minH || hours > maxH) e.durationHours = range(`${minH}시간`, `${maxH}시간`);
+    else if (hours < minH || hours > maxH) e.durationHours = range(copy.offering.hours(String(minH)), copy.offering.hours(String(maxH)));
 
     const wl = parseKrw(f.walletLimit);
     if (wl === null) e.walletLimit = t.wholeKrw;
     else if (raise !== null && !e.raiseTarget) {
         const lo = (raise * BigInt(b.guide.minWalletLimitBps)) / BPS;
         const hi = (raise * BigInt(b.guide.maxWalletLimitBps)) / BPS;
-        if (wl < lo || wl > hi) e.walletLimit = t.walletLimit(pctText(b.guide.minWalletLimitBps), pctText(b.guide.maxWalletLimitBps), krwText(lo), krwText(hi));
+        if (wl < lo || wl > hi) e.walletLimit = t.walletLimit(pctText(b.guide.minWalletLimitBps), pctText(b.guide.maxWalletLimitBps), krwText(lo, copy), krwText(hi, copy));
     }
     const mc = parseKrw(f.minCommit);
     if (mc === null || mc === 0n) e.minCommit = t.minCommitPositive;
@@ -178,9 +180,9 @@ export function checkCreate(f: CreateForm, b: ChainBounds): Check {
     const vc = parseWhole(f.vestingCliffDays);
     const V = MAPAEVESTING_CONSTS;
     if (vd === null) e.vestingDays = t.whole;
-    else if (vd * DAY < V.MIN_VESTING_DURATION || vd * DAY > V.MAX_VESTING_DURATION) e.vestingDays = range(daysText(V.MIN_VESTING_DURATION), daysText(V.MAX_VESTING_DURATION));
+    else if (vd * DAY < V.MIN_VESTING_DURATION || vd * DAY > V.MAX_VESTING_DURATION) e.vestingDays = range(daysText(V.MIN_VESTING_DURATION, copy), daysText(V.MAX_VESTING_DURATION, copy));
     if (vc === null) e.vestingCliffDays = t.whole;
-    else if (vc * DAY < V.MIN_CLIFF) e.vestingCliffDays = t.atLeast(daysText(V.MIN_CLIFF));
+    else if (vc * DAY < V.MIN_CLIFF) e.vestingCliffDays = t.atLeast(daysText(V.MIN_CLIFF, copy));
     else if (vd !== null && vc > vd) e.vestingCliffDays = t.cliffOverDuration;
 
     const burn = parsePct(f.sponsorBurnPct);
@@ -195,11 +197,11 @@ export function checkCreate(f: CreateForm, b: ChainBounds): Check {
     const lv = parseWhole(f.lockValue);
     const lockSec = lv === null ? null : lv * unitSec(f.lockUnit);
     if (lockSec === null) e.lockValue = t.whole;
-    else if (lockSec < b.band.minLockDuration || lockSec > b.band.maxLockDuration) e.lockValue = range(daysText(b.band.minLockDuration), daysText(b.band.maxLockDuration));
+    else if (lockSec < b.band.minLockDuration || lockSec > b.band.maxLockDuration) e.lockValue = range(daysText(b.band.minLockDuration, copy), daysText(b.band.maxLockDuration, copy));
     const lcv = parseWhole(f.lockCliffValue);
     const lockCliff = lcv === null ? null : lcv * unitSec(f.lockCliffUnit);
     if (lockCliff === null) e.lockCliffValue = t.whole;
-    else if (lockCliff > b.band.maxLockCliff) e.lockCliffValue = t.atMost(daysText(b.band.maxLockCliff));
+    else if (lockCliff > b.band.maxLockCliff) e.lockCliffValue = t.atMost(daysText(b.band.maxLockCliff, copy));
     else if (lockSec !== null && lockCliff > lockSec) e.lockCliffValue = t.cliffOverLock;
 
     if (Object.keys(e).length > 0) return {errors: e, values: null};

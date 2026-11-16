@@ -10,8 +10,6 @@ export const ko = {
     /** BCP 47 locale for numbers and dates */
     locale: "ko-KR",
     lang: {label: "언어", ko: "KO", en: "EN"},
-    /** Shown above the offering section when the UI is not Korean (empty in Korean). */
-    legacyNotice: "",
     common: {
         netError: "네트워크 응답이 없어요. 잠시 후 다시 시도해 주세요",
         retry: "다시 시도",
@@ -43,6 +41,10 @@ export const ko = {
         needGas: "가스비로 쓸 GIWA Sepolia ETH가 없어요. 먼저 테스트 ETH를 받아 주세요",
         gasFaucet: "테스트 ETH 받기 ↗",
         gasFaucetUrl: "https://docs.giwa.io/get-started/faucets",
+        // W-T41: moved from App.tsx (same text)
+        done: (label: string) => `${label} 완료`,
+        faucetTxLabel: "테스트 KRWs 받기",
+        verifyTxLabel: "실명 인증 (데모)",
     },
     home: {
         section: "진행 중인 공모",
@@ -79,6 +81,8 @@ export const ko = {
         modeNote: "목표에 못 미치면 마감 뒤 환불을 시작할 수 있고, 응모금 전액을 돌려받아요",
         createNote: "목표에 못 미친 공모는 환불이 시작된 뒤에야 새 공모를 열 수 있어요",
         canRefund: "환불 받을 수 있어요",
+        // W-T41: moved from Offering.tsx (same text)
+        partialModeNote: "미달 시 판매분만 발행되고 나머지는 소각돼요.",
         // 미리 실행 실패 이유 (컨트랙트 오류 이름 -> 문구)
         errors: {
             TargetReached: "목표를 채운 공모라 환불을 시작할 수 없어요",
@@ -235,6 +239,7 @@ export const ko = {
         lockCliffValue: "클리프",
         unitDay: "일",
         unitHour: "시간",
+        sponsorBurn: (pct: string) => `소각 ${pct}%`, // W-T41: moved from OfferingNew.tsx
         derived: {
             title: "계산 결과",
             qSale: "공모 수량",
@@ -391,6 +396,28 @@ export const ko = {
         releaseLabel: "풀린 금액 찾아가기",
         proceedsNote: "잠긴 금액은 정해진 일정에 따라 발행자에게만 지급돼요. 플랫폼은 이 금액을 옮길 수 없어요",
         proceedsReadError: "지급 현황을 불러오지 못했어요",
+        // W-T41: moved from the offering screens (same text)
+        commitLabel: "응모",
+        perToken: (p: string) => `${p} KRWs / 개`,
+        claimLabel: "배정 수령",
+        backLink: "← 공모 목록",
+        dojangSuffix: " — Dojang Verified",
+        howToVerify: "검증 방법 보기",
+        untilDeadline: (left: string) => `마감까지 ${left}`,
+        totalPrefix: "총 응모 ",
+        targetPart: (target: string) => ` / 목표 ${target} KRWs`,
+        amountLabel: "응모 금액",
+        myStatus: "내 응모 현황",
+        cancelLocked: "취소 잠김 — 마감 2시간 전",
+        cancelAll: "전액 취소하기",
+        ifMissed: "미달 시",
+        myAllocResult: "내 배정 결과",
+        allocUnit: " 장",
+        myCommitShort: "내 응모",
+        allocMethod: "배정 방식",
+        allocMethodValue: "균등 + 추첨",
+        claimWith: (n: string, unit: string, withRefund: boolean) => `배정 받기 — ${n}${unit}${withRefund ? " + 환불" : ""}`,
+        recheckNote: "배정 계산은 Settled 이벤트의 시드로 누구나 재검증할 수 있습니다",
     },
     membership: {
         title: "내 보유",
@@ -408,6 +435,13 @@ export const ko = {
         committed: (n: string) => `응모 ${n} KRWs`,
         awaitSettle: (n: string) => `정산 대기 · 응모 ${n} KRWs`,
         canClaim: "배정 받을 수 있어요",
+        // W-T41: moved from Membership.tsx (same text; the tier ladder is hidden, SHOW_TIERS)
+        tierName: (h: string) => `${h} 등급`,
+        toNextTier: "다음 등급까지",
+        ladderNote: "보유 비율에 따른 등급",
+        tierHolding: "보유 시",
+        tierMin: (pct: string) => `${pct}% 이상`,
+        currentTier: "현재 등급",
     },
     redeem: {
         title: "리딤",
@@ -431,6 +465,10 @@ export const ko = {
         feed: "후원 피드",
         feedBurned: (n: string) => `${n}개 소각`,
         itemName: (id: string) => `리딤 #${id}`,
+        // W-T41: moved from Redeem.tsx (same text)
+        redeemLabel: "리딤",
+        usedTimes: (n: string) => `${n}회 사용`,
+        ctaWithCost: (cta: string, cost: string) => `${cta} — ${cost}`,
     },
     trade: {
         title: "거래",
@@ -464,6 +502,7 @@ export const ko = {
         chartEmpty: "체결이 쌓이면 차트가 그려져요",
         chartOfferLabel: (p: string) => `공모가 ${p}`,
         meBadge: "나",
+        slippage: "슬리피지 1%", // W-T41: moved from Trade.tsx
         netError: "네트워크 응답이 없어요. 잠시 후 다시 시도해 주세요",
     },
     // v3 본딩커브 (발행자는 항상 "Dev")

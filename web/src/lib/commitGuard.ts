@@ -2,7 +2,7 @@
 // for that the browser can know, so an approval is never sent for a commit that cannot succeed.
 // Order follows Offering.commit: phase, deadline, zero, issuer, real name, minimum on the first
 // commit, wallet limit; then the wallet's balance (the transfer would fail).
-import {copy} from "../copy";
+import {ko, type Copy} from "../copy/ko";
 import {fmt} from "./format";
 
 export type CommitGuardInput = {
@@ -20,8 +20,8 @@ export type CommitGuardInput = {
     balance: bigint;
 };
 
-/** "" when the commit can go ahead, otherwise the reason shown under the button. */
-export function commitBlock(p: CommitGuardInput): string {
+/** "" when the commit can go ahead, otherwise the reason shown under the button (in `copy`'s language). */
+export function commitBlock(p: CommitGuardInput, copy: Copy = ko): string {
     if (!p.account) return copy.hints.connectWallet;
     if (p.account.toLowerCase() === p.creator.toLowerCase()) return copy.offering.issuerCannotCommit;
     if (p.settled || p.refunding || BigInt(Math.floor(p.nowMs / 1000)) >= p.deadlineSec) return copy.errors.DeadlinePassed;

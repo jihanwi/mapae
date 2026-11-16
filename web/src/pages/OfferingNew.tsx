@@ -7,7 +7,9 @@ import {useEffect, useMemo, useState} from "react";
 import {Link, useNavigate} from "react-router-dom";
 import {useAccount, usePublicClient, useReadContract, useReadContracts, useWriteContract} from "wagmi";
 import {Abi, BaseError, ContractFunctionRevertedError, parseEventLogs} from "viem";
-import {copy} from "../copy";
+import {useCopy, type Copy} from "../copy";
+import {ko} from "../copy/ko";
+import {fmtWhen} from "../lib/format";
 import {ADDR_L1} from "../contracts/addressesV3L1";
 import {activeOfferingOf} from "../lib/l1Factories";
 import {ADDR_V3} from "../contracts/addressesV3";
@@ -29,7 +31,6 @@ import {bpsPct, spanText} from "../lib/proceedsText";
 import {displayTicker} from "../lib/ticker";
 import {DEFAULT_TITLE, useTitle} from "../lib/title";
 
-const t = copy.offeringCreate;
 /** createOffering reverts can come from the contracts it deploys (Offering, MapaeVesting,
  *  ProceedsLock); their errors are added so the simulation decodes the name. */
 const CREATE_ABI = [
@@ -121,7 +122,8 @@ function useActiveOffering(account: `0x${string}` | undefined): {active: `0x${st
 }
 
 /** Revert name of a simulate failure -> Korean text (ko.ts table). */
-export function revertText(e: unknown): string {
+export function revertText(e: unknown, copy: Copy = ko): string {
+    const t = copy.offeringCreate;
     if (e instanceof BaseError) {
         const r = e.walk((x) => x instanceof ContractFunctionRevertedError) as ContractFunctionRevertedError | null;
         const name = r?.data?.errorName;
@@ -165,13 +167,15 @@ function Rows({rows}: {rows: [string, string][]}) {
 
 /** "소각 몫은 정산 때 바로 소각돼요" when the allocation leaves a burned share. */
 function BurnNote({v}: {v: Values}) {
+    const copy = useCopy();
     return allocationBps(v).burn > 0 ? <p className="m-0 mt-3 text-[12px] text-hanji-400">{copy.terms.allocationNote}</p> : null;
 }
 
-const at = (ms: number) => new Date(ms).toLocaleString("ko-KR", {month: "long", day: "numeric", hour: "2-digit", minute: "2-digit"});
+const atIn = (ms: number, locale: string) => fmtWhen(ms, locale);
 
 /** Terms table shared by the derived box (step 1) and the confirm step (step 3). */
-function termRows(v: Values, b: ChainBounds): [string, string][] {
+function termRows(v: Values, b: ChainBounds, copy: Copy): [string, string][] {
+    const t = copy.offeringCreate;
     const d = derive(v, b);
     const T = copy.terms;
     const u = t.derived.unit;
@@ -181,16 +185,16 @@ function termRows(v: Values, b: ChainBounds): [string, string][] {
         [T.saleQty, `${fmt(d.qSale, 2)}${u}`],
         [T.walletLimit, `${fmt(v.walletLimit, 0)} KRWs`],
         [T.minCommit, `${fmt(v.minCommit, 0)} KRWs`],
-        [T.period, `${Number(v.durationSec / 3600n)}시간`],
+        [T.period, copy.offering.hours(String(Number(v.durationSec / 3600n)))],
         [t.derived.supply, `${fmt(d.alloc.supply, 2)}${u}`],
-        [T.allocation, allocationText(v.fBps, v.creatorTokenBps, v.cBps)],
+        [T.allocation, allocationText(v.fBps, v.creatorTokenBps, v.cBps, copy)],
         [t.derived.issuerTokens, `${fmt(d.alloc.creator, 2)}${u}`],
         [t.derived.lpTokens, `${fmt(d.alloc.lp, 2)}${u}`],
         [t.derived.burned, `${fmt(d.alloc.remainder, 2)}${u}`],
-        [T.vesting, T.vestingValue(spanText(v.vestingDuration), v.vestingCliff > 0n ? spanText(v.vestingCliff) : null)],
-        [T.proceeds, copy.offering.proceedsTerms(bpsPct(v.proceedsUpfrontBps), spanText(v.proceedsLockDuration)) + (v.proceedsLockCliff > 0n ? ` · ${copy.offering.proceedsCliff(spanText(v.proceedsLockCliff))}` : "")],
+        [T.vesting, T.vestingValue(spanText(v.vestingDuration, copy), v.vestingCliff > 0n ? spanText(v.vestingCliff, copy) : null)],
+        [T.proceeds, copy.offering.proceedsTerms(bpsPct(v.proceedsUpfrontBps), spanText(v.proceedsLockDuration, copy)) + (v.proceedsLockCliff > 0n ? ` · ${copy.offering.proceedsCliff(spanText(v.proceedsLockCliff, copy))}` : "")],
         [T.refundMode, v.refundMode === 0 ? T.refundAll : T.refundPartial],
-        [T.sponsorship, v.withSponsorship ? `${T.sponsorshipOn} · 소각 ${bpsPct(v.sponsorBurnBps)}%` : T.sponsorshipOff],
+        [T.sponsorship, v.withSponsorship ? `${T.sponsorshipOn} · ${t.sponsorBurn(bpsPct(v.sponsorBurnBps))}` : T.sponsorshipOff],
         [T.offeringFee, `${bpsPct(b.offeringFeeBps)}%`],
         [`${t.derived.ifFull} · ${t.derived.platform}`, `${fmt(d.proceeds.platform, 0)} KRWs`],
         [`${t.derived.ifFull} · ${t.derived.lpSeed}`, `${fmt(d.proceeds.krwSeed, 0)} KRWs`],
@@ -200,6 +204,8 @@ function termRows(v: Values, b: ChainBounds): [string, string][] {
 }
 
 export default function OfferingNew() {
+    const copy = useCopy();
+    const t = copy.offeringCreate;
     useTitle(DEFAULT_TITLE);
     const navigate = useNavigate();
     const {address} = useAccount();
@@ -222,7 +228,7 @@ export default function OfferingNew() {
         return () => clearInterval(iv);
     }, []);
 
-    const check = useMemo(() => (bounds ? checkCreate(form, bounds) : null), [form, bounds]);
+    const check = useMemo(() => (bounds ? checkCreate(form, bounds, copy) : null), [form, bounds]);
     const docOk = docProblems(normalizeDoc(doc)).length === 0;
     const set = <K extends keyof CreateForm>(k: K, v: CreateForm[K]) => {
         setTouched((s) => new Set(s).add(k));
@@ -255,7 +261,7 @@ export default function OfferingNew() {
             await client.simulateContract({address: ADDR_L1.mapaeFactory, abi: CREATE_ABI, functionName: "createOffering", args: [args], account: address});
         } catch (e) {
             console.warn("createOffering simulation reverted", e);
-            setStatus({kind: "error", text: revertText(e)});
+            setStatus({kind: "error", text: revertText(e, copy)});
             return;
         }
         setStatus(null);
@@ -387,8 +393,8 @@ export default function OfferingNew() {
                     {v && (
                         <section className="bg-ink-900 border border-ink-700 rounded-card p-4 sm:p-6 mb-5">
                             <h2 className="m-0 mb-1 text-[15px] font-bold">{t.derived.title}</h2>
-                            <p className="m-0 mb-4 text-[12px] text-hanji-400">{t.derived.deadline(at(now + Number(v.durationSec) * 1000))}</p>
-                            <Rows rows={termRows(v, bounds)} />
+                            <p className="m-0 mb-4 text-[12px] text-hanji-400">{t.derived.deadline(atIn(now + Number(v.durationSec) * 1000, copy.locale))}</p>
+                            <Rows rows={termRows(v, bounds, copy)} />
                             <BurnNote v={v} />
                         </section>
                     )}
@@ -414,8 +420,8 @@ export default function OfferingNew() {
                 <>
                     <section className="bg-ink-800 border border-ink-700 rounded-card p-4 sm:p-6 mb-5">
                         <h2 className="m-0 mb-1 text-[17px] font-bold">{t.confirm.title}</h2>
-                        <p className="m-0 mb-4 text-[12px] text-hanji-400">{t.derived.deadline(at(now + Number(v.durationSec) * 1000))}</p>
-                        <Rows rows={[[t.fixed.tier, "L1"], [copy.offeringCreate.name, v.name], [copy.offeringCreate.symbol, v.symbol], ...termRows(v, bounds)]} />
+                        <p className="m-0 mb-4 text-[12px] text-hanji-400">{t.derived.deadline(atIn(now + Number(v.durationSec) * 1000, copy.locale))}</p>
+                        <Rows rows={[[t.fixed.tier, "L1"], [copy.offeringCreate.name, v.name], [copy.offeringCreate.symbol, v.symbol], ...termRows(v, bounds, copy)]} />
                         <BurnNote v={v} />
                         <h3 className="m-0 mt-5 mb-3 text-[14px] font-bold">{t.fixed.title}</h3>
                         <Rows rows={[

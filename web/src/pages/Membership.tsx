@@ -1,7 +1,7 @@
 import {Link} from "react-router-dom";
 import {useAccount, useReadContracts} from "wagmi";
 import {Abi} from "viem";
-import {copy} from "../copy";
+import {useCopy} from "../copy";
 import {labelOf, useOfferings, useRedeemPeripherals, OfferingInfo} from "../hooks";
 import {Medallion, NetError, PrimaryBtn, Skeleton, TextSkeleton} from "../components/ui";
 import {fmt} from "../lib/format";
@@ -18,6 +18,7 @@ import {DEFAULT_TITLE, useTitle} from "../lib/title";
 const SHOW_TIERS = false;
 
 export default function Membership() {
+    const copy = useCopy();
     useTitle(DEFAULT_TITLE);
     const {address} = useAccount();
     const {offerings, isLoading, isError, refetch} = useOfferings();
@@ -112,6 +113,7 @@ export default function Membership() {
 }
 
 function Holding({o, balance, canRedeem}: {o: OfferingInfo; balance: bigint; canRedeem: boolean}) {
+    const copy = useCopy();
     const c = labelOf(o);
     const idx = tierIndex(balance, o.totalSupply);
     const tier = idx >= 0 ? TIERS[idx] : null;
@@ -123,7 +125,7 @@ function Holding({o, balance, canRedeem}: {o: OfferingInfo; balance: bigint; can
             <div className="flex flex-col items-center gap-4 flex-none mx-auto sm:mx-0">
                 <Medallion char={SHOW_TIERS ? (tier?.hanja ?? "馬") : c ? [...c.name][0] : "馬"} size={132} glow />
                 <div className="text-center">
-                    {SHOW_TIERS && <div className="font-serif text-[21px] font-bold text-brass-400">{tier?.hanja} 등급</div>}
+                    {SHOW_TIERS && <div className="font-serif text-[21px] font-bold text-brass-400">{copy.membership.tierName(tier?.hanja ?? "")}</div>}
                     <div className="text-[13px] text-hanji-400 mt-1">{copy.membership.share(shareBps.toFixed(1))} {copy.membership.holding}</div>
                 </div>
             </div>
@@ -140,7 +142,7 @@ function Holding({o, balance, canRedeem}: {o: OfferingInfo; balance: bigint; can
                 {!SHOW_TIERS ? null : next ? (
                     <div className="mb-5">
                         <div className="flex justify-between text-[13px] mb-2">
-                            <span className="text-hanji-400">다음 등급까지</span>
+                            <span className="text-hanji-400">{copy.membership.toNextTier}</span>
                             <span className="text-brass-400 font-semibold tabular-nums">
                                 {copy.membership.nextTier(next.next.hanja, fmt(next.need, 2))}
                             </span>
@@ -167,11 +169,12 @@ function Holding({o, balance, canRedeem}: {o: OfferingInfo; balance: bigint; can
 }
 
 function Ladder({holdings}: {holdings: {o: OfferingInfo; balance: bigint}[]}) {
+    const copy = useCopy();
     const current = holdings.length > 0 ? tierIndex(holdings[0].balance, holdings[0].o.totalSupply) : -1;
     return (
         <div className="mt-10 sm:mt-14 pt-8 sm:pt-10 border-t border-ink-700">
             <h2 className="m-0 mb-2 text-[21px] font-bold">{copy.membership.ladder}</h2>
-            <p className="m-0 mb-6 text-[13px] text-hanji-400">보유 비율에 따른 등급</p>
+            <p className="m-0 mb-6 text-[13px] text-hanji-400">{copy.membership.ladderNote}</p>
             <div className="grid gap-4" style={{gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))"}}>
                 {TIERS.map((t, i) => {
                     const active = i === current;
@@ -183,9 +186,9 @@ function Ladder({holdings}: {holdings: {o: OfferingInfo; balance: bigint}[]}) {
                             <div className="flex justify-center mb-3"><Medallion char={t.hanja} size={64} active={active} /></div>
                             <div className={`font-serif text-[17px] font-bold ${active ? "text-brass-400" : "text-hanji-100"}`}>{t.hanja}</div>
                             <div className="text-[12px] text-hanji-400 mt-1">
-                                {t.minBps === 1n ? "보유 시" : `${Number(t.minBps) / 100}% 이상`}
+                                {t.minBps === 1n ? copy.membership.tierHolding : copy.membership.tierMin(String(Number(t.minBps) / 100))}
                             </div>
-                            {active && <div className="text-[12px] text-brass-400 mt-2">현재 등급</div>}
+                            {active && <div className="text-[12px] text-brass-400 mt-2">{copy.membership.currentTier}</div>}
                         </div>
                     );
                 })}
@@ -195,6 +198,7 @@ function Ladder({holdings}: {holdings: {o: OfferingInfo; balance: bigint}[]}) {
 }
 
 function Empty() {
+    const copy = useCopy();
     return (
         <div className="flex flex-wrap items-center gap-6 sm:gap-7 bg-ink-800 border border-ink-700 rounded-card p-5 sm:p-8">
             <Medallion char="馬" size={104} dashed />

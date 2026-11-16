@@ -1,5 +1,5 @@
 import {useRef, useState} from "react";
-import {copy} from "../copy";
+import {useCopy} from "../copy";
 
 export type PricePoint = {t: number; price: number; buy: boolean};
 
@@ -20,6 +20,7 @@ function niceStep(raw: number) {
 
 /** 체결가 라인 차트 — 외부 라이브러리 없는 경량 SVG. 캔들·거래량·등락색 금지 원칙 유지 */
 export function PriceChart({points, offerPrice}: {points: PricePoint[]; offerPrice: number}) {
+    const copy = useCopy();
     const svgRef = useRef<SVGSVGElement>(null);
     const [hover, setHover] = useState<number | null>(null);
 

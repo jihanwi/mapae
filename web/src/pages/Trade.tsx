@@ -2,7 +2,7 @@ import {useMemo, useState} from "react";
 import {useSearchParams} from "react-router-dom";
 import {useAccount, useReadContract, useReadContracts, useWriteContract} from "wagmi";
 import {Abi, formatUnits, parseUnits} from "viem";
-import {copy} from "../copy";
+import {useCopy} from "../copy";
 import {ADDR_L1} from "../contracts/addressesV3L1";
 import {FeeRouterAbi, MapaePoolV3Abi, MembershipTokenV3Abi, MockKRWV3Abi} from "../contracts/abisV3";
 import {ERC20_APPROVAL_ABI, needsApproval, useApprovalStep} from "../hooks/approval";
@@ -21,6 +21,7 @@ const DEAD = "0x000000000000000000000000000000000000dEaD" as const;
 const ZERO = "0x0000000000000000000000000000000000000000" as const;
 
 export default function Trade() {
+    const copy = useCopy();
     useTitle(DEFAULT_TITLE);
     const {offerings, isLoading, isError, refetch} = useOfferings();
     const [params] = useSearchParams();
@@ -57,6 +58,7 @@ export default function Trade() {
 }
 
 function TradePanel({o}: {o: OfferingInfo}) {
+    const copy = useCopy();
     const {address} = useAccount();
     const {writeContractAsync} = useWriteContract();
     const [dir, setDir] = useState<"buy" | "sell">("buy");
@@ -254,7 +256,7 @@ function TradePanel({o}: {o: OfferingInfo}) {
                             <div className="text-[12px] text-hanji-400 mb-1 text-right tabular-nums">{copy.trade.afterSwap(fmt(afterSwap, 2))}</div>
                         )}
                         <div className="text-[12px] text-hanji-400 mb-1">
-                            {fees ? `${copy.trade.feeNote(fees.total, fees.royalty, fees.burn, fees.lp, fees.platform)} · ` : ""}슬리피지 1%
+                            {fees ? `${copy.trade.feeNote(fees.total, fees.royalty, fees.burn, fees.lp, fees.platform)} · ` : ""}{copy.trade.slippage}
                         </div>
                         <div className="text-[12px] text-hanji-400 mb-5">{copy.trade.shallowPool}</div>
                         <TxButton className="w-full" disabled={swapDisabled} action={doSwap}>
