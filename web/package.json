@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "postbuild": "node scripts/checkInline.mjs dist/index.html",
     "preview": "vite preview",
     "codegen": "node scripts/codegen.mjs",
     "test": "vitest run"
