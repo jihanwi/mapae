@@ -1,6 +1,11 @@
 {
   "crons": [{"path": "/api/cron/index", "schedule": "*/15 * * * *"}],
-  "rewrites": [{"source": "/t/:curve", "destination": "/api/meta?share=:curve"}],
+  "rewrites": [
+    {"source": "/t/:curve", "destination": "/api/meta?share=:curve"},
+    {"source": "/waitlist/callback", "destination": "/api/waitlist?action=callback"},
+    {"source": "/waitlist", "destination": "/api/waitlist?action=land"},
+    {"source": "/w/:code", "destination": "/api/waitlist?share=:code"}
+  ],
   "headers": [
     {
       "source": "/(.*)",

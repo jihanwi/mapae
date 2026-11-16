@@ -169,6 +169,23 @@ const SCHEMA = [
     // read) get that factory; new rows always carry the emitting factory.
     `ALTER TABLE mapae_offerings ADD COLUMN IF NOT EXISTS factory text`,
     `UPDATE mapae_offerings SET factory = '${L1_V32_FACTORY}' WHERE factory IS NULL`,
+    // W-T43: waitlist (X sign-in). Position = referrals DESC, then join order (seq).
+    `CREATE TABLE IF NOT EXISTS mapae_waitlist (
+        seq bigserial,
+        x_user_id text PRIMARY KEY,
+        username text,
+        x_created_at timestamptz,
+        followers int,
+        ref_code text UNIQUE,
+        referred_by text NULL,
+        referrals int NOT NULL DEFAULT 0,
+        wallet text NULL UNIQUE,
+        email text NULL,
+        email_consent_at timestamptz NULL,
+        lang text,
+        created_at timestamptz DEFAULT now()
+    )`,
+    `CREATE INDEX IF NOT EXISTS mapae_waitlist_rank ON mapae_waitlist (referrals DESC, seq ASC)`,
 ];
 
 export async function ensureSchema(sql: Sql): Promise<void> {
@@ -1007,4 +1024,82 @@ export async function offeringFeed(sql: Sql, offering: string, feed: OfferingFee
 export async function hasIndexedCommit(sql: Sql, offering: string): Promise<boolean> {
     const rows = (await sql.query(`SELECT EXISTS (SELECT 1 FROM mapae_offering_events WHERE offering = $1 AND kind = 'commit') AS e`, [offering.toLowerCase()])) as {e: boolean}[];
     return rows[0]?.e === true;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Waitlist (W-T43)
+// ---------------------------------------------------------------------------------------------
+
+/** One join in one statement. A new account is inserted; its referrer counts only when the code is
+ *  an existing one of another account (then that owner's referrals + 1, in the same statement). An
+ *  account already there only refreshes username and followers; referred_by and referrals stay.
+ *  $1 x_user_id, $2 username, $3 x_created_at, $4 followers, $5 new ref_code, $6 ref (or null), $7 lang. */
+export const WAITLIST_JOIN_SQL = `
+    WITH ins AS (
+        INSERT INTO mapae_waitlist (x_user_id, username, x_created_at, followers, ref_code, referred_by, lang)
+        VALUES ($1::text, $2::text, $3::timestamptz, $4::int, $5::text,
+                (SELECT o.ref_code FROM mapae_waitlist o WHERE o.ref_code = $6::text AND o.x_user_id <> $1::text), $7::text)
+        ON CONFLICT (x_user_id) DO NOTHING
+        RETURNING x_user_id, referred_by
+    ), bump AS (
+        UPDATE mapae_waitlist w SET referrals = w.referrals + 1
+        FROM ins
+        WHERE ins.referred_by IS NOT NULL AND w.ref_code = ins.referred_by AND w.x_user_id <> ins.x_user_id
+        RETURNING w.x_user_id
+    ), upd AS (
+        UPDATE mapae_waitlist SET username = $2::text, followers = $4::int
+        WHERE x_user_id = $1::text AND NOT EXISTS (SELECT 1 FROM ins)
+        RETURNING x_user_id
+    )
+    SELECT (SELECT count(*) FROM ins)::int AS inserted, (SELECT count(*) FROM bump)::int AS bumped`;
+
+export type WaitlistJoin = {xid: string; username: string; xCreatedAt: string | null; followers: number | null; refCode: string; ref: string | null; lang: string | null};
+
+/** "ref_code_taken" when the new code collided (the caller draws another); other errors are thrown. */
+export async function joinWaitlist(sql: Sql, j: WaitlistJoin): Promise<{inserted: boolean} | "ref_code_taken"> {
+    try {
+        const rows = (await sql.query(WAITLIST_JOIN_SQL, [j.xid, j.username, j.xCreatedAt, j.followers, j.refCode, j.ref, j.lang])) as {inserted: number}[];
+        return {inserted: (rows[0]?.inserted ?? 0) > 0};
+    } catch (e) {
+        if (pgCode(e) === "23505" && /ref_code/.test(String((e as {constraint?: string}).constraint ?? (e as Error).message))) return "ref_code_taken";
+        throw e;
+    }
+}
+
+/** The account with its position, in one statement: 1 + rows with more referrals + rows with as
+ *  many referrals and a smaller seq. */
+export const WAITLIST_ME_SQL = `
+    SELECT m.username, m.ref_code AS "refCode", m.referrals, m.wallet, m.email,
+           (1 + (SELECT count(*) FROM mapae_waitlist o
+                 WHERE o.referrals > m.referrals OR (o.referrals = m.referrals AND o.seq < m.seq)))::int AS position
+    FROM mapae_waitlist m WHERE m.x_user_id = $1::text`;
+
+/** `email` is the stored address; the API masks it before answering (never sent as is). */
+export type WaitlistMe = {username: string; refCode: string; referrals: number; wallet: string | null; email: string | null; position: number};
+
+export async function waitlistMe(sql: Sql, xid: string): Promise<WaitlistMe | null> {
+    const rows = (await sql.query(WAITLIST_ME_SQL, [xid])) as WaitlistMe[];
+    return rows[0] ?? null;
+}
+
+/** Links a wallet: "taken" when another account already has it, "no_account" when the row is gone. */
+export async function setWaitlistWallet(sql: Sql, xid: string, wallet: string): Promise<"ok" | "taken" | "no_account"> {
+    try {
+        const rows = (await sql.query(`UPDATE mapae_waitlist SET wallet = $2::text WHERE x_user_id = $1::text RETURNING x_user_id`, [xid, wallet.toLowerCase()])) as unknown[];
+        return rows.length > 0 ? "ok" : "no_account";
+    } catch (e) {
+        if (pgCode(e) === "23505") return "taken";
+        throw e;
+    }
+}
+
+/** Stores an email with the consent time (the caller checked consent and the shape). */
+export async function setWaitlistEmail(sql: Sql, xid: string, email: string): Promise<boolean> {
+    const rows = (await sql.query(`UPDATE mapae_waitlist SET email = $2::text, email_consent_at = now() WHERE x_user_id = $1::text RETURNING x_user_id`, [xid, email])) as unknown[];
+    return rows.length > 0;
+}
+
+/** Removes the email and its consent time (always allowed, even with the email field off). */
+export async function removeWaitlistEmail(sql: Sql, xid: string): Promise<void> {
+    await sql.query(`UPDATE mapae_waitlist SET email = NULL, email_consent_at = NULL WHERE x_user_id = $1::text`, [xid]);
 }

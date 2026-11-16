@@ -19,6 +19,8 @@ import Membership from "./pages/Membership";
 import Redeem from "./pages/Redeem";
 import Trade from "./pages/Trade";
 import NotFound from "./pages/NotFound";
+import Waitlist from "./pages/Waitlist";
+import Privacy from "./pages/Privacy";
 import "./index.css";
 
 const qc = new QueryClient({defaultOptions: {queries: {staleTime: 10_000}}});
@@ -40,6 +42,8 @@ const router = createHashRouter([
             {path: "membership", element: <Membership />},
             {path: "redeem", element: <Redeem />},
             {path: "trade", element: <Trade />},
+            {path: "waitlist", element: <Waitlist />}, // W-T43 (FEATURE_WAITLIST; not in the menu)
+            {path: "privacy", element: <Privacy />}, // W-T43: waitlist privacy notice (only with the email field on)
             {path: "*", element: <NotFound />}, // 6-b: 알 수 없는 라우트 (Nav 포함 레이아웃 내)
         ],
     },
