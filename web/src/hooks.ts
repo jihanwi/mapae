@@ -8,6 +8,8 @@ import {MapaeFactoryL1Abi, OfferingL1Abi} from "./contracts/abisV3L1";
 import {MapaePoolV3Abi, MembershipTokenV3Abi, MockDojangV3Abi, MockKRWV3Abi} from "./contracts/abisV3";
 import {giwaSepolia} from "./config/chain";
 import {logState, LogState, planScan, ScanWindow} from "./lib/logRange";
+import {API_BASE} from "./hooks/meta";
+import {Commit, Keyed, liveStart, mergeHistory, participantCount} from "./lib/offeringHistory";
 
 export const ZERO_ADDR = "0x0000000000000000000000000000000000000000" as const;
 const nonZero = (a: unknown): `0x${string}` | undefined =>
@@ -141,13 +143,16 @@ const SCAN_CONCURRENCY = 3;
 export function useEventLogs(
     address: `0x${string}` | readonly `0x${string}`[] | undefined,
     eventSig: string | readonly string[],
-    enabled = true
+    enabled = true,
+    /** W-T33: first block to read (the indexer's indexedBlock + 1 when the API answered); the scan
+     *  is complete when it reaches this block. Default: the v3.2-L1 deployment. */
+    startBlock: bigint = ADDR_L1.deployBlock
 ): EventLogsResult {
     const client = usePublicClient({chainId: giwaSepolia.id});
     const qc = useQueryClient();
     const sigs = typeof eventSig === "string" ? [eventSig] : [...eventSig];
     const addrKey = Array.isArray(address) ? [...address].map((a) => a.toLowerCase()).sort().join(",") : (address as string | undefined)?.toLowerCase();
-    const queryKey = ["logsL1", addrKey, sigs.join("|")];
+    const queryKey = ["logsL1", addrKey, sigs.join("|"), startBlock.toString()];
     const q = useQuery({
         queryKey,
         enabled: !!client && !!address && (!Array.isArray(address) || address.length > 0) && enabled,
@@ -160,7 +165,7 @@ export function useEventLogs(
             const prev = qc.getQueryData<LogScan>(queryKey);
             try {
                 const latest = await client!.getBlockNumber();
-                const plan = planScan({deployBlock: ADDR_L1.deployBlock, latest, prev: prev?.window});
+                const plan = planScan({deployBlock: startBlock, latest, prev: prev?.window});
                 if (plan.ranges.length === 0 && prev && !plan.reset) return prev;
                 const events = sigs.map((s) => parseAbiItem(s) as AbiEvent);
                 const found: EventLog[][] = new Array(plan.ranges.length);
@@ -222,8 +227,14 @@ const CANCELLED = "event Cancelled(address indexed participant, uint256 amount, 
  *  every listed offering (the last cumulative of each wallet counts, same rule as snapshot.js).
  *  A count is given only when the scan reached the deployment block (complete). */
 export function useParticipantCounts(offerings: readonly `0x${string}`[]) {
-    const scan = useEventLogs(offerings, [COMMITTED, CANCELLED]);
+    // W-T33: the indexer's counts; the browser scans only offerings the API does not know yet
+    const api = useOfferingsApi(offerings.length > 0);
+    const apiDone = api.data !== undefined || api.isError;
+    const byApi = new Map((api.data?.offerings ?? []).map((r) => [r.offering.toLowerCase(), r.participants]));
+    const missing = offerings.filter((o) => !byApi.has(o.toLowerCase()));
+    const scan = useEventLogs(missing, [COMMITTED, CANCELLED], apiDone && missing.length > 0);
     const countOf = (offering: `0x${string}` | undefined): number | undefined => {
+        if (offering && byApi.has(offering.toLowerCase())) return byApi.get(offering.toLowerCase());
         if (!offering || scan.state !== "complete" || !scan.logs) return undefined;
         const mine = scan.logs
             .filter((l) => l.address.toLowerCase() === offering.toLowerCase())
@@ -276,17 +287,166 @@ export function useRedeemPeripherals(enabled = true) {
     const managers = per.map((p) => p.redeemManager).filter((m): m is `0x${string}` => !!m);
     const sponsors = per.filter((p) => p.sponsorship).length;
     const loaded = empty || (!isLoading && offerings.length > 0);
-    const logs = useEventLogs(managers, REDEEMABLE_CREATED, enabled && loaded && !isError && sponsors === 0);
+    // W-T33: item counts from the indexer when it knows every listed offering; otherwise the scan
+    const api = useOfferingsApi(enabled && loaded && offerings.length > 0);
+    const apiItems = new Map((api.data?.offerings ?? []).map((r) => [r.offering.toLowerCase(), r.redeemItems]));
+    const apiCovers = api.data !== undefined && api.data !== null && offerings.every((o) => apiItems.has(o.address.toLowerCase()));
+    const apiDone = api.data !== undefined || api.isError || offerings.length === 0;
+    const logs = useEventLogs(managers, REDEEMABLE_CREATED, enabled && loaded && !isError && sponsors === 0 && apiDone && !apiCovers);
     const itemCount = (m?: `0x${string}`) =>
         new Set((logs.logs ?? []).filter((l) => !m || l.address.toLowerCase() === m.toLowerCase()).map((l) => `${l.address.toLowerCase()}:${String(l.args.id)}`)).size;
     const known = logs.state === "complete" || (logs.state === "partial" && itemCount() > 0);
-    const items = managers.length === 0 ? 0 : known ? itemCount() : undefined;
+    const apiTotal = [...apiItems.values()].reduce((a, b) => a + b, 0);
+    const items = managers.length === 0 ? 0 : apiCovers ? apiTotal : known ? itemCount() : undefined;
     const status: "loading" | "error" | "done" = isError ? "error" : !loaded ? "loading" : "done";
     return {
         status,
         sponsors,
         items,
-        itemsError: logs.state === "error" || (logs.state === "partial" && itemCount() === 0),
-        per: per.map((p) => ({...p, items: p.redeemManager && logs.state === "complete" ? itemCount(p.redeemManager) : undefined})),
+        itemsError: !apiCovers && (logs.state === "error" || (logs.state === "partial" && itemCount() === 0)),
+        per: per.map((p) => ({
+            ...p,
+            items: apiCovers ? apiItems.get(p.offering.toLowerCase()) : p.redeemManager && logs.state === "complete" ? itemCount(p.redeemManager) : undefined,
+        })),
     };
+}
+
+// ---------------------------------------------------------------------------------------------
+// W-T33: history from the L1 indexer (GET /api/chain/offerings) + the browser's live tail
+// ---------------------------------------------------------------------------------------------
+
+export type ApiOfferingRow = {
+    offering: string;
+    participants: number;
+    totalCommitted: string;
+    redeemItems: number;
+    settled: boolean;
+    upfront?: string | null;
+};
+export type ApiOfferingList = {indexedBlock: string | null; offerings: ApiOfferingRow[]};
+export type ApiOfferingDetail = {
+    indexedBlock: string | null;
+    offering: ApiOfferingRow & {upfront: string | null; locked: string | null; totalRaised: string | null; platformProceeds: string | null};
+    commitments: {wallet: string; cumulative: string; block: string; logIndex: number}[];
+    redeemItems: {id: string; creator: string; burnAmount: string; maxClaims: string; block: string; tx: string; logIndex: number}[];
+};
+export type ApiFeedRow = {tx: string; logIndex: number; block: string; ts: string} & Record<string, unknown>;
+export type ApiFeed = {indexedBlock: string | null; rows: ApiFeedRow[]};
+
+/** GET an /api/chain/offerings URL. 404 (offering not indexed yet) answers null; other failures
+ *  throw (logged) so the caller falls back to the browser scan. */
+async function getOfferingsApi<T>(query: string): Promise<T | null> {
+    const path = `/api/chain/offerings${query}`;
+    try {
+        const r = await fetch(`${API_BASE}${path}`);
+        if (r.status === 404) return null;
+        if (!r.ok) throw new Error(`${path} ${r.status}`);
+        return (await r.json()) as T;
+    } catch (e) {
+        console.warn("offering index read failed", e);
+        throw e;
+    }
+}
+
+export function useOfferingsApi(enabled = true) {
+    return useQuery({queryKey: ["chain", "offerings"], enabled, refetchInterval: 15_000, retry: 1, queryFn: () => getOfferingsApi<ApiOfferingList>("")});
+}
+
+export function useOfferingDetailApi(offering: `0x${string}` | undefined) {
+    return useQuery({
+        queryKey: ["chain", "offering", offering?.toLowerCase()],
+        enabled: !!offering,
+        refetchInterval: 15_000,
+        retry: 1,
+        queryFn: () => getOfferingsApi<ApiOfferingDetail>(`?offering=${offering!.toLowerCase()}`),
+    });
+}
+
+/** History from the API (up to its indexedBlock) merged with the browser's read after it. The API
+ *  answering makes the history complete; when it fails (or does not know the offering yet) the
+ *  browser reads from the deployment as before (W-T32 window and states). */
+export function useOfferingHistory<T extends Keyed>(p: {
+    offering: `0x${string}` | undefined;
+    feed: "swaps" | "sponsors" | "commits";
+    /** contract whose events the browser reads (pool, sponsorship or the offering) */
+    address: `0x${string}` | undefined;
+    eventSig: string;
+    fromApi: (r: ApiFeedRow) => T;
+    fromLog: (l: EventLog) => T;
+    enabled?: boolean;
+}): {items: T[] | undefined; state: LogState; window: ScanWindow | undefined; refetch: () => void} {
+    const enabled = (p.enabled ?? true) && !!p.offering && !!p.address;
+    const api = useQuery({
+        queryKey: ["chain", "offeringFeed", p.offering?.toLowerCase(), p.feed],
+        enabled,
+        refetchInterval: 15_000,
+        retry: 1,
+        queryFn: () => getOfferingsApi<ApiFeed>(`?offering=${p.offering!.toLowerCase()}&feed=${p.feed}`),
+    });
+    const apiOk = api.data !== undefined && api.data !== null;
+    const apiDone = api.data !== undefined || api.isError;
+    const start = apiOk ? liveStart(api.data!.indexedBlock, ADDR_L1.deployBlock) : ADDR_L1.deployBlock;
+    const live = useEventLogs(p.address, p.eventSig, enabled && apiDone, start);
+    const liveItems = (live.logs ?? []).map(p.fromLog);
+    if (apiOk) {
+        const items = mergeHistory(api.data!.rows.map(p.fromApi), liveItems);
+        // a tail longer than one browser read (indexer stalled for > ~30 h) leaves a gap: partial
+        return {items, state: live.state === "partial" ? "partial" : "complete", window: live.window, refetch: () => { void api.refetch(); live.refetch(); }};
+    }
+    return {items: live.logs ? mergeHistory([], liveItems) : undefined, state: apiDone ? live.state : "loading", window: live.window, refetch: () => { void api.refetch(); live.refetch(); }};
+}
+
+const commitFromLog = (l: EventLog): Commit => {
+    const a = l.args as {participant: string; cumulative: bigint};
+    return {tx: l.transactionHash!, logIndex: l.logIndex!, block: l.blockNumber!, wallet: a.participant, cumulative: a.cumulative};
+};
+
+/** One offering's participant count: the API's last commitment per wallet plus the browser's
+ *  Committed / Cancelled after indexedBlock, so a commit just made counts at once. Without the API
+ *  it is the W-T32 count (only from a scan that reached the deployment). */
+export function useParticipantCount(offering: `0x${string}` | undefined): number | undefined {
+    const detail = useOfferingDetailApi(offering);
+    const apiOk = detail.data !== undefined && detail.data !== null;
+    const apiDone = detail.data !== undefined || detail.isError;
+    const start = apiOk ? liveStart(detail.data!.indexedBlock, ADDR_L1.deployBlock) : ADDR_L1.deployBlock;
+    const live = useEventLogs(offering, [COMMITTED, CANCELLED], !!offering && apiDone, start);
+    if (!offering || !apiDone || !live.logs || live.state === "partial") return undefined;
+    const apiLast: Commit[] = apiOk
+        ? detail.data!.commitments.map((c) => ({tx: "", logIndex: c.logIndex, block: BigInt(c.block), wallet: c.wallet, cumulative: BigInt(c.cumulative)}))
+        : [];
+    return participantCount(apiLast, live.logs.map(commitFromLog));
+}
+
+export type RedeemItemInfo = {id: bigint; burnAmount: bigint; maxClaims: bigint};
+
+/** One offering's redeem items: the API's list plus RedeemableCreated read after indexedBlock
+ *  (dedup by id). Without the API: the W-T32 scan of the manager from the deployment. */
+export function useRedeemItems(offering: `0x${string}` | undefined, redeemManager: `0x${string}` | undefined) {
+    const detail = useOfferingDetailApi(offering);
+    const apiOk = detail.data !== undefined && detail.data !== null;
+    const apiDone = detail.data !== undefined || detail.isError;
+    const start = apiOk ? liveStart(detail.data!.indexedBlock, ADDR_L1.deployBlock) : ADDR_L1.deployBlock;
+    const live = useEventLogs(redeemManager, REDEEMABLE_CREATED, !!redeemManager && apiDone, start);
+    const byId = new Map<string, RedeemItemInfo>();
+    if (apiOk) for (const r of detail.data!.redeemItems) byId.set(r.id, {id: BigInt(r.id), burnAmount: BigInt(r.burnAmount), maxClaims: BigInt(r.maxClaims)});
+    for (const l of live.logs ?? []) {
+        const a = l.args as {id: bigint; burnAmount: bigint; maxClaims: bigint};
+        if (!byId.has(a.id.toString())) byId.set(a.id.toString(), {id: a.id, burnAmount: a.burnAmount, maxClaims: a.maxClaims});
+    }
+    const known = apiOk || live.logs !== undefined;
+    const state: LogState = !redeemManager ? "complete" : apiOk ? (live.state === "partial" ? "partial" : "complete") : apiDone ? live.state : "loading";
+    return {
+        items: known ? [...byId.values()] : undefined,
+        state,
+        window: live.window,
+        refetch: () => { void detail.refetch(); live.refetch(); },
+    };
+}
+
+/** The upfront proceeds of a settled offering from the indexer (null when it has not seen
+ *  ProceedsDistributed or failed; the caller then reads the event itself). */
+export function useIndexedUpfront(offering: `0x${string}` | undefined): {upfront: bigint | null; done: boolean} {
+    const detail = useOfferingDetailApi(offering);
+    const u = detail.data?.offering.upfront;
+    return {upfront: u ? BigInt(u) : null, done: detail.data !== undefined || detail.isError};
 }

@@ -10,7 +10,7 @@ import {ADDR_L1} from "../contracts/addressesV3L1";
 import {ProceedsLockAbi} from "../contracts/abisV3L1";
 import {MockKRWV3Abi} from "../contracts/abisV3";
 import {giwaSepolia} from "../config/chain";
-import {OfferingInfo, useEventLogs} from "../hooks";
+import {OfferingInfo, useEventLogs, useIndexedUpfront} from "../hooks";
 import {proceedsStatus} from "../lib/proceeds";
 import {fmt} from "../lib/format";
 import {bpsPct, spanText} from "../lib/proceedsText";
@@ -57,8 +57,10 @@ export function ProceedsPanel({o}: {o: OfferingInfo}) {
             : [],
         query: {enabled: !!lock, refetchInterval: o.settled ? 15_000 : false},
     });
-    // the upfront amount is only in the settle transaction's event
-    const dist = useEventLogs(o.settled ? o.address : undefined, PROCEEDS_DISTRIBUTED);
+    // the upfront amount is only in the settle transaction's event: from the indexer (W-T33), or
+    // read by the browser when the indexer has not got it
+    const indexed = useIndexedUpfront(o.settled ? o.address : undefined);
+    const dist = useEventLogs(o.settled && indexed.done && indexed.upfront === null ? o.address : undefined, PROCEEDS_DISTRIBUTED);
     if (o.refunding) return null;
 
     const r = reads.data?.map((x) => (x.status === "success" ? x.result : undefined));
@@ -67,7 +69,7 @@ export function ProceedsPanel({o}: {o: OfferingInfo}) {
     ];
     const termsKnown = start !== undefined && duration !== undefined && cliffAt !== undefined;
     const readFailed = !!lock && (reads.isError || (reads.data?.some((x) => x.status !== "success") ?? false));
-    const upfrontLog = dist.logs?.[0]?.args as {upfront: bigint} | undefined;
+    const upfrontLog = indexed.upfront !== null ? {upfront: indexed.upfront} : (dist.logs?.[0]?.args as {upfront: bigint} | undefined);
 
     const terms = !lock ? (
         <p className="m-0 text-[13px] text-hanji-100">{copy.offering.proceedsAllUpfront}</p>

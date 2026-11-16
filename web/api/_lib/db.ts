@@ -5,6 +5,7 @@
 import {neon, NeonQueryFunction} from "@neondatabase/serverless";
 import type {FoldRow} from "./positions.js";
 import type {Interval, KnownCurve, RangeWrite} from "./indexer.js";
+import type {KnownOffering, RangeWriteL1} from "./indexerL1.js";
 
 export type Sql = NeonQueryFunction<false, false>;
 
@@ -104,6 +105,58 @@ const SCHEMA = [
         PRIMARY KEY (follower, target)
     )`,
     `CREATE INDEX IF NOT EXISTS mapae_follows_target ON mapae_follows (target)`,
+    // W-T33: v3.2-L1 fixed-price offerings (own cursor row L1_INDEXER_STATE_ID). Pool swaps of these
+    // offerings live in mapae_offering_swaps, never in mapae_trades (L0 aggregates stay L0 only).
+    `CREATE TABLE IF NOT EXISTS mapae_offerings (
+        offering text PRIMARY KEY,
+        token text NOT NULL,
+        creator text NOT NULL,
+        redeem_manager text NOT NULL,
+        vesting text NOT NULL,
+        sponsorship text NOT NULL,
+        proceeds_lock text NOT NULL,
+        name text,
+        symbol text,
+        created_block bigint NOT NULL,
+        created_ts bigint NOT NULL,
+        settled_block bigint,
+        settled_ts bigint,
+        pool text,
+        total_sold numeric(78,0),
+        total_raised numeric(78,0),
+        platform_proceeds numeric(78,0),
+        upfront numeric(78,0),
+        locked numeric(78,0)
+    )`,
+    `CREATE TABLE IF NOT EXISTS mapae_offering_events (
+        tx text,
+        log_index int,
+        PRIMARY KEY (tx, log_index),
+        offering text NOT NULL,
+        kind text NOT NULL CHECK (kind IN ('commit','cancel','claim','refund','refunds_enabled','redeemable_created','redeemed','sponsored')),
+        actor text,
+        amount numeric(78,0),
+        amount2 numeric(78,0),
+        ref text,
+        message text,
+        block bigint NOT NULL,
+        ts bigint NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS mapae_offering_events_okb ON mapae_offering_events (offering, kind, block)`,
+    `CREATE TABLE IF NOT EXISTS mapae_offering_swaps (
+        tx text,
+        log_index int,
+        PRIMARY KEY (tx, log_index),
+        offering text NOT NULL,
+        pool text NOT NULL,
+        trader text NOT NULL,
+        quote_in boolean NOT NULL,
+        quote_amount numeric(78,0) NOT NULL,
+        token_amount numeric(78,0) NOT NULL,
+        block bigint NOT NULL,
+        ts bigint NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS mapae_offering_swaps_ob ON mapae_offering_swaps (offering, block DESC)`,
 ];
 
 export async function ensureSchema(sql: Sql): Promise<void> {
@@ -141,6 +194,10 @@ export async function withSchemaRetry<T>(label: string, run: () => Promise<T>, e
  *  ADDR_V3.deployBlock, so every v3.2 event is read again: trades overwrite price_wad, r_after and
  *  s_after on (tx, log_index); curves and transfers keep DO NOTHING, graduations are idempotent. */
 export const INDEXER_STATE_ID = 33;
+
+/** W-T33: cursor row of the v3.2-L1 offering indexer (starts at ADDR_L1.deployBlock). Separate from
+ *  INDEXER_STATE_ID so L0 is never read again; the catch-up throttle stays on the L0 row. */
+export const L1_INDEXER_STATE_ID = 132;
 
 /** Minimum seconds between two on-demand catch-up runs, across all callers. */
 export const POKE_GAP_SEC = 20;
@@ -725,4 +782,186 @@ export async function feed(sql: Sql, wallet: string, factory: string, before: bi
          LIMIT $4`,
         [wallet, factory.toLowerCase(), before === undefined ? null : before.toString(), FEED_PAGE]
     )) as FeedOut[];
+}
+
+// ---------------------------------------------------------------------------------------------
+// v3.2-L1 offerings (W-T33): indexer writes and /api/chain/offerings queries (lowercase addresses)
+// ---------------------------------------------------------------------------------------------
+
+export async function readNextBlockL1(sql: Sql): Promise<bigint | null> {
+    const rows = (await sql.query(`SELECT next_block::text AS n FROM mapae_indexer_state WHERE id = $1`, [L1_INDEXER_STATE_ID])) as {n: string}[];
+    return rows[0] ? BigInt(rows[0].n) : null;
+}
+
+export async function readStateL1(sql: Sql): Promise<{indexedBlock: string | null; indexedTs: string | null}> {
+    const rows = (await sql.query(`SELECT (next_block - 1)::text AS b, indexed_ts::text AS ts FROM mapae_indexer_state WHERE id = $1`, [L1_INDEXER_STATE_ID])) as {b: string; ts: string | null}[];
+    return {indexedBlock: rows[0]?.b ?? null, indexedTs: rows[0]?.ts ?? null};
+}
+
+export async function loadOfferings(sql: Sql): Promise<KnownOffering[]> {
+    const rows = (await sql.query(`SELECT offering, redeem_manager AS rm, sponsorship AS sp, pool FROM mapae_offerings`)) as {offering: string; rm: string; sp: string; pool: string | null}[];
+    const zero = "0x0000000000000000000000000000000000000000";
+    return rows.map((r) => ({
+        offering: r.offering as `0x${string}`,
+        redeemManager: r.rm as `0x${string}`,
+        sponsorship: r.sp === zero ? null : (r.sp as `0x${string}`),
+        pool: (r.pool as `0x${string}` | null) ?? null,
+    }));
+}
+
+/** One L1 range in one transaction (one statement per table through unnest arrays). Offerings,
+ *  events and swaps are DO NOTHING on their keys; settlement values fill only what the range saw
+ *  (COALESCE), so Settled, Listed and ProceedsDistributed in different ranges still end in one row. */
+export async function writeRangeL1(sql: Sql, w: RangeWriteL1): Promise<void> {
+    const o = w.offerings;
+    const st = w.settlements;
+    const e = w.events;
+    const x = w.swaps;
+    await sql.transaction([
+        sql.query(
+            `INSERT INTO mapae_offerings (offering, token, creator, redeem_manager, vesting, sponsorship, proceeds_lock, name, symbol, created_block, created_ts)
+             SELECT * FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[], $9::text[], $10::bigint[], $11::bigint[])
+             ON CONFLICT (offering) DO NOTHING`,
+            [o.map((r) => r.offering), o.map((r) => r.token), o.map((r) => r.creator), o.map((r) => r.redeemManager), o.map((r) => r.vesting), o.map((r) => r.sponsorship), o.map((r) => r.proceedsLock), o.map((r) => r.name), o.map((r) => r.symbol), o.map((r) => r.createdBlock), o.map((r) => r.createdTs)]
+        ),
+        sql.query(
+            `UPDATE mapae_offerings AS m SET
+                 settled_block = COALESCE(u.sb, m.settled_block), settled_ts = COALESCE(u.sts, m.settled_ts), pool = COALESCE(u.pool, m.pool),
+                 total_sold = COALESCE(u.ts_, m.total_sold), total_raised = COALESCE(u.tr, m.total_raised),
+                 platform_proceeds = COALESCE(u.pp, m.platform_proceeds), upfront = COALESCE(u.up, m.upfront), locked = COALESCE(u.lk, m.locked)
+             FROM unnest($1::text[], $2::bigint[], $3::bigint[], $4::text[], $5::numeric[], $6::numeric[], $7::numeric[], $8::numeric[], $9::numeric[])
+                  AS u(offering, sb, sts, pool, ts_, tr, pp, up, lk)
+             WHERE m.offering = u.offering`,
+            [st.map((r) => r.offering), st.map((r) => r.settledBlock), st.map((r) => r.settledTs), st.map((r) => r.pool), st.map((r) => r.totalSold), st.map((r) => r.totalRaised), st.map((r) => r.platformProceeds), st.map((r) => r.upfront), st.map((r) => r.locked)]
+        ),
+        sql.query(
+            `INSERT INTO mapae_offering_events (tx, log_index, offering, kind, actor, amount, amount2, ref, message, block, ts)
+             SELECT * FROM unnest($1::text[], $2::int[], $3::text[], $4::text[], $5::text[], $6::numeric[], $7::numeric[], $8::text[], $9::text[], $10::bigint[], $11::bigint[])
+             ON CONFLICT (tx, log_index) DO NOTHING`,
+            [e.map((r) => r.tx), e.map((r) => r.logIndex), e.map((r) => r.offering), e.map((r) => r.kind), e.map((r) => r.actor), e.map((r) => r.amount), e.map((r) => r.amount2), e.map((r) => r.ref), e.map((r) => r.message), e.map((r) => r.block), e.map((r) => r.ts)]
+        ),
+        sql.query(
+            `INSERT INTO mapae_offering_swaps (tx, log_index, offering, pool, trader, quote_in, quote_amount, token_amount, block, ts)
+             SELECT * FROM unnest($1::text[], $2::int[], $3::text[], $4::text[], $5::text[], $6::boolean[], $7::numeric[], $8::numeric[], $9::bigint[], $10::bigint[])
+             ON CONFLICT (tx, log_index) DO NOTHING`,
+            [x.map((r) => r.tx), x.map((r) => r.logIndex), x.map((r) => r.offering), x.map((r) => r.pool), x.map((r) => r.trader), x.map((r) => r.quoteIn), x.map((r) => r.quoteAmount), x.map((r) => r.tokenAmount), x.map((r) => r.block), x.map((r) => r.ts)]
+        ),
+        sql.query(
+            `INSERT INTO mapae_indexer_state (id, next_block, updated_at, indexed_ts) VALUES ($3::int, $1::bigint, now(), $2::bigint)
+             ON CONFLICT (id) DO UPDATE SET next_block = EXCLUDED.next_block, updated_at = now(), indexed_ts = EXCLUDED.indexed_ts`,
+            [w.nextBlock.toString(), String(w.indexedTs), L1_INDEXER_STATE_ID]
+        ),
+    ]);
+}
+
+export type OfferingListRow = {
+    offering: string;
+    token: string;
+    creator: string;
+    redeemManager: string;
+    vesting: string;
+    sponsorship: string;
+    proceedsLock: string;
+    name: string | null;
+    symbol: string | null;
+    createdBlock: string;
+    createdTs: string;
+    settled: boolean;
+    settledBlock: string | null;
+    pool: string | null;
+    /** wallets whose last Committed/Cancelled cumulative is > 0 */
+    participants: number;
+    /** sum of those last cumulatives (= totalCommitted from events) */
+    totalCommitted: string;
+    /** distinct RedeemableCreated ids */
+    redeemItems: number;
+};
+
+/** Last cumulative per (offering, wallet) from Committed / Cancelled, latest event wins. */
+const LAST_COMMITMENT = `
+    SELECT DISTINCT ON (offering, actor) offering, actor, amount2 AS cumulative, block, log_index
+    FROM mapae_offering_events
+    WHERE kind IN ('commit','cancel') AND ($1::text IS NULL OR offering = $1::text)
+    ORDER BY offering, actor, block DESC, log_index DESC`;
+
+const OFFERING_COLUMNS = `
+    o.offering, o.token, o.creator, o.redeem_manager AS "redeemManager", o.vesting, o.sponsorship, o.proceeds_lock AS "proceedsLock",
+    o.name, o.symbol, o.created_block::text AS "createdBlock", o.created_ts::text AS "createdTs",
+    (o.settled_block IS NOT NULL) AS settled, o.settled_block::text AS "settledBlock", o.pool,
+    COALESCE(c.n, 0)::int AS participants, COALESCE(c.total, 0)::text AS "totalCommitted",
+    COALESCE(r.n, 0)::int AS "redeemItems"`;
+
+const OFFERING_JOINS = `
+    LEFT JOIN (SELECT offering, count(*) FILTER (WHERE cumulative > 0) AS n, sum(cumulative) AS total FROM (${LAST_COMMITMENT}) lc GROUP BY offering) c ON c.offering = o.offering
+    LEFT JOIN (SELECT offering, count(DISTINCT ref) AS n FROM mapae_offering_events WHERE kind = 'redeemable_created' AND ($1::text IS NULL OR offering = $1::text) GROUP BY offering) r ON r.offering = o.offering`;
+
+/** Every offering, newest first, with participants, total committed and redeem item count, in one
+ *  statement (grouped subqueries, no per-offering query). */
+export async function offeringList(sql: Sql): Promise<OfferingListRow[]> {
+    return (await sql.query(
+        `SELECT ${OFFERING_COLUMNS} FROM mapae_offerings o ${OFFERING_JOINS}
+         ORDER BY o.created_block DESC, o.offering DESC
+         LIMIT 500`,
+        [null]
+    )) as OfferingListRow[];
+}
+
+export type OfferingDetail = OfferingListRow & {
+    settledTs: string | null;
+    totalSold: string | null;
+    totalRaised: string | null;
+    platformProceeds: string | null;
+    upfront: string | null;
+    locked: string | null;
+};
+export type Commitment = {wallet: string; cumulative: string; block: string; logIndex: number};
+export type RedeemItem = {id: string; creator: string; burnAmount: string; maxClaims: string; block: string; tx: string; logIndex: number};
+
+/** One offering's summary, its wallets' last commitments and its redeem items (three statements,
+ *  run in parallel by the caller; none per wallet or per item). */
+export async function offeringDetail(sql: Sql, offering: string): Promise<{row: OfferingDetail | null; commitments: Commitment[]; redeemItems: RedeemItem[]}> {
+    const [rows, commitments, items] = await Promise.all([
+        sql.query(
+            `SELECT ${OFFERING_COLUMNS}, o.settled_ts::text AS "settledTs", o.total_sold::text AS "totalSold", o.total_raised::text AS "totalRaised",
+                    o.platform_proceeds::text AS "platformProceeds", o.upfront::text AS upfront, o.locked::text AS locked
+             FROM mapae_offerings o ${OFFERING_JOINS}
+             WHERE o.offering = $1::text`,
+            [offering]
+        ),
+        sql.query(
+            `SELECT actor AS wallet, cumulative::text AS cumulative, block::text AS block, log_index AS "logIndex" FROM (${LAST_COMMITMENT}) lc ORDER BY block, log_index`,
+            [offering]
+        ),
+        sql.query(
+            `SELECT DISTINCT ON (ref) ref AS id, actor AS creator, amount::text AS "burnAmount", amount2::text AS "maxClaims", block::text AS block, tx, log_index AS "logIndex"
+             FROM mapae_offering_events WHERE offering = $1 AND kind = 'redeemable_created'
+             ORDER BY ref, block, log_index`,
+            [offering]
+        ),
+    ]);
+    return {row: ((rows as OfferingDetail[])[0] ?? null), commitments: commitments as Commitment[], redeemItems: items as RedeemItem[]};
+}
+
+export const OFFERING_FEED_PAGE = 50;
+export type OfferingFeed = "swaps" | "sponsors" | "commits";
+export type OfferingFeedRow = Record<string, string | number | boolean | null>;
+
+/** Newest OFFERING_FEED_PAGE rows of one feed before `before` (block, exclusive). */
+export async function offeringFeed(sql: Sql, offering: string, feed: OfferingFeed, before: bigint | undefined): Promise<OfferingFeedRow[]> {
+    const b = before === undefined ? null : before.toString();
+    if (feed === "swaps") {
+        return (await sql.query(
+            `SELECT tx, log_index AS "logIndex", trader, quote_in AS "quoteIn", quote_amount::text AS "quoteAmount", token_amount::text AS "tokenAmount", block::text AS block, ts::text AS ts
+             FROM mapae_offering_swaps WHERE offering = $1 AND ($2::bigint IS NULL OR block < $2::bigint)
+             ORDER BY block DESC, log_index DESC LIMIT $3`,
+            [offering, b, OFFERING_FEED_PAGE]
+        )) as OfferingFeedRow[];
+    }
+    const kinds = feed === "sponsors" ? ["sponsored"] : ["commit", "cancel"];
+    return (await sql.query(
+        `SELECT tx, log_index AS "logIndex", kind, actor, amount::text AS amount, amount2::text AS amount2, message, block::text AS block, ts::text AS ts
+         FROM mapae_offering_events WHERE offering = $1 AND kind = ANY($2::text[]) AND ($3::bigint IS NULL OR block < $3::bigint)
+         ORDER BY block DESC, log_index DESC LIMIT $4`,
+        [offering, kinds, b, OFFERING_FEED_PAGE]
+    )) as OfferingFeedRow[];
 }
