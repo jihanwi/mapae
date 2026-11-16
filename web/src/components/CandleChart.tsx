@@ -6,9 +6,12 @@
 // zooms, double click / double tap resets. One finger shows the candle under it.
 import {useEffect, useRef, useState} from "react";
 import {useCopy} from "../copy";
+import {useAccount} from "wagmi";
 import {useCandles, useChainSummary} from "../hooks/chainData";
 import {useActivity} from "../hooks/activity";
-import {tradePriceWad} from "../lib/activity";
+import {useWalletTrades, WalletTrade} from "../hooks/wallet";
+import {Trade, tradePriceWad} from "../lib/activity";
+import {CandleMarks, MarkerTrade, marksByCandle} from "../lib/trustSignals";
 import {AREA_GAP, barIndexAt, connectOpens, fitView, layoutCandles, liveFrom, LiveTrade, mergeLiveCandles, panBy, parseCandles, TIME_LABEL_W, timeLabels, toMarketCap, View, zoomAt} from "../lib/candles";
 import {fmtAxisMcap, fmtAxisPrice, fmtRound} from "../lib/format";
 
@@ -38,8 +41,43 @@ function useWidth<T extends HTMLElement>() {
 
 type AxisUnit = "mcap" | "price";
 type AxisScale = "linear" | "log";
+type OnOff = "on" | "off";
 const AXIS_KEY = "mapae.chart.axis";
 const SCALE_KEY = "mapae.chart.scale";
+const DEV_MARKS_KEY = "mapae.chart.devMarks";
+const MY_MARKS_KEY = "mapae.chart.myMarks";
+const MARK_GAP = 3;
+const MARK_STEP = 13; // one mark: a 5 px triangle and a 9 px letter
+
+/** Trades of one wallet on this curve as chart marks (server pages + browser trades not yet indexed). */
+function walletMarks(pages: {trades: WalletTrade[]}[] | undefined, live: readonly Trade[], curve: string, wallet: string | undefined, who: "dev" | "me", tsOf: (b: bigint) => number | undefined, devOnly: boolean): MarkerTrade[] {
+    if (!wallet) return [];
+    const c = curve.toLowerCase();
+    const w = wallet.toLowerCase();
+    const out: MarkerTrade[] = [];
+    for (const p of pages ?? []) {
+        for (const t of p.trades) if (t.curve.toLowerCase() === c && (!devOnly || t.isDev)) out.push({ts: Number(t.ts), side: t.side, who});
+    }
+    for (const t of live) {
+        const ts = tsOf(t.block);
+        if (ts !== undefined && t.curve.toLowerCase() === c && t.trader.toLowerCase() === w && (!devOnly || t.isDev)) out.push({ts, side: t.side, who});
+    }
+    return out;
+}
+
+/** One mark: a triangle pointing at the candle and its letter beyond it. */
+function Mark({x, y, dir, letter}: {x: number; y: number; dir: "up" | "down"; letter: string}) {
+    // dir "down" (sell): the triangle tip at y, the letter above; "up" (buy): tip at y, letter below
+    const tri = dir === "down" ? `M${x - 3},${y - 5} L${x + 3},${y - 5} L${x},${y} Z` : `M${x - 3},${y + 5} L${x + 3},${y + 5} L${x},${y} Z`;
+    return (
+        <g className={dir === "up" ? "text-up" : "text-down"} pointerEvents="none">
+            <path d={tri} fill="currentColor" />
+            <text x={x} y={dir === "down" ? y - 7 : y + 14} fontSize={9} fontWeight={700} textAnchor="middle" fill="currentColor">
+                {letter}
+            </text>
+        </g>
+    );
+}
 
 function readPref<T extends string>(key: string, allowed: readonly T[]): T | null {
     try {
@@ -62,8 +100,24 @@ const timeLabel = (t: number, locale: string, sec: number) =>
 
 /** `graduated` picks the default scale (log after graduation, linear before) until the user
  *  chooses one. The vertical axis shows market cap by default (STATUS 결정 48). */
-export function CandleChart({curve, unit, virtualQuote, graduated = false}: {curve: string; unit: string; virtualQuote: bigint; graduated?: boolean}) {
+export function CandleChart({curve, unit, virtualQuote, graduated = false, dev}: {curve: string; unit: string; virtualQuote: bigint; graduated?: boolean; dev?: string}) {
     const tr = useCopy();
+    // Trade marks (decision 51): Dev trades and the connected wallet's trades, each toggled.
+    const [showDev, setShowDev] = useState(() => readPref<OnOff>(DEV_MARKS_KEY, ["on", "off"]) !== "off");
+    const [showMine, setShowMine] = useState(() => readPref<OnOff>(MY_MARKS_KEY, ["on", "off"]) !== "off");
+    const toggleDev = () => {
+        const next = !showDev;
+        setShowDev(next);
+        writePref(DEV_MARKS_KEY, next ? "on" : "off");
+    };
+    const toggleMine = () => {
+        const next = !showMine;
+        setShowMine(next);
+        writePref(MY_MARKS_KEY, next ? "on" : "off");
+    };
+    const {address: me} = useAccount();
+    const devTrades = useWalletTrades(dev ?? "");
+    const myTrades = useWalletTrades(me ?? "");
     const [interval, setIv] = useState<300 | 3600 | 86400>(300);
     const [axis, setAxisState] = useState<AxisUnit>(() => readPref<AxisUnit>(AXIS_KEY, ["mcap", "price"]) ?? "mcap");
     const [chosenScale, setChosenScale] = useState<AxisScale | null>(() => readPref<AxisScale>(SCALE_KEY, ["linear", "log"]));
@@ -94,6 +148,15 @@ export function CandleChart({curve, unit, virtualQuote, graduated = false}: {cur
     const indexed = liveFrom({candlesOk: q.isSuccess, serverCount: server.length, indexedBlock: summary.isSuccess ? summary.data.indexedBlock : undefined});
     const priced = connectOpens(indexed === undefined ? server : mergeLiveCandles(server, live, indexed, interval));
     const candles = axis === "mcap" ? toMarketCap(priced) : priced;
+    const markTrades = [
+        ...(showDev ? walletMarks(devTrades.data?.pages, activity.trades, curve, dev, "dev", activity.tsOf, true) : []),
+        ...(showMine ? walletMarks(myTrades.data?.pages, activity.trades, curve, me, "me", activity.tsOf, false) : []),
+    ];
+    const marks: Map<number, CandleMarks> = marksByCandle(
+        markTrades,
+        candles.map((x) => x.t),
+        interval
+    );
     // null = default view (fits the width, newest at the right). Width changes keep the slot and
     // only re-fit the offset (fitView); interval changes go back to the default view.
     const [view, setView] = useState<View | null>(null);
@@ -196,6 +259,25 @@ export function CandleChart({curve, unit, virtualQuote, graduated = false}: {cur
                             </button>
                         ))}
                     </div>
+                    {dev && (
+                        <div role="group" aria-label={tr.chain.marksLabel} className="flex gap-1.5">
+                            {(
+                                [
+                                    [showDev, toggleDev, tr.chain.marksDev],
+                                    [showMine, toggleMine, tr.chain.marksMine],
+                                ] as const
+                            ).map(([on, toggle, text]) => (
+                                <button
+                                    key={text}
+                                    aria-pressed={on}
+                                    onClick={toggle}
+                                    className={`px-3 min-h-[32px] rounded-full border text-[12px] whitespace-nowrap ${on ? "border-brass-400 text-brass-400" : "border-ink-700 text-hanji-400 hover:border-brass-600"}`}
+                                >
+                                    {text}
+                                </button>
+                            ))}
+                        </div>
+                    )}
                 </div>
             </div>
             <div ref={boxRef} className="w-full min-w-0 select-none">
@@ -237,6 +319,23 @@ export function CandleChart({curve, unit, virtualQuote, graduated = false}: {cur
                                     <rect x={b.x - b.w / 2} y={b.volTop} width={b.w} height={b.volH} fill="currentColor" opacity={0.35} />
                                 </g>
                             ))}
+                            {L.bars.map((b) => {
+                                const m = marks.get(b.candle.t);
+                                if (!m) return null;
+                                // sells above the wick (Dev nearest), buys below it; clamped inside the plot
+                                const sells = [m.devSell ? "D" : null, m.mySell ? "S" : null].filter((x): x is string => x !== null);
+                                const buys = [m.devBuy ? "D" : null, m.myBuy ? "B" : null].filter((x): x is string => x !== null);
+                                return (
+                                    <g key={`m${b.candle.t}`}>
+                                        {sells.map((l, i) => (
+                                            <Mark key={`s${l}`} x={b.x} y={Math.max(16 + i * MARK_STEP, b.wickTop - MARK_GAP - i * MARK_STEP)} dir="down" letter={l} />
+                                        ))}
+                                        {buys.map((l, i) => (
+                                            <Mark key={`b${l}`} x={b.x} y={Math.min(HEIGHT - 16 - (buys.length - 1 - i) * MARK_STEP, b.wickBottom + MARK_GAP + i * MARK_STEP)} dir="up" letter={l} />
+                                        ))}
+                                    </g>
+                                );
+                            })}
                             <rect
                                 ref={setPlotEl}
                                 x={0}
