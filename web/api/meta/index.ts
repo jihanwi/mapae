@@ -1,10 +1,14 @@
 // GET /api/meta: public index of curve metadata (hidden curves removed).
 // GET /api/meta?share=<curve> (from the /t/:curve rewrite): link preview HTML (see _lib/share.ts).
 // POST /api/meta: save a curve's image, description and links, signed by its Dev. Never overwrites.
+// W-T34 (decision 58), same function: GET /api/meta?disclosure=<offering> reads an offering's
+// disclosure; POST {kind: "disclosure" | "addendum", ...} saves one, signed by the offering's creator
+// (_lib/disclosureHandler.ts). The curve metadata answers above are unchanged.
 import {blobStore} from "../_lib/blobStore.js";
-import {giwaChain} from "../_lib/chain.js";
+import {disclosureChain, giwaChain} from "../_lib/chain.js";
+import {handleGetDisclosure, handlePostDisclosure} from "../_lib/disclosureHandler.js";
 import {handleGetMeta, handlePostMeta, IndexEntry} from "../_lib/handler.js";
-import {curveName, ensureSchema, getSql, withSchemaRetry} from "../_lib/db.js";
+import {curveName, ensureSchema, getSql, hasIndexedCommit, withSchemaRetry} from "../_lib/db.js";
 import {handleShare} from "../_lib/share.js";
 import {ADDR_V3} from "../../src/contracts/addressesV3.js";
 import {cors, forbiddenOrigin, json, MAX_BODY, preflight} from "../_lib/http.js";
@@ -31,6 +35,11 @@ export async function GET(request: Request): Promise<Response> {
     }
     const c = cors(request);
     if (!c.allowed) return forbiddenOrigin(c);
+    const disclosure = url.searchParams.get("disclosure");
+    if (disclosure !== null) {
+        const d = await handleGetDisclosure(disclosure, {store: blobStore});
+        return json(d.status, d.body, {...c.headers, ...(d.status === 200 ? {"Cache-Control": "s-maxage=15, stale-while-revalidate=60"} : {})});
+    }
     const r = await handleGetMeta({store: blobStore});
     const cache: Record<string, string> = r.status === 200 ? {"Cache-Control": "s-maxage=15, stale-while-revalidate=60"} : {};
     return json(r.status, r.body, {...c.headers, ...cache});
@@ -52,6 +61,24 @@ export async function POST(request: Request): Promise<Response> {
         body = JSON.parse(text);
     } catch {
         return json(400, {error: "bad_request"}, c.headers);
+    }
+    const kind = (body as {kind?: unknown} | null)?.kind;
+    if (kind === "disclosure" || kind === "addendum") {
+        try {
+            const r = await handlePostDisclosure(body, {
+                store: blobStore,
+                chain: disclosureChain(),
+                indexedCommit: (o) => {
+                    const sql = getSql();
+                    return withSchemaRetry("meta disclosure", () => hasIndexedCommit(sql, o), () => ensureSchema(sql));
+                },
+                nowMs: Date.now(),
+            });
+            return json(r.status, r.body, c.headers);
+        } catch (e) {
+            console.error("meta disclosure POST failed", e);
+            return json(503, {error: "temporary"}, c.headers);
+        }
     }
     try {
         const r = await handlePostMeta(body, {store: blobStore, chain: giwaChain(), nowMs: Date.now()});
