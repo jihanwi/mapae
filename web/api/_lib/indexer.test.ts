@@ -28,7 +28,7 @@ import {
     fillVerified,
     verifiedLookupTargets,
 } from "./indexer.js";
-import {curveList, INDEXER_STATE_ID, LIST_MAX, loadCurves, PokeClaim, POKE_GAP_SEC, readNextBlock, readState, Sql, trades as tradesQuery, walletTradeRows, walletTrades, writeRange} from "./db.js";
+import {curveList, holderSignals, INDEXER_STATE_ID, LIST_MAX, loadCurves, PokeClaim, POKE_GAP_SEC, readNextBlock, readState, Sql, trades as tradesQuery, walletTradeRows, walletTrades, writeRange} from "./db.js";
 import {handlePoke} from "./poke.js";
 import {paramsAllowed} from "./chainApi.js";
 
@@ -316,6 +316,34 @@ describe("db: v3.1 cursor row and factory filter", () => {
         expect(seen[2].text).toContain("WHERE factory = $1");
         const state = seen.find((q) => q.text.includes("mapae_indexer_state (id"))!;
         expect(state.params).toEqual(["5", "7", 33]);
+    });
+});
+
+describe("db: trust signals (decision 51)", () => {
+    it("one statement over the token's transfers and the curve's trades, curve and pool excluded", async () => {
+        const seen: {text: string; params: unknown[]}[] = [];
+        const sql = {
+            query: (text: string, params: unknown[] = []) => {
+                seen.push({text, params});
+                return Promise.resolve([{devFirstBuy: "0"}]);
+            },
+        } as unknown as Sql;
+        const r = await holderSignals(sql, {curve: CURVE, token: TOKEN, dev: DEV, pool: null});
+        expect(r).toEqual({devFirstBuy: "0"});
+        expect(seen).toHaveLength(1);
+        expect(seen[0].params).toEqual([TOKEN, DEV, CURVE, null, "0x0000000000000000000000000000000000000000"]);
+        const q = seen[0].text;
+        // holders: zero address, curve and (when graduated) pool excluded
+        expect(q).toContain("WHERE bal > 0 AND addr <> $5 AND addr <> $3 AND ($4::text IS NULL OR addr <> $4::text)");
+        // launch tx = the mint Transfer from the zero address; first buy = Dev curve buys in it
+        expect(q).toContain("from_addr = $5 ORDER BY block, log_index LIMIT 1");
+        expect(q).toMatch(/side = 'buy' AND venue = 'curve' AND tx IN \(SELECT tx FROM born\)/);
+        // Dev sends to anyone but the curve and the pool
+        expect(q).toContain("from_addr = $2 AND to_addr <> $3 AND ($4::text IS NULL OR to_addr <> $4::text)");
+        expect(q).toContain("rn <= 10");
+        expect(q).toContain("verified IS TRUE");
+        await holderSignals(sql, {curve: CURVE, token: TOKEN, dev: DEV, pool: POOL});
+        expect(seen[1].params[3]).toBe(POOL);
     });
 });
 

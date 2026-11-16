@@ -6,10 +6,12 @@ import {chainUrl} from "../lib/chainUrl";
 import {API_BASE} from "./meta";
 import type {CandleIn} from "../lib/candles";
 import type {ServerSummary, ServerTrade} from "../lib/chainMerge";
+import type {ServerSignals} from "../lib/trustSignals";
 
 export type HolderOut = {address: `0x${string}`; balance: string; label: "curve" | "pool" | "dev" | null};
 export const HISTORY_PAGE = 50;
-export type HoldersOut = {total: number; holders: HolderOut[]};
+/** `signals`: trust signals (decision 51); null for an unknown curve, absent from older servers. */
+export type HoldersOut = {total: number; holders: HolderOut[]; signals?: ServerSignals | null};
 
 async function getJson<T>(path: string): Promise<T> {
     const r = await fetch(`${API_BASE}${path}`);

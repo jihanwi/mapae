@@ -394,6 +394,77 @@ export async function holders(sql: Sql, token: string, exclude: string[]): Promi
     return {rows: rows.map((r) => ({address: r.address, balance: r.balance})), total};
 }
 
+/** Trust signals for the token page (decision 51): facts only, amounts as wei strings.
+ *  - devFirstBuy: the Dev's curve buys in the launch tx (the tx of the token's mint Transfer from
+ *    the zero address); "0" when none.
+ *  - devBought / devSold / devSellCount / devLastSellTs: the Dev's trades on this token (curve and
+ *    pool; is_dev), quantities in tokens.
+ *  - devBalance: the Dev's balance from indexed transfers.
+ *  - devTransferredOut: tokens the Dev sent to any address but the curve and the pool.
+ *  - holders below exclude the zero address, the curve and the pool: top10 (sum of the 10 largest
+ *    balances), circulating (sum of all), holdersCount; verifiedHeld / verifiedHolders: those of
+ *    them with a verified buy of this token. */
+export type HolderSignals = {
+    devFirstBuy: string;
+    devBought: string;
+    devSold: string;
+    devSellCount: number;
+    devLastSellTs: string | null;
+    devBalance: string;
+    devTransferredOut: string;
+    top10: string;
+    circulating: string;
+    verifiedHeld: string;
+    verifiedHolders: number;
+    holdersCount: number;
+};
+
+/** One statement. Indexes: mapae_transfers (token, from_addr) / (token, to_addr) for the balances,
+ *  the launch tx and the Dev's sends; mapae_trades (curve, ts DESC) for the Dev's trades and the
+ *  verified buyers of this curve. */
+export async function holderSignals(sql: Sql, c: {curve: string; token: string; dev: string; pool: string | null}): Promise<HolderSignals> {
+    const rows = (await sql.query(
+        `WITH b AS (
+             SELECT addr, sum(delta) AS bal FROM (
+                 SELECT to_addr AS addr, value AS delta FROM mapae_transfers WHERE token = $1
+                 UNION ALL
+                 SELECT from_addr AS addr, -value AS delta FROM mapae_transfers WHERE token = $1
+             ) x GROUP BY addr
+         ),
+         h AS (
+             SELECT addr, bal FROM b
+             WHERE bal > 0 AND addr <> $5 AND addr <> $3 AND ($4::text IS NULL OR addr <> $4::text)
+         ),
+         ranked AS (SELECT bal, row_number() OVER (ORDER BY bal DESC, addr) AS rn FROM h),
+         vb AS (SELECT DISTINCT trader FROM mapae_trades WHERE curve = $3 AND side = 'buy' AND verified IS TRUE),
+         born AS (SELECT tx FROM mapae_transfers WHERE token = $1 AND from_addr = $5 ORDER BY block, log_index LIMIT 1),
+         dt AS (
+             SELECT coalesce(sum(token_amount) FILTER (WHERE side = 'buy'), 0) AS bought,
+                    coalesce(sum(token_amount) FILTER (WHERE side = 'sell'), 0) AS sold,
+                    count(*) FILTER (WHERE side = 'sell')::int AS sells,
+                    max(ts) FILTER (WHERE side = 'sell') AS last_sell,
+                    coalesce(sum(token_amount) FILTER (WHERE side = 'buy' AND venue = 'curve' AND tx IN (SELECT tx FROM born)), 0) AS first_buy
+             FROM mapae_trades WHERE curve = $3 AND is_dev
+         )
+         SELECT dt.first_buy::text AS "devFirstBuy",
+                dt.bought::text AS "devBought",
+                dt.sold::text AS "devSold",
+                dt.sells AS "devSellCount",
+                dt.last_sell::text AS "devLastSellTs",
+                coalesce((SELECT bal FROM b WHERE addr = $2), 0)::text AS "devBalance",
+                coalesce((SELECT sum(value) FROM mapae_transfers
+                          WHERE token = $1 AND from_addr = $2 AND to_addr <> $3 AND ($4::text IS NULL OR to_addr <> $4::text)), 0)::text AS "devTransferredOut",
+                coalesce((SELECT sum(bal) FROM ranked WHERE rn <= 10), 0)::text AS top10,
+                coalesce((SELECT sum(bal) FROM h), 0)::text AS circulating,
+                coalesce((SELECT sum(h.bal) FROM h JOIN vb ON vb.trader = h.addr), 0)::text AS "verifiedHeld",
+                (SELECT count(*)::int FROM h JOIN vb ON vb.trader = h.addr) AS "verifiedHolders",
+                (SELECT count(*)::int FROM h) AS "holdersCount"
+         FROM dt`,
+        [c.token, c.dev, c.curve, c.pool, "0x0000000000000000000000000000000000000000"]
+    )) as HolderSignals[];
+    return rows[0];
+}
+
 /** priceWad here is the executed price (quote_amount * 1e18 / token_amount, rounded down), not
  *  the stored price_wad (the post-trade spot for curve trades, used by candles and the summary). */
 export type TradeOut = {tx: string; logIndex: number; side: string; venue: string; trader: string; isDev: boolean; quoteAmount: string; tokenAmount: string; priceWad: string; ts: string; block: string; verified: boolean | null};

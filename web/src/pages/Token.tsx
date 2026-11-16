@@ -24,6 +24,7 @@ import {Badge, Gauge, NetError, PrimaryBtn, SecondaryBtn, Skeleton, Stat, StaleB
 import {CurveAvatar, draftValid, linkDomain, MetaFields, SaveStatus} from "../components/MetaForm";
 import {API_BASE, CurveMeta, draftHasContent, emptyDraft, MetaDraft, useCurveMeta, useSaveMeta} from "../hooks/meta";
 import {CurveTradePanel} from "../components/CurveTradePanel";
+import {TrustSignals} from "../components/TrustSignals";
 import {CopyAddress} from "../components/CopyAddress";
 import {DevFeeBand} from "../components/DevFees";
 import {WalletLink} from "../components/WalletLink";
@@ -665,7 +666,7 @@ export default function Token() {
                 )}
                 {/* candle chart from the server index */}
                 <div className="order-5 lg:order-none min-w-0">
-                    <CandleChart curve={c.address} unit={c.graduated && c.isEth ? "WETH" : quoteUnit(c)} virtualQuote={c.virtualQuote} graduated={c.graduated} />
+                    <CandleChart curve={c.address} unit={c.graduated && c.isEth ? "WETH" : quoteUnit(c)} virtualQuote={c.virtualQuote} graduated={c.graduated} dev={c.dev} />
                 </div>
                 <div className="order-4 lg:order-none min-w-0">
                     <Progress c={c} />
@@ -683,6 +684,10 @@ export default function Token() {
                 )}
                 <div ref={panelRef} className="order-7 lg:order-none min-w-0 scroll-mt-4">
                     <CurveTradePanel c={c} side={side} onSideChange={setSide} paused={page === "stale"} />
+                </div>
+                {/* trust signals: under the trade panel from lg, under the metrics below lg */}
+                <div className="order-2 lg:order-none min-w-0">
+                    <TrustSignals curve={c.address} />
                 </div>
                 <div className="order-8 lg:order-none rounded-input px-4 py-3.5 text-[13px] text-hanji-100 border border-ink-700 bg-ink-900 text-center">
                     {tr.curve.fixedPanel}

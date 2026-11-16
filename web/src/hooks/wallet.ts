@@ -47,10 +47,12 @@ export function useWalletProfile(address: string) {
     });
 }
 
-/** Trade pages, newest first; the next page starts before the oldest ts seen. */
+/** Trade pages, newest first; the next page starts before the oldest ts seen. Off for an empty
+ *  address (e.g. the chart's "my trades" with no wallet connected). */
 export function useWalletTrades(address: string) {
     const v = useChainVersion();
     return useInfiniteQuery({
+        enabled: address !== "",
         queryKey: ["chain", "wallet-trades", address.toLowerCase(), v],
         initialPageParam: undefined as string | undefined,
         queryFn: ({pageParam}) =>
