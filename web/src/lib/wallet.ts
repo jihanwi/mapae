@@ -142,3 +142,15 @@ export function signedPnl(v: bigint, unit: Unit | "WETH", locale: string, bps?: 
     }
     return {text: `${sign}${amt} ${unit}${pct}`, tone};
 }
+
+/** The held count on the wallet profile, or null for "–" (unknown). Unknown while no chain read
+ *  has answered yet (loading or failing) instead of a "0" that only means "nothing read":
+ *  - chain reads failing now (balances or the curve list) -> unknown;
+ *  - the browser trade window (RPC) not loaded yet -> unknown (it adds tokens to read);
+ *  - tokens to read but their balances not read successfully -> unknown;
+ *  - no token to read: known only once the server profile answered (it lists received tokens). */
+export function heldCount(p: {held: number; tokens: number; balancesRead: boolean; activityLoaded: boolean; profileOk: boolean; chainFail: boolean}): number | null {
+    if (p.chainFail || !p.activityLoaded) return null;
+    if (p.tokens > 0) return p.balancesRead ? p.held : null;
+    return p.profileOk ? p.held : null;
+}

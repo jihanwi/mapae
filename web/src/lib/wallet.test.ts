@@ -1,6 +1,6 @@
 import {describe, expect, it} from "vitest";
 import type {Trade} from "./activity";
-import {applyTrade, EMPTY_POSITION, holdingValue, mergeBrowserTrades, pnl, Position, PositionState, signedPnl, splitHoldings, totals, walletAmount} from "./wallet";
+import {applyTrade, EMPTY_POSITION, heldCount, holdingValue, mergeBrowserTrades, pnl, Position, PositionState, signedPnl, splitHoldings, totals, walletAmount} from "./wallet";
 import {VECTORS} from "../../api/_lib/positionVectors";
 
 const E18 = 10n ** 18n;
@@ -147,5 +147,25 @@ describe("wallet amounts and signed P&L", () => {
         expect(signedPnl(0n, "ETH", "en-US", 0n)).toEqual({text: "0 ETH (0.0%)", tone: "flat"});
         expect(signedPnl(-2n * E, "KRWs", "en-US", -4n).text).toBe("-2 KRWs (0.0%)");
         expect(signedPnl(5n * E, "KRWs", "en-US", 1234n)).toEqual({text: "+5 KRWs (+12.3%)", tone: "up"});
+    });
+});
+
+describe("held count (\"–\" until a chain read answered)", () => {
+    const ok = {held: 0, tokens: 0, balancesRead: false, activityLoaded: true, profileOk: true, chainFail: false};
+    it("RPC blocked from the start: the trade window never loaded -> unknown, not 0", () => {
+        expect(heldCount({...ok, activityLoaded: false})).toBeNull();
+        expect(heldCount({...ok, activityLoaded: false, tokens: 2})).toBeNull();
+    });
+    it("tokens known but balances not read yet (loading or failed) -> unknown", () => {
+        expect(heldCount({...ok, tokens: 2, held: 0, balancesRead: false})).toBeNull();
+        expect(heldCount({...ok, tokens: 2, held: 0, balancesRead: true, chainFail: true})).toBeNull();
+    });
+    it("balances read: the real count, 0 included", () => {
+        expect(heldCount({...ok, tokens: 2, held: 0, balancesRead: true})).toBe(0);
+        expect(heldCount({...ok, tokens: 2, held: 1, balancesRead: true})).toBe(1);
+    });
+    it("nothing to read: 0 once the server profile answered, unknown before", () => {
+        expect(heldCount(ok)).toBe(0);
+        expect(heldCount({...ok, profileOk: false})).toBeNull();
     });
 });

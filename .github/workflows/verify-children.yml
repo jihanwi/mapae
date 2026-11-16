@@ -1,0 +1,84 @@
+name: verify-children
+
+# Verifies factory-created contracts (CurveSale, its token, its pool after graduation) on the
+# GIWA Sepolia Blockscout. They are deployed by internal CREATE calls, so `forge script --verify`
+# never sees them (see script/verify-children.js).
+#
+# Window: GIWA blocks are ~1 s apart, so 3 h is ~10,800 blocks. The default window is the last
+# 27,000 blocks (2.5 runs), so one failed run is covered by the next; the script reads it in
+# 9,000-block windows (3 calls per event). Pools of curves launched before the window are checked
+# through CurveFactory.allCurves(). Already verified contracts are skipped.
+#
+# RPC and verifier are public endpoints (no secrets). CurveFactory and the library address come
+# from deployments/giwa-sepolia-v3_2.json.
+
+on:
+  schedule:
+    - cron: "17 */3 * * *"
+  workflow_dispatch:
+    inputs:
+      from_block:
+        description: "First block to scan (default: latest - 27000). Use the deployBlock (41419458) for a full pass."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-children
+  cancel-in-progress: false
+
+env:
+  FOUNDRY_PROFILE: default
+  RPC_URL: https://sepolia-rpc.giwa.io
+  VERIFIER_URL: https://sepolia-explorer.giwa.io/api/
+  DEPLOYMENT: deployments/giwa-sepolia-v3_2.json
+  WINDOW_BLOCKS: "27000"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Pick the scan window
+        id: window
+        env:
+          INPUT_FROM: ${{ inputs.from_block }}
+        run: |
+          if [[ -n "$INPUT_FROM" ]]; then
+            if [[ ! "$INPUT_FROM" =~ ^[0-9]+$ ]]; then echo "from_block must be a block number" >&2; exit 1; fi
+            from="$INPUT_FROM"
+          else
+            latest=$(cast block-number --rpc-url "$RPC_URL")
+            from=$(( latest - WINDOW_BLOCKS ))
+          fi
+          echo "from=$from" >> "$GITHUB_OUTPUT"
+          echo "scanning from block $from"
+
+      - name: Build
+        run: forge build
+
+      - name: Verify curve children
+        run: |
+          node script/verify-children.js \
+            --rpc "$RPC_URL" \
+            --verifier-url "$VERIFIER_URL" \
+            --deployment "$DEPLOYMENT" \
+            --curve-factory "$(jq -r .curveFactory "$DEPLOYMENT")" \
+            --from-block "${{ steps.window.outputs.from }}" \
+            --allow-empty 1

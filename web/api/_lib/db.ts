@@ -101,6 +101,32 @@ export async function ensureSchema(sql: Sql): Promise<void> {
     await sql.transaction(SCHEMA.map((q) => sql.query(q)));
 }
 
+/** Postgres codes of a schema the cron has not migrated yet: undefined_table, undefined_column. */
+export const SCHEMA_MISSING_CODES: readonly string[] = ["42P01", "42703"];
+
+/** The Postgres error code of a driver error (on the error or its cause); undefined otherwise. */
+export function pgCode(e: unknown): string | undefined {
+    const x = e as {code?: unknown; cause?: {code?: unknown}} | null;
+    const code = x?.code ?? x?.cause?.code;
+    return typeof code === "string" ? code : undefined;
+}
+
+/** Runs a read; if it fails because a table or column does not exist yet (a deploy that added
+ *  them, before the cron ran ensureSchema), runs `ensure` once and the read once more. Any other
+ *  error, and a second failure, is thrown to the caller (which logs it and answers 503). The normal
+ *  path costs nothing extra. */
+export async function withSchemaRetry<T>(label: string, run: () => Promise<T>, ensure: () => Promise<void>): Promise<T> {
+    try {
+        return await run();
+    } catch (e) {
+        const code = pgCode(e);
+        if (code === undefined || !SCHEMA_MISSING_CODES.includes(code)) throw e;
+        console.warn(`${label}: schema not migrated (${code}); running ensureSchema and retrying once`);
+        await ensure();
+        return run();
+    }
+}
+
 /** Indexer cursor row per contract version: id 1 = v3, id 31 = v3.1, id 32 = v3.2 (all left
  *  untouched), id 33 = v3.2 reindex for decision 50 (spot price per curve trade). A new row starts at
  *  ADDR_V3.deployBlock, so every v3.2 event is read again: trades overwrite price_wad, r_after and
