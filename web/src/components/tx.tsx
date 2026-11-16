@@ -68,7 +68,7 @@ export function ToastProvider({children}: {children: ReactNode}) {
             <div className="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-[340px]">
                 {toasts.map((t) => (
                     <div key={t.id} className="bg-ink-900 border rounded-input px-4 py-3 text-[13px]"
-                        style={{borderColor: t.kind === "error" ? "rgba(176,96,79,.5)" : t.kind === "success" ? "rgba(122,155,109,.5)" : "#3A3126"}}>
+                        style={{borderColor: t.kind === "error" ? "rgba(201,122,104,.5)" : t.kind === "success" ? "rgba(122,155,109,.5)" : "#3A3126"}}>
                         <div className="flex items-center gap-2">
                             {t.kind === "pending" && <span className="w-3 h-3 rounded-full border-2 border-brass-400 border-t-transparent animate-spin flex-none" />}
                             {t.kind === "success" && <span className="text-success">✓</span>}
