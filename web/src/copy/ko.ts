@@ -314,6 +314,9 @@ export const ko = {
         myCommit: "내 응모액",
         commitCta: "응모하기",
         commitMore: "증액하기",
+        approveCommit: "승인 후 응모", // W-T37: L0 의 "승인 후 매수" 와 같은 방식
+        approveCommitMore: "승인 후 증액",
+        approveLabel: "KRWs 사용 승인",
         cancelCta: "응모 취소",
         cancelFrozenNote: "마감 2시간 전부터는 취소할 수 없어요", // C3
         commitStillOpenNote: "신규 응모와 증액은 마감까지 가능해요",
@@ -393,6 +396,8 @@ export const ko = {
             `후원액의 ${pct}%로 시장에서 토큰을 매수해 소각하고, 나머지는 발행자에게 전달돼요`,
         msgPlaceholder: "응원 메시지를 남겨 주세요 (온체인에 기록됩니다)",
         sponsorCta: "후원 보내기",
+        approveSponsorCta: "승인 후 후원", // W-T37
+        approveRedeemCta: "승인 후 리딤",
         feed: "후원 피드",
         feedBurned: (n: string) => `${n}개 소각`,
         itemName: (id: string) => `리딤 #${id}`,
@@ -417,6 +422,7 @@ export const ko = {
         history: "거래 히스토리",
         lpTrust: "유동성은 영구 잠금. LP 지분 전량이 0xdEaD 주소에 있어 누구도 회수할 수 없습니다", // C5
         swapCta: "스왑",
+        approveLabel: "사용 승인", // W-T37: approval toast label
         amountIn: "수량",
         myStrip: (n: string, m: string) => `보유 ${n}개 · KRWs 잔액 ${m}`,
         maxBtn: "최대",

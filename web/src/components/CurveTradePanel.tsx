@@ -1,4 +1,4 @@
-import {ReactNode, useEffect, useMemo, useRef, useState} from "react";
+import {ReactNode, useEffect, useMemo, useState} from "react";
 import {Abi} from "viem";
 import {formatUnits, parseUnits} from "viem";
 import {useAccount, useBalance, usePublicClient, useReadContract, useReadContracts, useWriteContract} from "wagmi";
@@ -19,8 +19,8 @@ import {giwaSepolia} from "../config/chain";
 import {fmt, fmtCeil, sanitizeAmountInput} from "../lib/format";
 import {maxInput} from "../lib/maxInput";
 import {quickAmounts} from "../lib/quickAmount";
-import {RunFn, RunOpts, TxButton, useToast} from "./tx";
-import {approvalAlreadySent, SentApproval, waitForAllowance} from "../lib/allowance";
+import {RunFn, RunOpts, TxButton} from "./tx";
+import {useApprovalStep} from "../hooks/approval";
 import {PrimaryBtn, SecondaryBtn} from "./ui";
 import {opensOnboarding, useOnboardingModal} from "./OnboardingModal";
 import {minSec} from "../lib/priority";
@@ -252,43 +252,6 @@ function CtaBlock({
             {ctaLabel(tr, state, side)}
         </TxButton>
     );
-}
-
-/** Approval step shared by the three trade sides. Sends an exact-amount approval only when the
- *  CTA says so and it was not already sent for this amount, then waits until the RPC reports the
- *  new allowance (waitForAllowance) before the trade is re-quoted and simulated. If it never shows
- *  up, nothing is sent and a "not reflected yet" note is shown; pressing again resumes at the wait. */
-function useApprovalStep(opts: RunOpts) {
-    const tr = useCopy();
-    const push = useToast();
-    const {address} = useAccount();
-    const client = usePublicClient({chainId: giwaSepolia.id});
-    const {writeContractAsync} = useWriteContract();
-    const sent = useRef<SentApproval>(null);
-    const ensure = async (run: RunFn, p: {needsApproval: boolean; token: Address; spender: Address; amount: bigint}): Promise<{ok: boolean; justApproved: boolean}> => {
-        const already = approvalAlreadySent(sent.current, p.token, p.spender, p.amount);
-        if (!p.needsApproval) return {ok: true, justApproved: already};
-        if (!already) {
-            // exact amount only (never an unlimited approval)
-            const ok = await run(tr.curve.txApprove, () =>
-                writeContractAsync({address: p.token, abi: MembershipTokenV3Abi, functionName: "approve", args: [p.spender, p.amount], chainId: giwaSepolia.id}),
-                opts
-            );
-            if (!ok) return {ok: false, justApproved: false};
-            sent.current = {token: p.token, spender: p.spender, amount: p.amount};
-        }
-        if (!client || !address) return {ok: false, justApproved: true};
-        const covered = await waitForAllowance(
-            () => client.readContract({address: p.token, abi: MembershipTokenV3Abi, functionName: "allowance", args: [address, p.spender]}) as Promise<bigint>,
-            p.amount
-        );
-        if (!covered) {
-            push({kind: "error", text: tr.tradeGuard.approvalPending});
-            return {ok: false, justApproved: true};
-        }
-        return {ok: true, justApproved: true};
-    };
-    return {ensure, done: () => void (sent.current = null)};
 }
 
 /** v3 run options: v3 error copy. (v3.1: NotVerified before sending means the device clock is

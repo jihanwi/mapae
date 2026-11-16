@@ -4,9 +4,10 @@ import {Abi, parseUnits} from "viem";
 import {copy} from "../copy";
 import {ADDR_L1} from "../contracts/addressesV3L1";
 import {RedeemManagerL1Abi, SponsorshipL1Abi} from "../contracts/abisV3L1";
-import {MembershipTokenV3Abi, MockKRWV3Abi} from "../contracts/abisV3";
+import {MembershipTokenV3Abi} from "../contracts/abisV3";
 import {ApiFeedRow, EventLog, labelOf, RedeemItemInfo, useOfferingHistory, useOfferings, useOnboarding, useRedeemItems, OfferingInfo} from "../hooks";
 import {LogState, ScanWindow} from "../lib/logRange";
+import {ERC20_APPROVAL_ABI, needsApproval, useApprovalStep} from "../hooks/approval";
 import {LogStateNote} from "../components/LogStateNote";
 import {redeemSections} from "../lib/redeemTab";
 import {Medallion, NetError, Skeleton, TextSkeleton} from "../components/ui";
@@ -87,15 +88,17 @@ function Catalog({o, redeemManager, ids, scan}: {o: OfferingInfo; redeemManager:
         args: [address ?? zero], query: {enabled: !!address, refetchInterval: 15_000},
     });
     const tokenBal = balance.data as bigint | undefined;
+    const approval = useApprovalStep({}, copy.redeem.approveLabel);
 
     const doRedeem = (r: (typeof ids)[number]) => async (run: RunFn) => {
-        if (((allowance.data as bigint) ?? 0n) < r.burnAmount) {
-            const ok = await run(copy.redeem.approveLabel, () =>
-                writeContractAsync({address: o.token, abi: MembershipTokenV3Abi, functionName: "approve", args: [redeemManager, r.burnAmount], chainId: giwaSepolia.id}));
-            if (!ok) return;
-        }
-        await run("리딤", () =>
+        const needs = needsApproval(allowance.data as bigint | undefined, r.burnAmount);
+        if (needs === undefined) return;
+        // W-T37: shared approval step (only when short, then waits until the RPC sees it)
+        const ap = await approval.ensure(run, {needsApproval: needs, token: o.token, spender: redeemManager, amount: r.burnAmount});
+        if (!ap.ok) return;
+        const ok = await run("리딤", () =>
             writeContractAsync({address: redeemManager, abi: RedeemManagerL1Abi, functionName: "redeem", args: [r.id], chainId: giwaSepolia.id}));
+        if (ok) approval.done();
     };
 
     const now = Math.floor(Date.now() / 1000);
@@ -128,8 +131,10 @@ function Catalog({o, redeemManager, ids, scan}: {o: OfferingInfo; redeemManager:
                                     </div>
                                 </div>
                             </div>
-                            <TxButton className="w-full" disabled={soldOut || expired || reason !== ""} action={doRedeem(r)}>
-                                {expired ? copy.redeem.closed : soldOut ? copy.redeem.soldOut : `${copy.redeem.redeemCta} — ${copy.redeem.cost(fmt(r.burnAmount, 0))}`}
+                            <TxButton className="w-full" disabled={soldOut || expired || reason !== "" || (!!address && needsApproval(allowance.data as bigint | undefined, r.burnAmount) === undefined)} action={doRedeem(r)}>
+                                {expired ? copy.redeem.closed : soldOut ? copy.redeem.soldOut
+                                    : !!address && needsApproval(allowance.data as bigint | undefined, r.burnAmount) === undefined ? copy.curve.cta.loading
+                                    : `${needsApproval(allowance.data as bigint | undefined, r.burnAmount) ? copy.redeem.approveRedeemCta : copy.redeem.redeemCta} — ${copy.redeem.cost(fmt(r.burnAmount, 0))}`}
                             </TxButton>
                             {reason && !soldOut && !expired && <p className="text-[12px] text-brass-400 mt-2 mb-0">{reason}</p>}
                         </div>
@@ -162,16 +167,23 @@ function SponsorPanel({o, sponsorship}: {o: OfferingInfo; sponsorship: `0x${stri
         : amountWei === 0n ? ""
         : amountWei > krwBalance ? copy.hints.overKrwBalance
         : "";
-    const sponsorDisabled = amountWei === 0n || sponsorReason !== "";
+    // W-T37: KRWs allowance for the sponsorship; approval only when it is short
+    const sponsorAllowance = useReadContract({
+        address: ADDR_L1.mockKRW, abi: ERC20_APPROVAL_ABI, functionName: "allowance", args: [address ?? "0x0000000000000000000000000000000000000000", sponsorship], chainId: giwaSepolia.id,
+        query: {enabled: !!address, refetchInterval: 15_000},
+    });
+    const needs = needsApproval(sponsorAllowance.data as bigint | undefined, amountWei);
+    const allowanceLoading = !!address && amountWei > 0n && sponsorReason === "" && needs === undefined;
+    const sponsorDisabled = amountWei === 0n || sponsorReason !== "" || allowanceLoading;
+    const approval = useApprovalStep({}, copy.offering.approveLabel);
 
     const sponsor = async (run: RunFn) => {
-        if (amountWei === 0n || !address) return;
-        const ok = await run("KRWs 사용 승인", () =>
-            writeContractAsync({address: ADDR_L1.mockKRW, abi: MockKRWV3Abi, functionName: "approve", args: [sponsorship, amountWei], chainId: giwaSepolia.id}));
-        if (!ok) return;
+        if (amountWei === 0n || !address || needs === undefined) return;
+        const ap = await approval.ensure(run, {needsApproval: needs, token: ADDR_L1.mockKRW as `0x${string}`, spender: sponsorship, amount: amountWei});
+        if (!ap.ok) return;
         const done = await run("후원 보내기", () =>
             writeContractAsync({address: sponsorship, abi: SponsorshipL1Abi, functionName: "sponsorKRWs", args: [amountWei, message], chainId: giwaSepolia.id}));
-        if (done) { setAmount(""); setMessage(""); }
+        if (done) { approval.done(); setAmount(""); setMessage(""); }
     };
 
     const events = (feed.items ?? []).slice(0, 8);
@@ -191,7 +203,9 @@ function SponsorPanel({o, sponsorship}: {o: OfferingInfo; sponsorship: `0x${stri
                 <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={3}
                     placeholder={copy.redeem.msgPlaceholder}
                     className="w-full box-border bg-ink-900 border border-ink-700 rounded-input px-4 py-3.5 text-[14px] text-hanji-100 outline-none focus:border-brass-400 resize-none mb-4" />
-                <TxButton className="w-full" disabled={sponsorDisabled} action={sponsor}>{copy.redeem.sponsorCta}</TxButton>
+                <TxButton className="w-full" disabled={sponsorDisabled} action={sponsor}>
+                    {allowanceLoading ? copy.curve.cta.loading : needs ? copy.redeem.approveSponsorCta : copy.redeem.sponsorCta}
+                </TxButton>
                 {sponsorReason && <p className="text-[12px] text-brass-400 mt-2 mb-0">{sponsorReason}</p>}
             </div>
             <div className="mt-6">
