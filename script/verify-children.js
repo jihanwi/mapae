@@ -41,6 +41,7 @@
 
 import {execFileSync} from "node:child_process";
 import {setTimeout as sleep} from "node:timers/promises";
+import {encodeCtorArgs} from "./ctorArgs.mjs";
 import {readFileSync, existsSync} from "node:fs";
 
 const args = Object.fromEntries(
@@ -176,7 +177,9 @@ async function verify(addr, contractPath, ctorSig, ctorValues, extraFlags = []) 
     }
     console.log(`\nverifying ${contractPath} @ ${addr}`);
     try {
-        const argFlags = ctorValues.length > 0 ? ["--constructor-args", cast("abi-encode", ctorSig, ...ctorValues)] : [];
+        // values are encoded as data by viem (script/ctorArgs.mjs); user strings never go through a
+        // text parser, so names with quotes, commas or brackets encode exactly
+        const argFlags = ctorValues.length > 0 ? ["--constructor-args", encodeCtorArgs(ctorSig, ctorValues)] : [];
         const out = execFileSync(
             "forge",
             [
@@ -258,17 +261,18 @@ for (const log of logs) {
     const recips = call(offering, "recipients()(address,address)").split("\n");
     const [cv, pf] = recips;
 
-    const paramsTuple =
-        `(${paymentToken},${dojang},${creator},${platformOwner},"${name}","${symbol}",` +
-        `${price},${raiseTarget},${minRaise},${deadline},${walletLimit},${minCommit},` +
-        `${fBps},${cBps},${creatorTokenBps},${swapRoyaltyBps},${swapBurnBps},` +
-        `${refundMode},${lockDuration},${capBps},` +
-        `${poolFactory},${feeRouter},${tier},${mapaeFactory},(${cv},${pf}))`;
+    const params = [
+        paymentToken, dojang, creator, platformOwner, name, symbol,
+        price, raiseTarget, minRaise, deadline, walletLimit, minCommit,
+        fBps, cBps, creatorTokenBps, swapRoyaltyBps, swapBurnBps,
+        refundMode, lockDuration, capBps,
+        poolFactory, feeRouter, tier, mapaeFactory, [cv, pf],
+    ];
 
-    await verify(offering, "src/Offering.sol:Offering", OFFERING_CTOR, [paramsTuple], LIB_FLAGS);
+    await verify(offering, "src/Offering.sol:Offering", OFFERING_CTOR, [params], LIB_FLAGS);
     // T11: capExempt is [creatorVesting] only (platform dropped, reserve gone).
     await verify(token, "src/MembershipToken.sol:MembershipToken", TOKEN_CTOR, [
-        name, symbol, offering, lockDuration, capBps, `[${cv}]`,
+        name, symbol, offering, lockDuration, capBps, [cv],
     ]);
 
     // ---- RedeemManager(token, creator, krw, feeRouter, tier, buybackVault) ----
@@ -329,14 +333,13 @@ for (const log of curveLogs) {
         const priorityUntil = BigInt(num(call(curve, "priorityUntil()(uint64)")));
         const createdAt = BigInt(cast("block", String(parseInt(log.blockNumber, 16)), "--field", "timestamp", "--rpc-url", args.rpc));
         const priorityWindow = (priorityUntil - createdAt).toString();
-        const initTuple =
-            `(${quote},${dojang},${dev},${feeRouter},${poolFactory},${mapaeFactory},"${name}","${symbol}",${virtualQuote},${priorityWindow})`;
-        await verify(curve, "src/CurveSale.sol:CurveSale", CURVE_CTOR, [initTuple], LIB_FLAGS);
+        const init = [quote, dojang, dev, feeRouter, poolFactory, mapaeFactory, name, symbol, virtualQuote, priorityWindow];
+        await verify(curve, "src/CurveSale.sol:CurveSale", CURVE_CTOR, [init], LIB_FLAGS);
 
         // token: MembershipToken(name, symbol, curve, CURVE_LOCK_DURATION, 0, [])
         const lockDuration = num(call(token, "transferLockDuration()(uint256)"));
         const capBps = call(token, "holdingCapBps()(uint16)");
-        await verify(token, "src/MembershipToken.sol:MembershipToken", TOKEN_CTOR, [name, symbol, curve, lockDuration, capBps, "[]"]);
+        await verify(token, "src/MembershipToken.sol:MembershipToken", TOKEN_CTOR, [name, symbol, curve, lockDuration, capBps, []]);
 
         const pool = call(curve, "pool()(address)");
         if (pool === ZERO) {
