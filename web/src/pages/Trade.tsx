@@ -5,6 +5,7 @@ import {Abi, formatUnits, parseUnits} from "viem";
 import {copy} from "../copy";
 import {ADDR_L1} from "../contracts/addressesV3L1";
 import {FeeRouterAbi, MapaePoolV3Abi, MembershipTokenV3Abi, MockKRWV3Abi} from "../contracts/abisV3";
+import {ERC20_APPROVAL_ABI, needsApproval, useApprovalStep} from "../hooks/approval";
 import {ApiFeedRow, EventLog, labelOf, useBlockTimestamps, useOfferingHistory, useOfferings, OfferingInfo} from "../hooks";
 import {LogStateNote} from "../components/LogStateNote";
 import {bpsPct} from "../lib/proceedsText";
@@ -97,6 +98,15 @@ function TradePanel({o}: {o: OfferingInfo}) {
     });
 
     // T3: 내 보유 (multicall 배칭으로 부담 없음)
+    // W-T37: allowance of the token going in (KRWs to buy, the offering token to sell) for the pool
+    const inToken = (dir === "buy" ? ADDR_L1.mockKRW : o.token) as `0x${string}`;
+    const allowance = useReadContract({
+        address: inToken, abi: ERC20_APPROVAL_ABI, functionName: "allowance", args: [address ?? ZERO, pool], chainId: giwaSepolia.id,
+        query: {enabled: !!address, refetchInterval: 15_000},
+    });
+    const needs = needsApproval(allowance.data as bigint | undefined, amountWei);
+    const approval = useApprovalStep({}, copy.trade.approveLabel);
+
     const myBalances = useReadContracts({
         contracts: [
             {address: o.token, abi: MembershipTokenV3Abi as Abi, functionName: "balanceOf", args: [address ?? ZERO], chainId: giwaSepolia.id},
@@ -154,23 +164,27 @@ function TradePanel({o}: {o: OfferingInfo}) {
         : dir === "buy" && krwBal !== undefined && amountWei > krwBal ? copy.hints.overKrwBalance
         : quote.data === undefined ? copy.hints.quoteUnavailable
         : "";
-    const swapDisabled = amountWei === 0n || sellEmpty || swapReason !== "";
+    // allowance not read yet: a loading button, never "approve"
+    const allowanceLoading = !!address && amountWei > 0n && needs === undefined;
+    const swapDisabled = amountWei === 0n || sellEmpty || swapReason !== "" || allowanceLoading;
 
     const doSwap = async (run: RunFn) => {
         if (!address || amountWei === 0n || quote.data === undefined) return;
+        if (needs === undefined) return;
         const minOut = ((quote.data as bigint) * 99n) / 100n; // 1% slippage
-        const inToken = dir === "buy" ? ADDR_L1.mockKRW : o.token;
-        const inAbi = dir === "buy" ? MockKRWV3Abi : MembershipTokenV3Abi;
-        const ok = await run("사용 승인", () =>
-            writeContractAsync({address: inToken, abi: inAbi, functionName: "approve", args: [pool, amountWei], chainId: giwaSepolia.id}));
-        if (!ok) return;
+        // approval only when the allowance is short; then wait until the RPC sees it
+        const ap = await approval.ensure(run, {needsApproval: needs, token: inToken, spender: pool, amount: amountWei});
+        if (!ap.ok) return;
         const done = await run(dir === "buy" ? copy.trade.buy : copy.trade.sell, () =>
             writeContractAsync({
                 address: pool, abi: MapaePoolV3Abi,
                 functionName: dir === "buy" ? "swapQuoteForToken" : "swapTokenForQuote",
                 args: [amountWei, minOut, address], chainId: giwaSepolia.id,
             }));
-        if (done) setAmount("");
+        if (done) {
+            approval.done();
+            setAmount("");
+        }
     };
 
     const events = (swaps.items ?? []).slice(0, 10);
@@ -243,7 +257,9 @@ function TradePanel({o}: {o: OfferingInfo}) {
                             {fees ? `${copy.trade.feeNote(fees.total, fees.royalty, fees.burn, fees.lp, fees.platform)} · ` : ""}슬리피지 1%
                         </div>
                         <div className="text-[12px] text-hanji-400 mb-5">{copy.trade.shallowPool}</div>
-                        <TxButton className="w-full" disabled={swapDisabled} action={doSwap}>{copy.trade.swapCta}</TxButton>
+                        <TxButton className="w-full" disabled={swapDisabled} action={doSwap}>
+                            {allowanceLoading ? copy.curve.cta.loading : needs ? (dir === "buy" ? copy.curve.cta.approveBuy : copy.curve.cta.approveSell) : copy.trade.swapCta}
+                        </TxButton>
                         {swapReason && !sellEmpty && <p className="text-[12px] text-brass-400 mt-2 mb-0">{swapReason}</p>}
                     </div>
                     {/* LP 신뢰 스트립 (C5) */}

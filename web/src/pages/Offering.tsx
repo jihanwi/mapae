@@ -13,6 +13,7 @@ import {ChainTerms} from "../components/ChainTerms";
 import {DisclosureSection} from "../components/DisclosureSection";
 import {spanText} from "../lib/proceedsText";
 import {commitBlock, isIssuerWallet} from "../lib/commitGuard";
+import {needsApproval, useApprovalStep} from "../hooks/approval";
 import {Badge, Gauge, Medallion, NetError, PrimaryBtn, SecondaryBtn, Skeleton, TextSkeleton} from "../components/ui";
 import {RunFn, TxButton} from "../components/tx";
 import {countdown, fmt, sanitizeAmountInput} from "../lib/format";
@@ -49,6 +50,8 @@ export default function Offering() {
     const {krwBalance, verified} = useOnboarding();
     const participants = useParticipantCount(o?.address);
     const {writeContractAsync} = useWriteContract();
+    // W-T37: shared approval step (exact amount, only when short, waits for the new allowance)
+    const approval = useApprovalStep({}, copy.offering.approveLabel);
     const [amount, setAmount] = useState("");
     const [now, setNow] = useState(Date.now());
     useEffect(() => {
@@ -115,21 +118,25 @@ export default function Offering() {
     const guard = (nowMs: number) =>
         commitBlock({account, creator: o.creator, verified, settled: o.settled, refunding: o.refunding, deadlineSec: o.deadline, nowMs, amount: amountWei, myCommitted, minCommit: minC, walletLimit: wl, balance: krwBalance});
     const commitReason = guard(now);
-    const commitDisabled = amountWei === 0n || commitReason !== "";
+    const needs = needsApproval(allowance.data, amountWei);
+    // allowance not read yet: a loading button, never "approve"
+    const allowanceLoading = !!account && amountWei > 0n && commitReason === "" && needs === undefined;
+    const commitDisabled = amountWei === 0n || commitReason !== "" || allowanceLoading;
     const issuer = isIssuerWallet(account, o.creator);
 
     const commit = async (run: RunFn) => {
         if (!o || amountWei === 0n) return;
         // checked again at the click (the deadline may have passed since the last render)
         if (guard(Date.now()) !== "") return;
-        if (((allowance.data as bigint) ?? 0n) < amountWei) {
-            const ok = await run("KRWs 사용 승인", () =>
-                writeContractAsync({address: ADDR_L1.mockKRW, abi: MockKRWV3Abi, functionName: "approve", args: [o.address, amountWei], chainId: giwaSepolia.id}));
-            if (!ok) return;
-        }
+        if (needs === undefined) return;
+        const ap = await approval.ensure(run, {needsApproval: needs, token: ADDR_L1.mockKRW as `0x${string}`, spender: o.address, amount: amountWei});
+        if (!ap.ok) return;
         const ok = await run("응모", () =>
             writeContractAsync({address: o.address, abi: OfferingL1Abi, functionName: "commit", args: [amountWei], chainId: giwaSepolia.id}));
-        if (ok) setAmount("");
+        if (ok) {
+            approval.done();
+            setAmount("");
+        }
     };
 
     return (
@@ -215,7 +222,9 @@ export default function Offering() {
                                     ≈ {o.price > 0n ? fmt((amountWei * 10n ** 18n) / o.price) : "0"}{copy.offering.unit}
                                 </div>
                                 <TxButton className="w-full" disabled={commitDisabled} action={commit}>
-                                    {myCommitted > 0n ? copy.offering.commitMore : copy.offering.commitCta}
+                                    {allowanceLoading ? copy.curve.cta.loading
+                                        : needs ? (myCommitted > 0n ? copy.offering.approveCommitMore : copy.offering.approveCommit)
+                                        : myCommitted > 0n ? copy.offering.commitMore : copy.offering.commitCta}
                                 </TxButton>
                                 {commitReason && <p className="text-[12px] text-brass-400 mt-2 mb-0">{commitReason}</p>}
                                 </>)}
