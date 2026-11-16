@@ -5,15 +5,15 @@
 // Commitments are never blocked by a missing disclosure.
 import {useState} from "react";
 import {useAccount} from "wagmi";
-import {copy} from "../copy";
+import {useCopy, type Copy} from "../copy";
+import {fmtWhen} from "../lib/format";
 import {OfferingInfo} from "../hooks";
 import {clearDraft, loadDraft, saveDraft, SaveResult, useDisclosure, useSaveDisclosure} from "../hooks/disclosure";
 import {addendumProblems, cleanText, DisclosureDoc, docProblems, EMPTY_DOC, LIMITS, LINK_KEYS, normalizeDoc} from "../../api/_lib/disclosure";
 import {DisclosureForm, problemText} from "./DisclosureForm";
 import {PrimaryBtn, SecondaryBtn, TextSkeleton} from "./ui";
 
-const when = (iso: string) => new Date(iso).toLocaleString("ko-KR", {year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit"});
-const t = copy.disclosure;
+const whenIn = (iso: string, locale: string) => fmtWhen(new Date(iso).getTime(), locale, true);
 
 function Block({title, children}: {title: string; children: React.ReactNode}) {
     return (
@@ -25,6 +25,8 @@ function Block({title, children}: {title: string; children: React.ReactNode}) {
 }
 
 function HashChip({hash}: {hash: string}) {
+    const copy = useCopy();
+    const t = copy.disclosure;
     const [done, setDone] = useState(false);
     const copyHash = async () => {
         try {
@@ -44,6 +46,8 @@ function HashChip({hash}: {hash: string}) {
 }
 
 export function DocView({doc}: {doc: DisclosureDoc}) {
+    const copy = useCopy();
+    const t = copy.disclosure;
     const links = LINK_KEYS.filter((k) => doc.links[k].startsWith("https://"));
     return (
         <div>
@@ -72,13 +76,17 @@ export function DocView({doc}: {doc: DisclosureDoc}) {
     );
 }
 
-function errorText(r: Extract<SaveResult, {ok: false}>): string {
+function errorText(r: Extract<SaveResult, {ok: false}>, copy: Copy): string {
+    const t = copy.disclosure;
     const p = r.problems?.[0];
-    if (p && (p.error === "forbidden_phrase" || p.error in t.problems)) return problemText(p as Parameters<typeof problemText>[0]);
+    if (p && (p.error === "forbidden_phrase" || p.error in t.problems)) return problemText(p as Parameters<typeof problemText>[0], copy);
     return t.errors[r.code] ?? t.errors.temporary;
 }
 
 export function DisclosureSection({o}: {o: OfferingInfo}) {
+    const copy = useCopy();
+    const t = copy.disclosure;
+    const when = (iso: string) => whenIn(iso, copy.locale);
     const {address} = useAccount();
     const q = useDisclosure(o.address);
     const {save, busy} = useSaveDisclosure();
@@ -109,7 +117,7 @@ export function DisclosureSection({o}: {o: OfferingInfo}) {
             clearDraft(o.address);
             setMode("view");
             setMsg(t.saved);
-        } else setMsg(errorText(r));
+        } else setMsg(errorText(r, copy));
     };
     const addendumProblem = addendumProblems(cleanText(text, true))[0];
     const submitAddendum = async () => {
@@ -120,7 +128,7 @@ export function DisclosureSection({o}: {o: OfferingInfo}) {
             setText("");
             setMode("view");
             setMsg(t.saved);
-        } else setMsg(errorText(r));
+        } else setMsg(errorText(r, copy));
     };
 
     return (
@@ -191,7 +199,7 @@ export function DisclosureSection({o}: {o: OfferingInfo}) {
                     <textarea rows={5} value={text} onChange={(e) => setText(e.target.value)} placeholder={t.addendumPlaceholder}
                         className="w-full box-border bg-ink-900 border border-ink-700 rounded-input px-3.5 py-3 text-[15px] text-hanji-100 outline-none focus:border-brass-400 resize-y" />
                     <div className="text-[12px] text-hanji-400 text-right tabular-nums">{[...text].length} / {LIMITS.addendum}</div>
-                    {showAll && addendumProblem && <p className="m-0 text-[12px] text-brass-400">{problemText(addendumProblem)}</p>}
+                    {showAll && addendumProblem && <p className="m-0 text-[12px] text-brass-400">{problemText(addendumProblem, copy)}</p>}
                     <div className="mt-3 flex gap-3 flex-wrap">
                         <PrimaryBtn disabled={busy} onClick={() => void submitAddendum()}>{t.saveCta}</PrimaryBtn>
                         <SecondaryBtn disabled={busy} onClick={() => setMode("view")}>{t.cancel}</SecondaryBtn>

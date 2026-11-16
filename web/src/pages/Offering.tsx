@@ -3,7 +3,7 @@ import {Link, useParams} from "react-router-dom";
 import {useQuery} from "@tanstack/react-query";
 import {useAccount, useReadContracts, useWriteContract} from "wagmi";
 import {Abi, parseUnits} from "viem";
-import {copy} from "../copy";
+import {useCopy} from "../copy";
 import {ADDR_L1} from "../contracts/addressesV3L1";
 import {MapaeVestingL1Abi, OfferingL1Abi} from "../contracts/abisV3L1";
 import {MockKRWV3Abi} from "../contracts/abisV3";
@@ -56,6 +56,7 @@ export default function Offering() {
 }
 
 function OfferingView() {
+    const copy = useCopy();
     useTitle(DEFAULT_TITLE);
     const {addr} = useParams<{addr: `0x${string}`}>();
     const {offerings, isLoading, isError, refetch} = useOfferings();
@@ -130,7 +131,7 @@ function OfferingView() {
     // 9-a: 클릭 전 사전 검증 — 사유를 표시하고 CTA를 disabled
     // W-T36: every reason the contract would refuse, checked before any approval (lib/commitGuard)
     const guard = (nowMs: number) =>
-        commitBlock({account, creator: o.creator, verified, settled: o.settled, refunding: o.refunding, deadlineSec: o.deadline, nowMs, amount: amountWei, myCommitted, minCommit: minC, walletLimit: wl, balance: krwBalance});
+        commitBlock({account, creator: o.creator, verified, settled: o.settled, refunding: o.refunding, deadlineSec: o.deadline, nowMs, amount: amountWei, myCommitted, minCommit: minC, walletLimit: wl, balance: krwBalance}, copy);
     const commitReason = guard(now);
     const needs = needsApproval(allowance.data, amountWei);
     // allowance not read yet: a loading button, never "approve"
@@ -145,7 +146,7 @@ function OfferingView() {
         if (needs === undefined) return;
         const ap = await approval.ensure(run, {needsApproval: needs, token: ADDR_L1.mockKRW as `0x${string}`, spender: o.address, amount: amountWei});
         if (!ap.ok) return;
-        const ok = await run("응모", () =>
+        const ok = await run(copy.offering.commitLabel, () =>
             writeContractAsync({address: o.address, abi: OfferingL1Abi, functionName: "commit", args: [amountWei], chainId: giwaSepolia.id}));
         if (ok) {
             approval.done();
@@ -155,7 +156,7 @@ function OfferingView() {
 
     return (
         <div className="max-w-page mx-auto px-4 sm:px-8 pt-8 sm:pt-10 pb-16 sm:pb-20">
-            <Link to="/offerings" className="text-[14px]">← 공모 목록</Link>
+            <Link to="/offerings" className="text-[14px]">{copy.offering.backLink}</Link>
             <div className="flex flex-col sm:flex-row flex-wrap gap-6 sm:gap-7 mt-5 sm:mt-6 items-start">
                 {/* 좌: 발행자와 공모 설명 (모바일에선 응모 패널 아래로) */}
                 <div className="w-full sm:flex-1 order-2 sm:order-1" style={{minWidth: 0}}>
@@ -166,7 +167,7 @@ function OfferingView() {
                                 {c ? <>{c.name} <span className="text-hanji-400 font-normal">{c.symbol}</span></> : <TextSkeleton w={180} h={28} />}
                             </h1>
                             <div className="flex items-center gap-2 mt-2 text-[13px] text-success">
-                                <span>✓</span> {copy.home.verifiedCreator} — Dojang Verified
+                                <span>✓</span> {copy.home.verifiedCreator}{copy.offering.dojangSuffix}
                             </div>
                         </div>
                     </div>
@@ -177,7 +178,7 @@ function OfferingView() {
                     </div>
                     <div className="mt-7 rounded-input px-4 py-3.5 text-[13px] text-hanji-400"
                         style={{background: "rgba(195,154,59,.08)", border: "1px solid rgba(195,154,59,.3)"}}>
-                        {copy.offering.allocNote} <a href="https://github.com/jihanwi/mapae/blob/main/script/allocation/README.md" target="_blank" rel="noreferrer">검증 방법 보기</a>
+                        {copy.offering.allocNote} <a href="https://github.com/jihanwi/mapae/blob/main/script/allocation/README.md" target="_blank" rel="noreferrer">{copy.offering.howToVerify}</a>
                     </div>
                     {/* decision 58: chain-fixed terms and the issuer's own document, kept apart */}
                     <ChainTerms o={o} />
@@ -195,7 +196,7 @@ function OfferingView() {
                                 : frozen ? <Badge kind="frozen">{copy.badge.frozen}</Badge>
                                 : <Badge kind="open">{copy.badge.open}</Badge>}
                             {live ? (
-                                <span className="text-[13px] text-brass-400 font-semibold tabular-nums">마감까지 {countdown(o.deadline, now).replace(/^D-0 /, "")}</span>
+                                <span className="text-[13px] text-brass-400 font-semibold tabular-nums">{copy.offering.untilDeadline(countdown(o.deadline, now, copy.offering.deadline).replace(/^D-0 /, ""))}</span>
                             ) : (
                                 <a className="text-[13px]" href={explorerAddr(o.address)} target="_blank" rel="noreferrer">{copy.tx.viewOnChain}</a>
                             )}
@@ -205,7 +206,7 @@ function OfferingView() {
                             <>
                                 <div className="mb-2"><Gauge committed={o.totalCommitted} target={o.raiseTarget} height={10} /></div>
                                 <div className="text-[13px] text-hanji-400 mb-5 tabular-nums">
-                                    총 응모 <span className="text-hanji-100 font-semibold">{fmt(o.totalCommitted, 0)}</span> / 목표 {fmt(o.raiseTarget, 0)} KRWs
+                                    {copy.offering.totalPrefix}<span className="text-hanji-100 font-semibold">{fmt(o.totalCommitted, 0)}</span>{copy.offering.targetPart(fmt(o.raiseTarget, 0))}
                                     {participants !== undefined && <> · {copy.home.participants(participants)}</>}
                                     {" · "}<span className={pctNum > 100 ? "text-brass-400 font-semibold" : ""}>{pctNum.toFixed(0)}%</span>
                                 </div>
@@ -225,7 +226,7 @@ function OfferingView() {
                                 {issuer ? (
                                     <p className="m-0 text-[14px] text-brass-400">{copy.offering.issuerCannotCommit}</p>
                                 ) : (<>
-                                <label className="block text-[13px] text-hanji-400 mb-2">응모 금액</label>
+                                <label className="block text-[13px] text-hanji-400 mb-2">{copy.offering.amountLabel}</label>
                                 <div className="flex items-center bg-ink-900 border border-ink-700 rounded-input px-4 focus-within:border-brass-400 mb-1.5">
                                     <input value={amount} onChange={(e) => setAmount(sanitizeAmountInput(e.target.value))}
                                         placeholder={copy.offering.amountPlaceholder} inputMode="decimal"
@@ -246,16 +247,16 @@ function OfferingView() {
                                 {myCommitted > 0n && (
                                     <div className="mt-5 pt-5 border-t border-ink-700">
                                         <div className="flex justify-between text-[13px] mb-3">
-                                            <span className="text-hanji-400">내 응모 현황</span>
+                                            <span className="text-hanji-400">{copy.offering.myStatus}</span>
                                             <span className="text-hanji-100 font-semibold tabular-nums">{fmt(myCommitted, 0)} KRWs</span>
                                         </div>
                                         {frozen ? (
-                                            <SecondaryBtn className="w-full" disabled>취소 잠김 — 마감 2시간 전</SecondaryBtn>
+                                            <SecondaryBtn className="w-full" disabled>{copy.offering.cancelLocked}</SecondaryBtn>
                                         ) : (
                                             <TxButton variant="secondary" className="w-full" action={(run) =>
-                                                run("응모 취소", () =>
+                                                run(copy.offering.cancelCta, () =>
                                                     writeContractAsync({address: o.address, abi: OfferingL1Abi, functionName: "cancel", args: [myCommitted], chainId: giwaSepolia.id}))
-                                            }>전액 취소하기</TxButton>
+                                            }>{copy.offering.cancelAll}</TxButton>
                                         )}
                                     </div>
                                 )}
@@ -269,13 +270,13 @@ function OfferingView() {
 
                         {o.settled && <SettledPanel o={o} account={account} alloc={alloc.data ?? null} claimed={(claimed.data as boolean) ?? false}
                             myCommitted={myCommitted} claim={(a) => (run: RunFn) =>
-                                run("배정 수령", () =>
+                                run(copy.offering.claimLabel, () =>
                                     writeContractAsync({address: o.address, abi: OfferingL1Abi, functionName: "claim", args: [a.allocation, a.refund, a.proof], chainId: giwaSepolia.id}))
                             } />}
                     </div>
                     {live && (
                         <p className="text-[12px] text-hanji-400 mt-3">
-                            {copy.offering.cancelFrozenNote}. {o.refundMode === 0 ? copy.refund.modeNote : "미달 시 판매분만 발행되고 나머지는 소각돼요."}
+                            {copy.offering.cancelFrozenNote}. {o.refundMode === 0 ? copy.refund.modeNote : copy.refund.partialModeNote}
                         </p>
                     )}
                 </div>
@@ -285,12 +286,13 @@ function OfferingView() {
 }
 
 function InfoGrid({o, walletLimit, minCommit}: {o: OfferingInfo; walletLimit: bigint; minCommit: bigint}) {
+    const copy = useCopy();
     const rows: [string, string][] = [
-        ["정가", `${fmt(o.price, 0)} KRWs / ${copy.offering.unit}`],
+        [copy.terms.price, copy.offering.perToken(fmt(o.price, 0))],
         [copy.offering.saleQty, `${fmt(o.qSale, 2)}${copy.offering.unit}`], // C1: (고정 공급) 라벨 제거
         [copy.offering.minCommit, minCommit > 0n ? `${fmt(minCommit, 0)} KRWs` : "—"], // 9-b: 최소 응모 표기
         [copy.offering.walletLimit, walletLimit > 0n ? `${fmt(walletLimit, 0)} KRWs` : "—"],
-        ["미달 시", o.refundMode === 0 ? "전액 환불" : "판매분만 발행 · 미판매분 소각"],
+        [copy.offering.ifMissed, o.refundMode === 0 ? copy.terms.refundAll : copy.terms.refundPartial],
     ];
     return (
         <div className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-2 text-[13px] mb-5 pb-5 border-b border-ink-700">
@@ -298,7 +300,7 @@ function InfoGrid({o, walletLimit, minCommit}: {o: OfferingInfo; walletLimit: bi
                 <FragmentRow key={k} k={k} v={v} />
             ))}
             {/* C1: 총공급 분리 표기 */}
-            {o.settled && <FragmentRow k="총공급" v={copy.offering.totalSupplyLine(fmt(o.totalSupply, 2))} />}
+            {o.settled && <FragmentRow k={copy.terms.supply} v={copy.offering.totalSupplyLine(fmt(o.totalSupply, 2))} />}
         </div>
     );
 }
@@ -319,6 +321,7 @@ function SettledPanel({o, account, alloc, claimed, myCommitted, claim}: {
     myCommitted: bigint;
     claim: (a: {allocation: bigint; refund: bigint; proof: `0x${string}`[]}) => (run: RunFn) => Promise<unknown>;
 }) {
+    const copy = useCopy();
     if (!alloc) {
         // 9-d: 미연결 상태에선 "이 지갑" 단정 대신 연결 유도
         return <p className="text-[13px] text-hanji-400 m-0">{account ? copy.offering.notInAllocation : copy.offering.connectForAllocation}</p>;
@@ -326,26 +329,26 @@ function SettledPanel({o, account, alloc, claimed, myCommitted, claim}: {
     return (
         <div>
             <div className="bg-ink-900 rounded-stat p-5 text-center mb-4">
-                <div className="text-[12px] text-hanji-400 mb-2">내 배정 결과</div>
+                <div className="text-[12px] text-hanji-400 mb-2">{copy.offering.myAllocResult}</div>
                 <div className="font-serif text-[42px] font-semibold tabular-nums leading-none">
-                    {fmt(alloc.allocation, 2)}<span className="text-[19px] text-hanji-400 font-sans"> 장</span>
+                    {fmt(alloc.allocation, 2)}<span className="text-[19px] text-hanji-400 font-sans">{copy.offering.allocUnit}</span>
                 </div>
                 {alloc.refund > 0n && (
                     <div className="text-[13px] text-hanji-400 mt-2">+ {copy.offering.myRefund} <span className="text-hanji-100">{fmt(alloc.refund, 0)} KRWs</span></div>
                 )}
             </div>
             <div className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-2 text-[13px] mb-4">
-                <FragmentRow k="내 응모" v={myCommitted > 0n ? `${fmt(myCommitted, 0)} KRWs` : "—"} />
-                <FragmentRow k="배정 방식" v="균등 + 추첨" />
+                <FragmentRow k={copy.offering.myCommitShort} v={myCommitted > 0n ? `${fmt(myCommitted, 0)} KRWs` : "—"} />
+                <FragmentRow k={copy.offering.allocMethod} v={copy.offering.allocMethodValue} />
             </div>
             {claimed ? (
                 <SecondaryBtn className="w-full" disabled>{copy.offering.claimed}</SecondaryBtn>
             ) : (
                 <TxButton className="w-full" action={claim(alloc)}>
-                    {copy.offering.claimCta} — {fmt(alloc.allocation, 2)}{copy.offering.unit}{alloc.refund > 0n ? " + 환불" : ""}
+                    {copy.offering.claimWith(fmt(alloc.allocation, 2), copy.offering.unit, alloc.refund > 0n)}
                 </TxButton>
             )}
-            <p className="text-[12px] text-hanji-400 mt-3 mb-0 text-center">배정 계산은 Settled 이벤트의 시드로 누구나 재검증할 수 있습니다</p>
+            <p className="text-[12px] text-hanji-400 mt-3 mb-0 text-center">{copy.offering.recheckNote}</p>
         </div>
     );
 }
@@ -353,6 +356,7 @@ function SettledPanel({o, account, alloc, claimed, myCommitted, claim}: {
 /** Decision 55: the redeem paragraph only for an offering with redeem items (its RedeemManager's
  *  RedeemableCreated log, the read the redeem page uses). */
 function RedeemNote({offering, redeemManager, factory}: {offering: `0x${string}`; redeemManager: `0x${string}` | undefined; factory: `0x${string}`}) {
+    const copy = useCopy();
     const {items} = useRedeemItems(offering, redeemManager, factory);
     if (!items || items.length === 0) return null;
     return <p className="m-0">{copy.offering.aboutRedeem}</p>;
@@ -361,6 +365,7 @@ function RedeemNote({offering, redeemManager, factory}: {offering: `0x${string}`
 /** W-T32: the issuer vesting from the offering's own MapaeVesting (no fixed wording): duration, and
  *  the cliff when there is one. Nothing is written when the reads fail. */
 function VestingNote({vesting}: {vesting: `0x${string}` | undefined}) {
+    const copy = useCopy();
     const reads = useReadContracts({
         contracts: vesting
             ? (["start", "duration", "cliff"] as const).map((fn) => ({address: vesting, abi: MapaeVestingL1Abi as Abi, functionName: fn, chainId: giwaSepolia.id}))
@@ -369,5 +374,5 @@ function VestingNote({vesting}: {vesting: `0x${string}` | undefined}) {
     });
     const [start, duration, cliff] = (reads.data?.map((x) => (x.status === "success" ? x.result : undefined)) ?? []) as [bigint?, bigint?, bigint?];
     if (start === undefined || duration === undefined || cliff === undefined) return null;
-    return <p className="m-0">{copy.offering.aboutVesting(spanText(duration), cliff > start ? spanText(cliff - start) : null)}</p>;
+    return <p className="m-0">{copy.offering.aboutVesting(spanText(duration, copy), cliff > start ? spanText(cliff - start, copy) : null)}</p>;
 }

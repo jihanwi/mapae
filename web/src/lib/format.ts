@@ -57,9 +57,9 @@ export function sanitizeAmountInput(raw: string): string {
     return s;
 }
 
-export function countdown(deadline: bigint, now: number): string {
+export function countdown(deadline: bigint, now: number, closedLabel = "마감"): string {
     const left = Number(deadline) - Math.floor(now / 1000);
-    if (left <= 0) return "마감";
+    if (left <= 0) return closedLabel;
     const d = Math.floor(left / 86400);
     const p = (n: number) => String(n).padStart(2, "0");
     const hms = `${p(Math.floor(left / 3600) % 24)}:${p(Math.floor(left / 60) % 60)}:${p(left % 60)}`;
@@ -119,4 +119,14 @@ export function fmtAxisPrice(wei: bigint, locale: string): string {
     if (!m || m[1].length < 4) return s;
     const dot = s[1];
     return `0${dot}0${sub(m[1].length)}${m[2]}`;
+}
+
+/** W-T41: date and time in the UI locale (en-US or ko-KR). `withYear` adds the year. */
+export function fmtWhen(ms: number, locale: string, withYear = false): string {
+    return new Date(ms).toLocaleString(locale, {...(withYear ? {year: "numeric" as const} : {}), month: "long", day: "numeric", hour: "2-digit", minute: "2-digit"});
+}
+
+/** W-T41: a whole number with the locale's grouping (comma in both en-US and ko-KR). */
+export function fmtCount(n: number | bigint, locale: string): string {
+    return n.toLocaleString(locale);
 }

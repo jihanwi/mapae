@@ -4,12 +4,13 @@
 // (W-T35: shown once).
 import {useReadContract, useReadContracts} from "wagmi";
 import {Abi} from "viem";
-import {copy} from "../copy";
+import {useCopy, type Copy} from "../copy";
+import {ko} from "../copy/ko";
 import {MapaeVestingL1Abi, OfferingL1Abi} from "../contracts/abisV3L1";
 import {FeeRouterAbi} from "../contracts/abisV3";
 import {giwaSepolia} from "../config/chain";
 import {OfferingInfo, useOfferingDetailApi} from "../hooks";
-import {fmt} from "../lib/format";
+import {fmt, fmtWhen} from "../lib/format";
 import {allocationBps, allocationOf} from "../lib/offeringMath";
 import {bpsPct, spanText} from "../lib/proceedsText";
 
@@ -25,6 +26,7 @@ function Row({k, v}: {k: string; v: React.ReactNode}) {
 }
 
 export function ChainTerms({o}: {o: OfferingInfo}) {
+    const copy = useCopy();
     const reads = useReadContracts({
         contracts: [
             ...OFFERING_FNS.map((fn) => ({address: o.address, abi: OfferingL1Abi as Abi, functionName: fn, chainId: giwaSepolia.id})),
@@ -45,23 +47,23 @@ export function ChainTerms({o}: {o: OfferingInfo}) {
     const n = (x: unknown) => (x === undefined ? undefined : Number(x));
     const cBps = n(v.cBps), creatorBps = n(v.creatorTokenBps);
     const alloc = cBps !== undefined && creatorBps !== undefined ? allocationOf(o.qSale, {fBps: o.fBps, creatorTokenBps: creatorBps, cBps}) : undefined;
-    const end = new Date(Number(o.deadline) * 1000).toLocaleString("ko-KR", {month: "long", day: "numeric", hour: "2-digit", minute: "2-digit"});
+    const end = fmtWhen(Number(o.deadline) * 1000, copy.locale);
     const t = copy.terms;
     const royalty = n(v.swapRoyaltyBps), burn = n(v.swapBurnBps);
 
     const rows: [string, React.ReactNode][] = [
         [t.price, `${fmt(o.price, 0)} KRWs`],
         [t.raiseTarget, `${fmt(o.raiseTarget, 0)} KRWs`],
-        [t.saleQty, `${fmt(o.qSale, 2)}개`],
+        [t.saleQty, `${fmt(o.qSale, 2)}${copy.offering.unit}`],
         ...(v.walletLimit !== undefined ? [[t.walletLimit, `${fmt(v.walletLimit as bigint, 0)} KRWs`] as [string, string]] : []),
         ...(v.minCommit !== undefined ? [[t.minCommit, `${fmt(v.minCommit as bigint, 0)} KRWs`] as [string, string]] : []),
         [createdTs ? t.period : t.deadline, createdTs ? t.periodValue(String(Math.round((Number(o.deadline) - Number(createdTs)) / 3600)), end) : end],
         ...(o.settled
             ? [[t.supply, t.supplySettled(fmt(o.totalSupply, 2))] as [string, string]]
             : alloc ? [[t.supply, t.supplyIfFull(fmt(alloc.supply, 2))] as [string, string]] : []),
-        ...(creatorBps !== undefined && cBps !== undefined ? [[t.allocation, allocationText(o.fBps, creatorBps, cBps)] as [string, string]] : []),
+        ...(creatorBps !== undefined && cBps !== undefined ? [[t.allocation, allocationText(o.fBps, creatorBps, cBps, copy)] as [string, string]] : []),
         ...(vest.length === 3 && vest.every((x) => x !== undefined)
-            ? [[t.vesting, t.vestingValue(spanText(vest[1]!), vest[2]! > vest[0]! ? spanText(vest[2]! - vest[0]!) : null)] as [string, string]]
+            ? [[t.vesting, t.vestingValue(spanText(vest[1]!, copy), vest[2]! > vest[0]! ? spanText(vest[2]! - vest[0]!, copy) : null)] as [string, string]]
             : []),
         [t.refundMode, o.refundMode === 0 ? t.refundAll : t.refundPartial],
         ...(v.offeringFeeBps !== undefined ? [[t.offeringFee, `${bpsPct(n(v.offeringFeeBps)!)}%`] as [string, string]] : []),
@@ -88,7 +90,7 @@ export function ChainTerms({o}: {o: OfferingInfo}) {
 }
 
 /** "판매 60% · 발행자 20% · 유동성 12% · 소각 8%" (the burned share left out when it is 0). */
-export function allocationText(fBps: number, creatorTokenBps: number, cBps: number): string {
+export function allocationText(fBps: number, creatorTokenBps: number, cBps: number, copy: Copy = ko): string {
     const a = allocationBps({fBps, creatorTokenBps, cBps});
     return copy.terms.allocationValue(bpsPct(a.sale), bpsPct(a.issuer), bpsPct(a.lp), a.burn > 0 ? bpsPct(a.burn) : null);
 }

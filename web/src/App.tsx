@@ -4,7 +4,7 @@ import {useWalletConnect} from "./hooks/useWalletConnect";
 import {useSwitchToGiwa} from "./hooks/useSwitchToGiwa";
 import {OpenInWalletApp, WalletPicker} from "./components/WalletPicker";
 import {giwaSepolia} from "./config/chain";
-import {useCopy, useLang, copy} from "./copy";
+import {useCopy, useLang} from "./copy";
 import {ADDR_V3} from "./contracts/addressesV3";
 import {ADDR_L1} from "./contracts/addressesV3L1";
 import {MockDojangV3Abi, MockKRWV3Abi} from "./contracts/abisV3";
@@ -197,7 +197,7 @@ function Nav() {
 function OnboardingStep({done, n, label, txLabel, tx, blocked}: {
     done: boolean; n: string; label: string; txLabel: string; tx: () => Promise<`0x${string}`>; blocked?: boolean;
 }) {
-    const tr = copy; // offering section, Korean only
+    const tr = useCopy();
     const {run, busy, phase} = useTx();
     const globalBusy = useGlobalTxBusy();
     const text = phase === "wallet" ? tr.tx.pendingWallet : phase === "confirming" ? tr.tx.pendingTx : label;
@@ -206,13 +206,13 @@ function OnboardingStep({done, n, label, txLabel, tx, blocked}: {
             className={`flex items-center gap-2 min-h-[44px] py-1.5 ${done ? "text-success cursor-default" : "text-brass-400 hover:text-brass-500 active:text-brass-600 disabled:opacity-60"}`}>
             <span className="w-[18px] h-[18px] rounded-full border grid place-items-center text-[11px] flex-none"
                 style={{borderColor: "currentColor"}}>{done ? "✓" : n}</span>
-            {done ? `${label} 완료` : text}
+            {done ? tr.onboarding.done(label) : text}
         </button>
     );
 }
 
 function OnboardingStrip() {
-    const tr = copy; // offering section, Korean only
+    const tr = useCopy();
     const {isConnected, chainId} = useAccount();
     const {krwBalance, verified, ethBalance, isError} = useOnboarding();
     const {writeContractAsync} = useWriteContract();
@@ -231,10 +231,10 @@ function OnboardingStrip() {
                 )}
                 <div className="flex items-center gap-x-5 gap-y-1 flex-wrap text-[13px]">
                     <span className="text-hanji-400 font-semibold">{tr.onboarding.title}</span>
-                    <OnboardingStep done={krwBalance > 0n} blocked={noGas} n="1" label={tr.onboarding.faucet} txLabel="테스트 KRWs 받기"
+                    <OnboardingStep done={krwBalance > 0n} blocked={noGas} n="1" label={tr.onboarding.faucet} txLabel={tr.onboarding.faucetTxLabel}
                         tx={() => writeContractAsync({address: ADDR_L1.mockKRW, abi: MockKRWV3Abi, functionName: "faucet", args: [tr.onboarding.faucetAmount], chainId: giwaSepolia.id})} />
                     <span className="text-ink-700 hidden sm:inline">→</span>
-                    <OnboardingStep done={verified} blocked={noGas} n="2" label={tr.onboarding.verify} txLabel="실명 인증 (데모)"
+                    <OnboardingStep done={verified} blocked={noGas} n="2" label={tr.onboarding.verify} txLabel={tr.onboarding.verifyTxLabel}
                         tx={() => writeContractAsync({address: ADDR_L1.mockDojang, abi: MockDojangV3Abi, functionName: "selfVerify", chainId: giwaSepolia.id})} />
                 </div>
             </div>
@@ -250,12 +250,7 @@ export default function App() {
             <NicknameProvider>
                 <ToastRouteReset pathname={pathname} />
                 <Nav />
-                {/* offering section: Korean-only notice in other languages, ADDR_L1-based strip */}
-                {isOfferingSection(pathname) && tr.legacyNotice && (
-                    <div className="bg-ink-900 border-b border-ink-700">
-                        <div className="max-w-page mx-auto px-4 sm:px-8 py-2 text-[13px] text-hanji-400">{tr.legacyNotice}</div>
-                    </div>
-                )}
+                {/* offering section: ADDR_L1-based onboarding strip (W-T41: both languages) */}
                 {isOfferingSection(pathname) && <OnboardingStrip />}
                 <OnboardingProvider>
                     <ActivityProvider enabled={!isOfferingSection(pathname)}>

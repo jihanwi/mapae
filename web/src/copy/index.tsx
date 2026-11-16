@@ -1,5 +1,5 @@
 // i18n entry. LangProvider holds the current language in React state (no module-global language);
-// useCopy() returns the dictionary for it. Legacy v2 pages keep `import {copy}` (Korean only).
+// useCopy() returns the dictionary for it. Every screen, the offering section included (W-T41), uses it.
 import {createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState} from "react";
 import {ko, Copy} from "./ko";
 import {en} from "./en";
@@ -7,9 +7,6 @@ import {currentSearch, Lang, queryLang, readStoredLang, resolveLang, writeStored
 
 export type {Copy} from "./ko";
 export type {Lang} from "./lang";
-
-/** Korean dictionary for the legacy v2 section (Korean only). v3 screens use useCopy(). */
-export const copy = ko;
 
 export const dictionaries: Record<Lang, Copy> = {ko, en};
 

@@ -1,7 +1,7 @@
 // W-T32: honest states of an event-log list (trade history, sponsor feed, redeem catalog). A failed
 // read says so with a retry, a partial read names the range it covers, and only a read that reached
 // the deployment block may say there is nothing yet.
-import {copy} from "../copy";
+import {useCopy} from "../copy";
 import {LogState, ScanWindow} from "../lib/logRange";
 
 /** GIWA blocks are ~1 s apart: hours covered by a partial window (at least 1). */
@@ -19,6 +19,7 @@ export function LogStateNote({scan, count, recent, none}: {
     /** empty complete read, e.g. "아직 거래가 없어요" */
     none: string;
 }) {
+    const copy = useCopy();
     if (scan.state === "loading") return null;
     if (scan.state === "error") {
         return (

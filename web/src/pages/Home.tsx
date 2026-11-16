@@ -4,7 +4,7 @@ import {useReadContracts} from "wagmi";
 import {Abi} from "viem";
 import {ProceedsLockAbi} from "../contracts/abisV3L1";
 import {giwaSepolia} from "../config/chain";
-import {copy} from "../copy";
+import {useCopy} from "../copy";
 import {labelOf, useOfferings, useParticipantCounts, OfferingInfo} from "../hooks";
 import {Badge, Card, CardSkeleton, Gauge, Medallion, NetError, Stat, TextSkeleton} from "../components/ui";
 import {countdown, fmt} from "../lib/format";
@@ -22,12 +22,14 @@ function useNow() {
 
 /** Proceeds terms line for the list card (W-T32): upfront share and the lock length. */
 function ProceedsLine({o, lockDuration}: {o: OfferingInfo; lockDuration: bigint | undefined}) {
+    const copy = useCopy();
     if (!o.proceedsLock) return <div className="text-[12px] text-hanji-400 mb-[18px]">{copy.home.proceedsAllUpfront}</div>;
     if (lockDuration === undefined) return <div className="mb-[18px]" />;
-    return <div className="text-[12px] text-hanji-400 mb-[18px]">{copy.home.proceedsShort(bpsPct(o.proceedsUpfrontBps), spanText(lockDuration))}</div>;
+    return <div className="text-[12px] text-hanji-400 mb-[18px]">{copy.home.proceedsShort(bpsPct(o.proceedsUpfrontBps), spanText(lockDuration, copy))}</div>;
 }
 
 function OfferingCard({o, participants, lockDuration}: {o: OfferingInfo; participants: number | undefined; lockDuration: bigint | undefined}) {
+    const copy = useCopy();
     const now = useNow();
     const c = labelOf(o);
     const live = !o.settled && !o.refunding && Number(o.deadline) * 1000 > now;
@@ -96,8 +98,8 @@ function OfferingCard({o, participants, lockDuration}: {o: OfferingInfo; partici
                         {copy.home.price} <span className="text-hanji-100 font-semibold">{fmt(o.price, 0)} KRWs</span>{copy.home.perUnit}
                         {participants !== undefined && <> · <span className="whitespace-nowrap">{copy.home.participants(participants)}</span></>}
                     </span>
-                    <span className={`font-semibold tabular-nums ${frozen || countdown(o.deadline, now).startsWith("D-0") ? "text-brass-400" : "text-hanji-400"}`}>
-                        {countdown(o.deadline, now)}
+                    <span className={`font-semibold tabular-nums ${frozen || countdown(o.deadline, now, copy.offering.deadline).startsWith("D-0") ? "text-brass-400" : "text-hanji-400"}`}>
+                        {countdown(o.deadline, now, copy.offering.deadline)}
                     </span>
                 </div>
             </Card>
@@ -114,6 +116,7 @@ export function computeBurned(o: OfferingInfo): bigint {
 }
 
 export default function Home() {
+    const copy = useCopy();
     useTitle(DEFAULT_TITLE);
     const {offerings, empty, isLoading, isError, refetch} = useOfferings();
     const participants = useParticipantCounts(offerings);

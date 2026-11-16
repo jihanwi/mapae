@@ -2,23 +2,25 @@
 // the server uses (api/_lib/disclosure); a field's problem shows once it was edited or after a
 // save attempt (`showAll`).
 import {useState} from "react";
-import {copy} from "../copy";
+import {useCopy, type Copy} from "../copy";
+import {ko} from "../copy/ko";
 import {DisclosureDoc, docProblems, DocProblem, LIMITS, LINK_KEYS, normalizeDoc} from "../../api/_lib/disclosure";
 
 const inputCls = "w-full box-border bg-ink-900 border border-ink-700 rounded-input px-3.5 py-3 text-[15px] text-hanji-100 outline-none focus:border-brass-400";
 
-export function problemText(p: DocProblem): string {
+export function problemText(p: DocProblem, copy: Copy = ko): string {
     const t = copy.disclosure.problems;
     return p.error === "forbidden_phrase" ? t.forbidden_phrase(p.phrase ?? "") : t[p.error];
 }
 
 export function DisclosureForm({value, onChange, showAll}: {value: DisclosureDoc; onChange: (d: DisclosureDoc) => void; showAll: boolean}) {
+    const copy = useCopy();
     const [touched, setTouched] = useState<Set<string>>(new Set());
     const problems = docProblems(normalizeDoc(value));
     const touch = (f: string) => setTouched((s) => (s.has(f) ? s : new Set(s).add(f)));
     const problemOf = (field: string) => {
         const p = problems.find((x) => x.field === field);
-        return p && (showAll || touched.has(field)) ? problemText(p) : null;
+        return p && (showAll || touched.has(field)) ? problemText(p, copy) : null;
     };
     const set = (patch: Partial<DisclosureDoc>, field: string) => {
         touch(field);
@@ -123,7 +125,7 @@ export function DisclosureForm({value, onChange, showAll}: {value: DisclosureDoc
                     ))}
                 </div>
             </div>
-            {phrase && <p className="m-0 text-[13px] text-brass-400">{problemText(phrase)}</p>}
+            {phrase && <p className="m-0 text-[13px] text-brass-400">{problemText(phrase, copy)}</p>}
         </div>
     );
 }
