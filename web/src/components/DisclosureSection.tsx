@@ -43,7 +43,7 @@ function HashChip({hash}: {hash: string}) {
     );
 }
 
-function DocView({doc}: {doc: DisclosureDoc}) {
+export function DocView({doc}: {doc: DisclosureDoc}) {
     const links = LINK_KEYS.filter((k) => doc.links[k].startsWith("https://"));
     return (
         <div>

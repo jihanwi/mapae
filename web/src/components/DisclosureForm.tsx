@@ -53,7 +53,7 @@ export function DisclosureForm({value, onChange, showAll}: {value: DisclosureDoc
                                     const items = value.useOfFunds.items.map((x, k) => (k === i ? {...x, label: e.target.value} : x));
                                     set({useOfFunds: {...value.useOfFunds, items}}, `useOfFunds.items.${i}.label`);
                                 }} />
-                            <input className={`${inputCls} w-[84px] flex-none tabular-nums`} inputMode="numeric" placeholder={t.itemPct} value={Number.isFinite(it.pct) ? String(it.pct) : ""}
+                            <input className={`${inputCls.replace("w-full ", "")} w-[84px] flex-none tabular-nums`} inputMode="numeric" placeholder={t.itemPct} value={Number.isFinite(it.pct) ? String(it.pct) : ""}
                                 onChange={(e) => {
                                     const v = e.target.value.replace(/[^\d]/g, "");
                                     const items = value.useOfFunds.items.map((x, k) => (k === i ? {...x, pct: v === "" ? NaN : Number(v)} : x));
