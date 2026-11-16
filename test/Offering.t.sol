@@ -430,10 +430,10 @@ contract OfferingUnitTest is OfferingTestBase {
         // LP shares permanently at 0xdEaD (불변식 7)
         assertEq(pool.balanceOf(pool.DEAD()), pool.totalSupply());
         assertEq(token.pool(), address(pool));
-        // proceeds: platform offering fee 7.5% (L1 preset), LP 15% seeded,
-        // creator = remainder (v5.2: fee moved from fixed 10% to FeeRouter L1).
-        assertEq(krw.balanceOf(creator), 232_500e18);
-        assertEq(krw.balanceOf(platform), 22_500e18);
+        // proceeds: platform offering fee 0% (L1 preset, decision 59), LP 15% seeded,
+        // creator = remainder = totalRaised - krwSeed.
+        assertEq(krw.balanceOf(creator), 255_000e18);
+        assertEq(krw.balanceOf(platform), 0);
         assertEq(krw.balanceOf(address(offering)), 0); // raised == committed, nothing left
         assertEq(uint8(offering.phase()), uint8(IPrimaryMarket.Phase.Settled));
     }

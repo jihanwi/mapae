@@ -49,13 +49,13 @@ contract FeeRouter is Ownable, IFeeRouter {
     uint16 internal constant L0_OFFERING_MAX = 500;
 
     // L1/L2: premium tiers. Swap split total in [100,150]; platform in [20,60];
-    // offering fee in [500,1000]; merch in [0,500].
+    // offering fee in [0,500] (decision 59, v3.3-L1: was [500,1000]); merch in [0,500].
     uint16 internal constant PREMIUM_SWAP_SUM_MIN = 100;
     uint16 internal constant PREMIUM_SWAP_SUM_MAX = 150;
     uint16 internal constant PREMIUM_SWAP_PLATFORM_MIN = 20;
     uint16 internal constant PREMIUM_SWAP_PLATFORM_MAX = 60;
-    uint16 internal constant PREMIUM_OFFERING_MIN = 500;
-    uint16 internal constant PREMIUM_OFFERING_MAX = 1000;
+    uint16 internal constant PREMIUM_OFFERING_MIN = 0;
+    uint16 internal constant PREMIUM_OFFERING_MAX = 500;
     uint16 internal constant PREMIUM_MERCH_MAX = 500;
 
     // v3 curve (CurveSale, L0 only): platform [40,60], dev [20,40], lpSeed [0,20],
@@ -84,8 +84,9 @@ contract FeeRouter is Ownable, IFeeRouter {
         // a mistyped preset cannot ship.
         // L0 (v3): AMM 1.00% = platform 0.40 / dev royalty 0.30 / LP 0.30 (= CurvePresets SWAP_FEE_*).
         _set(UtilityTier.L0, TierFees(500, 40, 30, 0, 30, 0));
-        _set(UtilityTier.L1, TierFees(750, 40, 60, 30, 20, 400));
-        _set(UtilityTier.L2, TierFees(750, 40, 60, 30, 20, 300));
+        // decision 59: L1/L2 offering fee starts at 0 (platform income from swaps); swap split unchanged.
+        _set(UtilityTier.L1, TierFees(0, 40, 60, 30, 20, 400));
+        _set(UtilityTier.L2, TierFees(0, 40, 60, 30, 20, 300));
         // Curve (v3): 1.00% = platform 0.50 / dev 0.35 / LP seed 0.15 (= CurvePresets CURVE_FEE_*).
         _setCurve(CurveFees(50, 35, 15));
     }

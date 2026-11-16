@@ -40,7 +40,10 @@ contract FeeRouterV2Test is Test {
         assertEq(l0.merchFeeBps, 0);
 
         IFeeRouter.TierFees memory l1 = router.getFees(IFeeRouter.UtilityTier.L1);
-        assertEq(l1.offeringFeeBps, 750);
+        assertEq(l1.offeringFeeBps, 0); // decision 59 (v3.3-L1): L1/L2 offering fee starts at 0
+        IFeeRouter.TierFees memory l2 = router.getFees(IFeeRouter.UtilityTier.L2);
+        assertEq(l2.offeringFeeBps, 0);
+        assertEq(l2.merchFeeBps, 300);
         assertEq(l1.swapPlatformBps, 40);
         assertEq(l1.swapRoyaltyBps, 60);
         assertEq(l1.swapBurnBps, 30);
@@ -59,7 +62,7 @@ contract FeeRouterV2Test is Test {
     function test_SetFees_OnlyOwner() public {
         vm.prank(makeAddr("rando"));
         vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, makeAddr("rando")));
-        router.setFees(IFeeRouter.UtilityTier.L1, _fees(750, 40, 60, 30, 20, 400));
+        router.setFees(IFeeRouter.UtilityTier.L1, _fees(0, 40, 60, 30, 20, 400));
     }
 
     function test_SetTreasury() public {
@@ -93,21 +96,23 @@ contract FeeRouterV2Test is Test {
 
     function test_Band_Premium_Boundaries() public {
         // swap sum band [100,150]: 99 reverts, 151 reverts, edges ok
-        _expectBand(IFeeRouter.UtilityTier.L1, _fees(750, 40, 30, 29, 0, 400)); // sum 99
-        _expectBand(IFeeRouter.UtilityTier.L1, _fees(750, 60, 61, 30, 0, 400)); // sum 151
-        router.setFees(IFeeRouter.UtilityTier.L1, _fees(750, 40, 30, 30, 0, 400)); // sum 100
-        router.setFees(IFeeRouter.UtilityTier.L1, _fees(750, 40, 60, 30, 20, 400)); // sum 150 (router share 60)
+        _expectBand(IFeeRouter.UtilityTier.L1, _fees(0, 40, 30, 29, 0, 400)); // sum 99
+        _expectBand(IFeeRouter.UtilityTier.L1, _fees(0, 60, 61, 30, 0, 400)); // sum 151
+        router.setFees(IFeeRouter.UtilityTier.L1, _fees(0, 40, 30, 30, 0, 400)); // sum 100
+        router.setFees(IFeeRouter.UtilityTier.L1, _fees(0, 40, 60, 30, 20, 400)); // sum 150 (router share 60)
         // swap platform band [20,60]: 19 reverts, 61 reverts
-        _expectBand(IFeeRouter.UtilityTier.L1, _fees(750, 19, 61, 30, 10, 400));
-        _expectBand(IFeeRouter.UtilityTier.L1, _fees(750, 61, 40, 30, 19, 400));
-        // offering fee band [500,1000]: 499 reverts, 1001 reverts, edges ok
-        _expectBand(IFeeRouter.UtilityTier.L1, _fees(499, 40, 60, 30, 20, 400));
-        _expectBand(IFeeRouter.UtilityTier.L1, _fees(1001, 40, 60, 30, 20, 400));
+        _expectBand(IFeeRouter.UtilityTier.L1, _fees(0, 19, 61, 30, 10, 400));
+        _expectBand(IFeeRouter.UtilityTier.L1, _fees(0, 61, 40, 30, 19, 400));
+        // offering fee band [0,500] (decision 59): 0 and 500 ok, 501 reverts (L1 and L2)
+        router.setFees(IFeeRouter.UtilityTier.L1, _fees(0, 40, 60, 30, 20, 400));
         router.setFees(IFeeRouter.UtilityTier.L1, _fees(500, 40, 60, 30, 20, 400));
-        router.setFees(IFeeRouter.UtilityTier.L1, _fees(1000, 40, 60, 30, 20, 400));
+        _expectBand(IFeeRouter.UtilityTier.L1, _fees(501, 40, 60, 30, 20, 400));
+        _expectBand(IFeeRouter.UtilityTier.L1, _fees(1000, 40, 60, 30, 20, 400));
+        router.setFees(IFeeRouter.UtilityTier.L2, _fees(500, 40, 60, 30, 20, 300));
+        _expectBand(IFeeRouter.UtilityTier.L2, _fees(501, 40, 60, 30, 20, 300));
         // merch ceil 500: 501 reverts, 500 ok
-        _expectBand(IFeeRouter.UtilityTier.L1, _fees(750, 40, 60, 30, 20, 501));
-        router.setFees(IFeeRouter.UtilityTier.L1, _fees(750, 40, 60, 30, 20, 500));
+        _expectBand(IFeeRouter.UtilityTier.L1, _fees(0, 40, 60, 30, 20, 501));
+        router.setFees(IFeeRouter.UtilityTier.L1, _fees(0, 40, 60, 30, 20, 500));
     }
 
     // ------------------------------------------------------------------
@@ -166,7 +171,7 @@ contract FeeRouterV2Test is Test {
             } else {
                 assertTrue(sum >= 100 && sum <= 150);
                 assertTrue(s.swapPlatformBps >= 20 && s.swapPlatformBps <= 60);
-                assertTrue(s.offeringFeeBps >= 500 && s.offeringFeeBps <= 1000);
+                assertTrue(s.offeringFeeBps <= 500);
                 assertTrue(s.merchFeeBps <= 500);
             }
         } catch {
