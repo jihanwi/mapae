@@ -4,7 +4,7 @@
 import {blobStore} from "../_lib/blobStore.js";
 import {giwaChain} from "../_lib/chain.js";
 import {handleGetMeta, handlePostMeta, IndexEntry} from "../_lib/handler.js";
-import {curveName, getSql} from "../_lib/db.js";
+import {curveName, ensureSchema, getSql, withSchemaRetry} from "../_lib/db.js";
 import {handleShare} from "../_lib/share.js";
 import {ADDR_V3} from "../../src/contracts/addressesV3.js";
 import {cors, forbiddenOrigin, json, MAX_BODY, preflight} from "../_lib/http.js";
@@ -19,7 +19,10 @@ export async function GET(request: Request): Promise<Response> {
         // a navigation or a crawler, not an API call: no CORS gate
         const host = request.headers.get("x-forwarded-host") ?? url.host;
         return handleShare(share, `https://${host}`, {
-            curveName: (curve) => curveName(getSql(), curve, ADDR_V3.curveFactory),
+            curveName: (curve) => {
+                const sql = getSql();
+                return withSchemaRetry("meta share", () => curveName(sql, curve, ADDR_V3.curveFactory), () => ensureSchema(sql));
+            },
             metaIndex: async () => {
                 const r = await handleGetMeta({store: blobStore});
                 return r.status === 200 ? (r.body as Record<string, IndexEntry>) : {};

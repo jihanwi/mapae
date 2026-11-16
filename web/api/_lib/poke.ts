@@ -1,7 +1,7 @@
 // On-demand catch-up (POST /api/chain/summary): index at most one range now, and at most once per
 // POKE_GAP_SEC across all callers (the claim on the cursor row). Pure; dependencies injected.
 import type {CronResult} from "./indexer.js";
-import type {PokeClaim} from "./db.js";
+import {withSchemaRetry, type PokeClaim} from "./db.js";
 
 export type PokeDeps = {
     claim(nowSec: number): Promise<PokeClaim>;
@@ -14,19 +14,10 @@ export type PokeDeps = {
 
 export type PokeAnswer = {indexedBlock: string | null; ran: boolean};
 
-/** Postgres "undefined_column": the poke_ts column is added by ensureSchema. */
-const isMissingColumn = (e: unknown) => (e as {code?: string})?.code === "42703";
-
 export async function handlePoke(deps: PokeDeps): Promise<PokeAnswer> {
     const now = Math.floor(deps.nowMs() / 1000);
-    let claim: PokeClaim;
-    try {
-        claim = await deps.claim(now);
-    } catch (e) {
-        if (!isMissingColumn(e)) throw e;
-        await deps.ensureSchema(); // first catch-up before the cron migrated the schema
-        claim = await deps.claim(now);
-    }
+    // first catch-up before the cron migrated the schema (e.g. the poke_ts column)
+    const claim: PokeClaim = await withSchemaRetry("chain/summary POST", () => deps.claim(now), deps.ensureSchema);
     if (claim === "throttled") return {indexedBlock: await deps.indexedBlock(), ran: false};
     // "no_row": the cursor row of this version does not exist yet (just after a version switch);
     // the run below creates it, as the cron would.

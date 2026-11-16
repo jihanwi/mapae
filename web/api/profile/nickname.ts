@@ -18,8 +18,9 @@ export async function GET(request: Request): Promise<Response> {
     const wallet = new URL(request.url).searchParams.get("wallet");
     if (!wallet || !/^0x[0-9a-fA-F]{40}$/.test(wallet)) return json(400, {error: "bad_request"}, c.headers);
     try {
-        // Reads never create tables: a missing table is a 503, not an empty answer.
-        const n = await db.nicknameOf(db.getSql(), wallet.toLowerCase());
+        // A missing table or column (deploy before the cron migrated) is created once, then read again.
+        const sql = db.getSql();
+        const n = await db.withSchemaRetry("profile/nickname GET", () => db.nicknameOf(sql, wallet.toLowerCase()), () => db.ensureSchema(sql));
         return json(200, {nickname: n?.nickname ?? null}, {...c.headers, "Cache-Control": "s-maxage=30"});
     } catch (e) {
         console.error("profile/nickname GET failed", e);

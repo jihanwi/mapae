@@ -16,7 +16,8 @@ export async function GET(request: Request): Promise<Response> {
     const q = parseCommentQuery(new URL(request.url).searchParams);
     if (!q) return json(400, {error: "bad_request"}, c.headers);
     try {
-        const comments = await db.listComments(db.getSql(), q.curve, q.before, q.limit);
+        const sql = db.getSql();
+        const comments = await db.withSchemaRetry("comments GET", () => db.listComments(sql, q.curve, q.before, q.limit), () => db.ensureSchema(sql));
         const nextBefore = comments.length === q.limit ? comments[comments.length - 1].id : null;
         return json(200, {comments, nextBefore}, {...c.headers, "Cache-Control": "s-maxage=15, stale-while-revalidate=60"});
     } catch (e) {

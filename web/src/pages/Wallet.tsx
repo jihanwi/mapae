@@ -20,7 +20,7 @@ import {marketCap} from "../lib/activity";
 import {progressBps, TOTAL_SUPPLY} from "../lib/curveMath";
 import {currentPrice} from "../lib/homeList";
 import {fmt, fmtDateTime, fmtRound, shortAddr} from "../lib/format";
-import {holdingValue, mergeBrowserTrades, signedPnl, walletAmount, parsePosition, pnl, Position, splitHoldings, totals, Unit} from "../lib/wallet";
+import {heldCount, holdingValue, mergeBrowserTrades, signedPnl, walletAmount, parsePosition, pnl, Position, splitHoldings, totals, Unit} from "../lib/wallet";
 import {explorerAddr, explorerTx, giwaSepolia} from "../config/chain";
 import {agoLabel, tradeAmount, tradeUnit, useNow} from "../components/feed";
 import {Badge, Gauge, PrimaryBtn, SecondaryBtn, StaleBand} from "../components/ui";
@@ -399,7 +399,7 @@ function WalletView({address}: {address: Address}) {
                         })}
                 </div>
             )}
-            <p className="m-0 text-[13px] text-hanji-400 tabular-nums">{tr.walletPage.counts(chainFail ? null : holding.length, launchedCount)}</p>
+            <p className="m-0 text-[13px] text-hanji-400 tabular-nums">{tr.walletPage.counts(heldCount({held: holding.length, tokens: tokenSet.size, balancesRead: bal.read, activityLoaded: activity.loaded, profileOk: serverOk, chainFail}), launchedCount)}</p>
             {/* tabs */}
             <section className="min-w-0">
                 <div role="tablist" className="grid grid-cols-3 border-b border-ink-700 mb-4">

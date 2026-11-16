@@ -21,7 +21,8 @@ export async function GET(request: Request): Promise<Response> {
     const list = parseAddresses(new URL(request.url).searchParams.get("addresses"));
     if (!list) return json(400, {error: "bad_request"}, c.headers);
     try {
-        const rows = await db.nicknamesOf(db.getSql(), list);
+        const sql = db.getSql();
+        const rows = await db.withSchemaRetry("profile/nicknames GET", () => db.nicknamesOf(sql, list), () => db.ensureSchema(sql));
         const nicknames: Record<string, string> = {};
         for (const r of rows) nicknames[r.address] = r.nickname;
         return json(200, {nicknames}, {...c.headers, "Cache-Control": "s-maxage=60, stale-while-revalidate=300"});

@@ -74,7 +74,13 @@ export function useWalletBalances(address: Address, tokens: readonly string[]) {
     });
     // a single failed balanceOf (or the whole batch) means the holdings are incomplete
     const failed = q.isError || (q.data?.some((r) => r.status !== "success") ?? false);
-    return {balances: map, isLoading: q.isLoading && list.length > 0, isError: failed};
+    return {
+        balances: map,
+        isLoading: q.isLoading && list.length > 0,
+        isError: failed,
+        /** Every balance of this list answered (an empty list reads nothing). */
+        read: list.length > 0 && q.isSuccess && !failed,
+    };
 }
 
 /** Real-name check (v3.2: ADDR_V3.dojangAnyOf = official Dojang OR MockDojang; isVerified(address)). */

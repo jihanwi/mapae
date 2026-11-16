@@ -1,6 +1,7 @@
-// Shared wrapper for the /api/chain/* GET endpoints: CORS, the cache header, and 503 on failure.
+// Shared wrapper for the /api/chain/* GET endpoints: CORS, the cache header, a one-time schema
+// migration when a table or column is missing (withSchemaRetry), and 503 on failure.
 import {cors, forbiddenOrigin, json, preflight} from "./http.js";
-import {getSql, Sql} from "./db.js";
+import {ensureSchema, getSql, Sql, withSchemaRetry} from "./db.js";
 
 export const CHAIN_CACHE = "s-maxage=120, stale-while-revalidate=600";
 /** /api/chain/summary carries the indexer position (the client's data version): kept short. */
@@ -37,7 +38,8 @@ export function chainGet(name: string, opts: ChainGetOpts, run: (sql: Sql, param
             const params = new URL(request.url).searchParams;
             if (!paramsAllowed(params, opts.params)) return json(400, {error: "bad_request"}, c.headers);
             try {
-                const r = await run(getSql(), params);
+                const sql = getSql();
+                const r = await withSchemaRetry(`chain/${name}`, () => run(sql, params), () => ensureSchema(sql));
                 const cache: Record<string, string> = r.status === 200 ? {"Cache-Control": opts.cache ?? CHAIN_CACHE} : {};
                 return json(r.status, r.body, {...c.headers, ...cache});
             } catch (e) {
