@@ -14,6 +14,7 @@ import Wallet from "./pages/Wallet";
 import Create from "./pages/Create";
 import Feed from "./pages/Feed";
 import Offering from "./pages/Offering";
+import OfferingNew from "./pages/OfferingNew";
 import Membership from "./pages/Membership";
 import Redeem from "./pages/Redeem";
 import Trade from "./pages/Trade";
@@ -34,6 +35,7 @@ const router = createHashRouter([
             {path: "create", element: <Create />}, // v3 curve creation
             {path: "feed", element: <Feed />}, // trades of followed wallets (decision 53)
             {path: "offerings", element: <Home />}, // legacy fixed-price offerings (was "/")
+            {path: "offerings/new", element: <OfferingNew />}, // W-T34: open a v3.2-L1 offering
             {path: "offering/:addr", element: <Offering />},
             {path: "membership", element: <Membership />},
             {path: "redeem", element: <Redeem />},

@@ -137,6 +137,7 @@ export default function Home() {
             </div>
             <div className="flex items-baseline gap-3 mb-5 flex-wrap">
                 <h2 className="m-0 text-[21px] font-bold">{copy.home.section}</h2>
+                <Link to="/offerings/new" className="ml-auto order-last sm:order-none text-[14px] font-semibold">+ {copy.offeringCreate.openCta}</Link>
                 {isLoading ? (
                     <span className="flex items-center gap-2 text-[13px] text-hanji-400">
                         <span className="w-3 h-3 rounded-full border-2 border-brass-400 border-t-transparent animate-spin flex-none" />
