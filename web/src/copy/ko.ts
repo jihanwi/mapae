@@ -404,6 +404,10 @@ export const ko = {
         unit: "개",
         tokenLabel: "토큰",
         emptyNote: "진행 중인 공모에 응모하면 여기에 표시돼요",
+        // W-T39: 응모한 공모의 상태
+        committed: (n: string) => `응모 ${n} KRWs`,
+        awaitSettle: (n: string) => `정산 대기 · 응모 ${n} KRWs`,
+        canClaim: "배정 받을 수 있어요",
     },
     redeem: {
         title: "리딤",
