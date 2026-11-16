@@ -12,6 +12,8 @@ import {explorerAddr, explorerTx, giwaSepolia} from "../config/chain";
 import {Address, CtaState, useTradeCta, ZERO} from "../hooks/curves";
 import {CURVE_SUPPLY, DEX_SUPPLY, TOTAL_SUPPLY, costToSellOut, grossForNet, quoteBuyWithFees, spotPrice} from "../lib/curveMath";
 import {utf8ByteLength, withinByteLimit} from "../lib/bytes";
+import {displayTicker, isStandardTicker, normalizeTicker, tickerCharsOk} from "../lib/ticker";
+import {useSameTicker} from "../components/TickerBadge";
 import {exceedsDevFirstBuyCap} from "../lib/devFirstBuy";
 import {fmt, fmtCeil, fmtDateTime, fmtSig, sanitizeAmountInput} from "../lib/format";
 import {NetError, PrimaryBtn, Skeleton} from "../components/ui";
@@ -84,7 +86,9 @@ export default function Create() {
     const r = useCreateReads(address);
 
     const [name, setName] = useState("");
+    // Shown as typed through displayTicker (NFKC, a–z -> A–Z); left alone while an IME composes.
     const [symbol, setSymbol] = useState("");
+    const [composing, setComposing] = useState(false);
     const [kind, setKind] = useState<QuoteKind>("KRWs");
     const [rawBuy, setRawBuy] = useState("");
     const [created, setCreated] = useState<{curve: Address; hash: `0x${string}`} | null>(null);
@@ -119,13 +123,17 @@ export default function Create() {
     // Leading / trailing spaces never reach the chain: validation, byte counts and tx args all use
     // the trimmed values (the inputs keep what was typed).
     const nameT = name.trim();
-    const symbolT = symbol.trim();
+    // decision 54: the submitted ticker is normalizeTicker(input) and must follow the rule
+    const symbolT = normalizeTicker(symbol);
     const nameBytes = utf8ByteLength(nameT);
     const symbolBytes = utf8ByteLength(symbolT);
+    const symbolBadChars = !composing && symbolT !== "" && !tickerCharsOk(symbolT);
+    const sameTicker = useSameTicker(composing ? "" : symbolT);
     const nowSec = BigInt(Math.floor(Date.now() / 1000));
     const rateLimited = r.nextAllowedAt > nowSec;
     const quoteOk = !!cfg && cfg.registered && cfg.enabled;
-    const formOk = r.loaded && nameT !== "" && symbolT !== "" && withinByteLimit(nameT, r.maxName) && withinByteLimit(symbolT, r.maxSymbol) && quoteOk;
+    const formOk =
+        r.loaded && !composing && nameT !== "" && symbolT !== "" && withinByteLimit(nameT, r.maxName) && withinByteLimit(symbolT, r.maxSymbol) && isStandardTicker(symbolT) && quoteOk;
     const blocked = !r.curveEnabled || rateLimited || !formOk || !draftValid(draft) || overCap;
 
     const action = async (run: RunFn) => {
@@ -250,7 +258,29 @@ export default function Create() {
                     label={tr.create.symbol}
                     hint={<span className={symbolBytes > r.maxSymbol ? "text-error" : "text-hanji-400"}>{tr.create.bytes(symbolBytes, r.maxSymbol)}</span>}
                 >
-                    <input value={symbol} onChange={(e) => setSymbol(e.target.value)} placeholder={tr.create.symbolPlaceholder} className={inputCls} />
+                    <input
+                        value={symbol}
+                        // Hangul IME: while composing, the text is stored as typed (no NFKC, no
+                        // upper-casing, no check); compositionend applies displayTicker and the check.
+                        onCompositionStart={() => setComposing(true)}
+                        onCompositionEnd={(e) => {
+                            setComposing(false);
+                            setSymbol(displayTicker(e.currentTarget.value));
+                        }}
+                        onChange={(e) => {
+                            const v = e.target.value;
+                            const native = e.nativeEvent as InputEvent;
+                            setSymbol(composing || native.isComposing ? v : displayTicker(v));
+                        }}
+                        placeholder={tr.create.symbolPlaceholder}
+                        autoCapitalize="characters"
+                        autoCorrect="off"
+                        spellCheck={false}
+                        aria-invalid={symbolBadChars}
+                        className={inputCls}
+                    />
+                    {symbolBadChars && <p className="m-0 mt-1.5 text-[12px] text-error">{tr.create.symbolRule}</p>}
+                    {sameTicker !== null && <p className="m-0 mt-1.5 text-[12px] text-hanji-400">{tr.create.sameTicker(sameTicker)}</p>}
                 </Field>
                 <Field label={tr.create.quote}>
                     <div className="flex rounded-input overflow-hidden border border-ink-700">
