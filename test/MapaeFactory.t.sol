@@ -7,6 +7,8 @@ import {IDojang} from "../src/interfaces/IDojang.sol";
 import {IOffering} from "../src/interfaces/IOffering.sol";
 import {IFeeRouter} from "../src/interfaces/IFeeRouter.sol";
 import {MapaeFactory} from "../src/MapaeFactory.sol";
+import {ProceedsLockDeployer} from "../src/ProceedsLockDeployer.sol";
+import {TEST_PROCEEDS_BAND} from "./utils/ProceedsDefaults.sol";
 import {BuybackVault} from "../src/BuybackVault.sol";
 import {Offering} from "../src/Offering.sol";
 import {MembershipToken} from "../src/MembershipToken.sol";
@@ -40,7 +42,9 @@ abstract contract MapaeFactoryTestBase is OfferingTestBase {
                 maxRaise: 500_000_000e18,
                 minWalletLimitBps: 10,
                 maxWalletLimitBps: 3000
-            })
+            }),
+            TEST_PROCEEDS_BAND(),
+            new ProceedsLockDeployer()
         );
         dojang.setVerified(creator, true);
         dojang.setVerified(creator2, true);
@@ -66,6 +70,10 @@ abstract contract MapaeFactoryTestBase is OfferingTestBase {
         cp.sponsorBurnBps = 1000;
         cp.vestingDuration = 1080 days; // 36mo
         cp.vestingCliff = 180 days; // 6mo
+        cp.withSponsorship = true;
+        cp.proceedsUpfrontBps = 10_000; // pre-56 expectations: the whole issuer share at settle
+        cp.proceedsLockDuration = 1 hours;
+        cp.proceedsLockCliff = 0;
     }
 
     function createAs(address who) internal returns (Offering, MembershipToken, RedeemManager) {
@@ -88,6 +96,9 @@ abstract contract MapaeFactoryTestBase is OfferingTestBase {
         cp.swapBurnBps = 0; // v3: L0 burn share must be 0
         cp.vestingDuration = 120 days; // L0 [3mo,6mo]
         cp.vestingCliff = 0; // L0 cliff 0 allowed
+        cp.proceedsUpfrontBps = 0; // decision 56: L0 has no proceeds lock (must be 0, 0, 0)
+        cp.proceedsLockDuration = 0;
+        cp.proceedsLockCliff = 0;
     }
 }
 
@@ -128,7 +139,9 @@ contract MapaeFactoryTest is MapaeFactoryTestBase {
     function test_Create_EmitsEvent() public {
         vm.prank(creator);
         vm.expectEmit(true, false, false, false); // only creator topic predictable pre-deploy
-        emit MapaeFactory.OfferingCreated(creator, address(0), address(0), address(0), address(0), address(0));
+        emit MapaeFactory.OfferingCreated(
+            creator, address(0), address(0), address(0), address(0), address(0), address(0)
+        );
         factory.createOffering(defaultCreateParams());
     }
 

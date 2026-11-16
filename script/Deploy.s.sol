@@ -21,6 +21,7 @@ import {IDojang} from "../src/interfaces/IDojang.sol";
 import {IEAS, IDojangScroll} from "../src/interfaces/IEAS.sol";
 import {GiwaSepolia} from "../src/Constants.sol";
 import {MapaeFactory} from "../src/MapaeFactory.sol";
+import {ProceedsLockDeployer} from "../src/ProceedsLockDeployer.sol";
 import {PoolFactory} from "../src/PoolFactory.sol";
 import {FeeRouter} from "../src/FeeRouter.sol";
 import {BuybackVault} from "../src/BuybackVault.sol";
@@ -70,7 +71,11 @@ contract Deploy is Script {
             buybackVault,
             MIN_RAISE,
             recipients,
-            guide
+            guide,
+            MapaeFactory.ProceedsBand({
+                maxUpfrontBps: 3000, minLockDuration: 1 hours, maxLockDuration: 1095 days, maxLockCliff: 180 days
+            }),
+            new ProceedsLockDeployer()
         );
 
         // Stack 3: GIWA-native showcase (live Dojang attestation stack)
@@ -89,7 +94,11 @@ contract Deploy is Script {
             buybackVault,
             MIN_RAISE,
             recipients,
-            guide
+            guide,
+            MapaeFactory.ProceedsBand({
+                maxUpfrontBps: 3000, minLockDuration: 1 hours, maxLockDuration: 1095 days, maxLockCliff: 180 days
+            }),
+            new ProceedsLockDeployer()
         );
 
         vm.stopBroadcast();

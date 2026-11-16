@@ -116,6 +116,11 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
     uint16 public immutable swapRoyaltyBps;
     /// @notice Per-pool creator swap burn, snapshotted (tier band).
     uint16 public immutable swapBurnBps;
+    /// @notice Decision 56: ProceedsLock receiving the locked part of the issuer's proceeds;
+    ///         address(0) = no lock (the whole issuer share is paid at settle, L0).
+    address public immutable proceedsLock;
+    /// @notice Share of the issuer's proceeds paid at settle when there is a lock, in bps.
+    uint16 public immutable proceedsUpfrontBps;
 
     AllocationRecipients public recipients;
 
@@ -200,10 +205,17 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
         // Combined feasibility: every share must fit within 100% of S', so
         // remainder = S' − sold − creator − LP ≥ 0 always holds (burned at settle) and
         // settle can never underflow. No platform token share (decision 21).
+        // decision 56: L0 never has a proceeds lock; the upfront share is a bps value.
+        if (p.proceedsUpfrontBps > BPS || (p.tier == IFeeRouter.UtilityTier.L0 && p.proceedsLock != address(0))) {
+            revert InvalidConfig();
+        }
+
         uint16 lpTokenBps_ = uint16(uint256(p.cBps) * p.fBps / BPS);
         if (uint256(p.fBps) + p.creatorTokenBps + lpTokenBps_ > BPS) revert InvalidConfig();
 
         paymentToken = p.paymentToken;
+        proceedsLock = p.proceedsLock;
+        proceedsUpfrontBps = p.proceedsUpfrontBps;
         dojang = p.dojang;
         creator = p.creator;
         price = p.price;
@@ -382,11 +394,19 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
     /// @dev Proceeds split: platform = offeringFeeBps (snapshot at construction,
     ///      invariant 11), LP share seeded into the pool (krwSeed), creator =
     ///      remainder including all KRW rounding dust (never the platform — D1).
+    ///      Decision 56: with a ProceedsLock the creator share is split into upfront =
+    ///      creatorProceeds × proceedsUpfrontBps / BPS (rounded down) paid now and locked =
+    ///      the rest (rounding dust goes to the lock) sent to the lock; without one, all upfront.
     function _distributeProceeds(uint256 totalRaised_, uint256 krwSeed) internal {
         uint256 platformProceeds = totalRaised_ * offeringFeeBps / BPS;
         uint256 creatorProceeds = totalRaised_ - krwSeed - platformProceeds;
+        address lock = proceedsLock;
+        uint256 upfront = lock == address(0) ? creatorProceeds : creatorProceeds * proceedsUpfrontBps / BPS;
+        uint256 locked = creatorProceeds - upfront;
         if (platformProceeds > 0) paymentToken.safeTransfer(recipients.platform, platformProceeds);
-        if (creatorProceeds > 0) paymentToken.safeTransfer(creator, creatorProceeds);
+        if (upfront > 0) paymentToken.safeTransfer(creator, upfront);
+        if (locked > 0) paymentToken.safeTransfer(lock, locked);
+        emit ProceedsDistributed(platformProceeds, upfront, locked, lock);
     }
 
     // ---------------------------------------------------------------------

@@ -119,6 +119,10 @@ contract DemoStage1On is Script {
         cp.sponsorBurnBps = 0;
         cp.vestingDuration = 120 days; // L0 3–6mo
         cp.vestingCliff = 0; // L0 cliff 0 allowed
+        cp.withSponsorship = true;
+        cp.proceedsUpfrontBps = 0; // decision 56: L0 has no proceeds lock (must be 0, 0, 0)
+        cp.proceedsLockDuration = 0;
+        cp.proceedsLockCliff = 0;
     }
 
     function _l1Params() internal view returns (MapaeFactory.CreateParams memory cp) {
@@ -141,6 +145,10 @@ contract DemoStage1On is Script {
         cp.sponsorBurnBps = 1000;
         cp.vestingDuration = 1080 days;
         cp.vestingCliff = 180 days;
+        cp.withSponsorship = true;
+        cp.proceedsUpfrontBps = 3000; // decision 56: 30% at settle, the rest locked
+        cp.proceedsLockDuration = 365 days;
+        cp.proceedsLockCliff = 30 days;
     }
 
     function _mnemonic() internal view returns (string memory) {

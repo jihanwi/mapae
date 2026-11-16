@@ -25,10 +25,13 @@ contract StackDeployer {
         return new MapaeVesting(beneficiary, startTimestamp, durationSeconds, cliffSeconds, tier);
     }
 
+    /// @notice RedeemManager always; Sponsorship only when `withSponsorship` (decision 56),
+    ///         otherwise `sponsorship` is address(0).
     function deployPeripherals(
         MembershipToken token,
         IERC20 krw,
         address creator,
+        bool withSponsorship,
         uint16 sponsorBurnBps,
         uint16 maxSlippageBps,
         IFeeRouter feeRouter,
@@ -36,6 +39,8 @@ contract StackDeployer {
         BuybackVault buybackVault
     ) external returns (RedeemManager redeemManager, Sponsorship sponsorship) {
         redeemManager = new RedeemManager(token, creator, krw, feeRouter, tier, buybackVault);
-        sponsorship = new Sponsorship(token, krw, creator, sponsorBurnBps, maxSlippageBps, tier, buybackVault);
+        if (withSponsorship) {
+            sponsorship = new Sponsorship(token, krw, creator, sponsorBurnBps, maxSlippageBps, tier, buybackVault);
+        }
     }
 }

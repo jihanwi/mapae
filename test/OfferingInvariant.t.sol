@@ -15,6 +15,7 @@ import {MockDojang} from "../src/mocks/MockDojang.sol";
 import {PoolFactory} from "../src/PoolFactory.sol";
 import {FeeRouter} from "../src/FeeRouter.sol";
 import {IFeeRouter} from "../src/interfaces/IFeeRouter.sol";
+import {ProceedsLock} from "../src/ProceedsLock.sol";
 
 uint256 constant PRICE = 10_000e18;
 uint256 constant RAISE = 1_000_000e18;
@@ -60,10 +61,13 @@ abstract contract HandlerBase is CommonBase, StdCheats, StdUtils {
     }
 
     /// 불변식 8 probe: the creator keeps trying to commit; success sets the ghost flag.
+    uint256 public creatorFaucet;
+
     function commitAsCreator(uint256 amount) external {
         amount = bound(amount, MIN_COMMIT, WALLET_LIMIT);
         vm.startPrank(creator);
         krw.faucet(amount);
+        creatorFaucet += amount; // ghost: KRW the creator got outside the proceeds
         krw.approve(address(offering), amount);
         try offering.commit(amount) {
             creatorCommitSucceeded = true;
@@ -202,6 +206,9 @@ contract OfferingInvariantModeBTest is Test {
     MockKRW internal krw;
     address internal creator = makeAddr("creator");
 
+    /// Decision 56 hook: no proceeds lock by default (overridden by the locked suite).
+    function _proceeds(IOffering.OfferingParams memory) internal virtual {}
+
     function setUp() public {
         vm.warp(1_750_000_000);
         krw = new MockKRW();
@@ -231,6 +238,7 @@ contract OfferingInvariantModeBTest is Test {
         p.recipients = IOffering.AllocationRecipients({
             creatorVesting: makeAddr("creatorVesting"), platform: makeAddr("platform")
         });
+        _proceeds(p);
         offering = new Offering(p);
         token = offering.token();
 
@@ -372,5 +380,39 @@ contract OfferingInvariantModeATest is Test {
 contract OfferingInvariantModeBEdgeTest is OfferingInvariantModeBTest {
     function _preset() internal pure override returns (uint16, uint16, uint16) {
         return (6900, 1500, 1500);
+    }
+}
+
+/// @notice Decision 56: the mode B suite with the issuer's proceeds split into 30% upfront and a
+///         ProceedsLock. After settle the raise is fully accounted for: platform cut + pool seed +
+///         upfront + locked == totalRaised, the lock never releases more than it holds, and
+///         nothing ever reaches the creator except the upfront part and lock releases.
+contract OfferingInvariantLockedTest is OfferingInvariantModeBTest {
+    ProceedsLock internal lock;
+
+    function _proceeds(IOffering.OfferingParams memory p) internal override {
+        lock = new ProceedsLock(creator, uint64(p.deadline), 365 days, 30 days);
+        p.proceedsLock = address(lock);
+        p.proceedsUpfrontBps = 3000;
+    }
+
+    function invariant_56_ProceedsConserved() public view {
+        uint256 creatorGot = krw.balanceOf(creator) - handler.creatorFaucet();
+        if (!offering.settled()) {
+            assertEq(krw.balanceOf(address(lock)), 0);
+            assertEq(creatorGot, 0);
+            return;
+        }
+        uint256 raised = offering.totalRaised();
+        (, address platformAddr) = offering.recipients();
+        uint256 platformGot = krw.balanceOf(platformAddr);
+        uint256 seed = address(offering.pool()) == address(0) ? 0 : krw.balanceOf(address(offering.pool()));
+        uint256 locked = krw.balanceOf(address(lock)) + lock.released(address(krw));
+        // the pool can only have grown by swaps, and there are none in this handler
+        assertEq(platformGot + seed + creatorGot - lock.released(address(krw)) + locked, raised, "total conserved");
+        assertLe(platformGot, raised * offering.offeringFeeBps() / 10_000, "platform cut");
+        uint256 creatorProceeds = raised - seed - platformGot;
+        assertEq(creatorGot - lock.released(address(krw)), creatorProceeds * 3000 / 10_000, "upfront");
+        assertLe(lock.releasable(address(krw)), krw.balanceOf(address(lock)));
     }
 }

@@ -23,6 +23,7 @@ import {IDojang} from "../src/interfaces/IDojang.sol";
 import {IOffering} from "../src/interfaces/IOffering.sol";
 import {IFeeRouter} from "../src/interfaces/IFeeRouter.sol";
 import {MapaeFactory} from "../src/MapaeFactory.sol";
+import {ProceedsLockDeployer} from "../src/ProceedsLockDeployer.sol";
 import {Offering} from "../src/Offering.sol";
 import {MembershipToken} from "../src/MembershipToken.sol";
 import {MapaePool} from "../src/MapaePool.sol";
@@ -88,7 +89,11 @@ contract DemoV2 is Script {
                 maxRaise: 500_000_000e18,
                 minWalletLimitBps: 10,
                 maxWalletLimitBps: 3000
-            })
+            }),
+            MapaeFactory.ProceedsBand({
+                maxUpfrontBps: 3000, minLockDuration: 1 hours, maxLockDuration: 1095 days, maxLockCliff: 180 days
+            }),
+            new ProceedsLockDeployer()
         );
         address[] memory who = new address[](5);
         who[0] = creator1;
@@ -136,6 +141,10 @@ contract DemoV2 is Script {
         cp.sponsorBurnBps = 1000;
         cp.vestingDuration = 1080 days;
         cp.vestingCliff = 180 days;
+        cp.withSponsorship = true;
+        cp.proceedsUpfrontBps = 3000; // decision 56: 30% at settle, the rest locked
+        cp.proceedsLockDuration = 365 days;
+        cp.proceedsLockCliff = 30 days;
 
         vm.prank(creator1);
         (address off, address token, address rm) = factory.createOffering(cp);
@@ -199,6 +208,10 @@ contract DemoV2 is Script {
         cp.sponsorBurnBps = 0; // L0 has no sponsorship anyway
         cp.vestingDuration = 120 days; // L0 3–6mo band
         cp.vestingCliff = 0; // L0 cliff 0 allowed
+        cp.withSponsorship = true;
+        cp.proceedsUpfrontBps = 0; // decision 56: L0 has no proceeds lock (must be 0, 0, 0)
+        cp.proceedsLockDuration = 0;
+        cp.proceedsLockCliff = 0;
 
         vm.prank(creator2);
         (address off, address token,) = factory.createOffering(cp);
