@@ -12,6 +12,7 @@ import {ProceedsPanel} from "../components/ProceedsPanel";
 import {ChainTerms} from "../components/ChainTerms";
 import {DisclosureSection} from "../components/DisclosureSection";
 import {spanText} from "../lib/proceedsText";
+import {commitBlock, isIssuerWallet} from "../lib/commitGuard";
 import {Badge, Gauge, Medallion, NetError, PrimaryBtn, SecondaryBtn, Skeleton, TextSkeleton} from "../components/ui";
 import {RunFn, TxButton} from "../components/tx";
 import {countdown, fmt, sanitizeAmountInput} from "../lib/format";
@@ -110,18 +111,17 @@ export default function Offering() {
     const minC = (minCommit.data as bigint) ?? 0n;
 
     // 9-a: 클릭 전 사전 검증 — 사유를 표시하고 CTA를 disabled
-    const commitReason =
-        !account ? copy.hints.connectWallet
-        : !verified ? copy.hints.needVerify
-        : amountWei === 0n ? ""
-        : amountWei < minC ? copy.hints.belowMinCommit(fmt(minC, 0))
-        : (wl > 0n && myCommitted + amountWei > wl) ? copy.hints.overWalletLimit
-        : amountWei > krwBalance ? copy.hints.overKrwBalance
-        : "";
+    // W-T36: every reason the contract would refuse, checked before any approval (lib/commitGuard)
+    const guard = (nowMs: number) =>
+        commitBlock({account, creator: o.creator, verified, settled: o.settled, refunding: o.refunding, deadlineSec: o.deadline, nowMs, amount: amountWei, myCommitted, minCommit: minC, walletLimit: wl, balance: krwBalance});
+    const commitReason = guard(now);
     const commitDisabled = amountWei === 0n || commitReason !== "";
+    const issuer = isIssuerWallet(account, o.creator);
 
     const commit = async (run: RunFn) => {
         if (!o || amountWei === 0n) return;
+        // checked again at the click (the deadline may have passed since the last render)
+        if (guard(Date.now()) !== "") return;
         if (((allowance.data as bigint) ?? 0n) < amountWei) {
             const ok = await run("KRWs 사용 승인", () =>
                 writeContractAsync({address: ADDR_L1.mockKRW, abi: MockKRWV3Abi, functionName: "approve", args: [o.address, amountWei], chainId: giwaSepolia.id}));
@@ -201,6 +201,9 @@ export default function Offering() {
                                         {copy.offering.cancelFrozenNote} · {copy.offering.commitStillOpenNote}
                                     </div>
                                 )}
+                                {issuer ? (
+                                    <p className="m-0 text-[14px] text-brass-400">{copy.offering.issuerCannotCommit}</p>
+                                ) : (<>
                                 <label className="block text-[13px] text-hanji-400 mb-2">응모 금액</label>
                                 <div className="flex items-center bg-ink-900 border border-ink-700 rounded-input px-4 focus-within:border-brass-400 mb-1.5">
                                     <input value={amount} onChange={(e) => setAmount(sanitizeAmountInput(e.target.value))}
@@ -215,6 +218,7 @@ export default function Offering() {
                                     {myCommitted > 0n ? copy.offering.commitMore : copy.offering.commitCta}
                                 </TxButton>
                                 {commitReason && <p className="text-[12px] text-brass-400 mt-2 mb-0">{commitReason}</p>}
+                                </>)}
 
                                 {myCommitted > 0n && (
                                     <div className="mt-5 pt-5 border-t border-ink-700">

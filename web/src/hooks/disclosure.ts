@@ -85,6 +85,31 @@ export function afterAddendumSave(prev: DisclosureState | undefined, sent: {text
     return {...prev, locked: true, addenda};
 }
 
+// ---- an older CDN copy never replaces a newer cached state (W-T36) ----
+// The GET is s-maxage=15, stale-while-revalidate=60: for up to ~75 s after a save a request can get
+// the previous answer. Such an answer is dropped and the GET is retried 15 s later (at most 3 times).
+
+export const STALE_RETRY_MS = 15_000;
+export const STALE_RETRY_MAX = 3;
+const staleRetries = new Map<string, number>();
+
+/** True when `fresh` is older than what the screen already has: a lower version, the same version
+ *  with fewer additional disclosures, or no document where the cache has one. A hidden answer is
+ *  always taken. */
+export function olderThanCache(cached: DisclosureState | undefined, fresh: DisclosureState): boolean {
+    if (!cached || fresh.hidden) return false;
+    if (cached.disclosure && !fresh.disclosure) return true;
+    if (!cached.disclosure || !fresh.disclosure) return false;
+    if (fresh.disclosure.version < cached.disclosure.version) return true;
+    return fresh.disclosure.version === cached.disclosure.version && fresh.addenda.length < cached.addenda.length;
+}
+
+/** What to do with a GET answer: keep the cache (and whether to retry) or take the answer. */
+export function onFetched(cached: DisclosureState | undefined, fresh: DisclosureState, retriesSoFar: number): {use: "cache" | "fresh"; retry: boolean} {
+    if (!olderThanCache(cached, fresh)) return {use: "fresh", retry: false};
+    return {use: "cache", retry: retriesSoFar < STALE_RETRY_MAX};
+}
+
 /** The offering's disclosure; an error state on failure (never read as "no disclosure"). */
 export function useDisclosure(offering: string | undefined) {
     const qc = useQueryClient();
@@ -102,12 +127,36 @@ export function useDisclosure(offering: string | undefined) {
                 console.warn("disclosure read failed", e);
                 throw e;
             }
-            return (await r.json()) as DisclosureState;
+            const fresh = (await r.json()) as DisclosureState;
+            const o = offering!.toLowerCase();
+            const decision = onFetched(cached, fresh, staleRetries.get(o) ?? 0);
+            if (decision.use === "fresh") {
+                staleRetries.delete(o);
+                return fresh;
+            }
+            console.warn("disclosure: dropped an older CDN copy", {cached: cached?.disclosure?.version, fresh: fresh.disclosure?.version});
+            if (decision.retry) {
+                staleRetries.set(o, (staleRetries.get(o) ?? 0) + 1);
+                setTimeout(() => void qc.invalidateQueries({queryKey: key(offering)}), STALE_RETRY_MS);
+            }
+            return cached!;
         },
     });
 }
 
 export type SaveResult = {ok: true} | {ok: false; code: string; problems?: {field: string; error: string; phrase?: string}[]};
+
+/** Resends of the SAME signed request (no new wallet signature): right after OfferingCreated the
+ *  server's RPC may not see the offering yet (not_offering) or answer a temporary error. */
+export type SaveOpts = {resends?: number; resendGapMs?: number};
+export const RESEND_GAP_MS = 2_000;
+
+/** Whether a failed POST is worth sending again as is. */
+export function resendable(status: number | null, code: string | undefined): boolean {
+    if (status === null) return true; // network error
+    if (status === 404 && code === "not_offering") return true;
+    return status === 503 || status === 502 || status === 504;
+}
 
 /** Signs and saves a document or an additional disclosure. Refetches the disclosure on success. */
 export function useSaveDisclosure() {
@@ -116,7 +165,7 @@ export function useSaveDisclosure() {
     const qc = useQueryClient();
     const [busy, setBusy] = useState(false);
     const save = useCallback(
-        async (offering: string, kind: DisclosureKind, content: DisclosureDoc | string): Promise<SaveResult> => {
+        async (offering: string, kind: DisclosureKind, content: DisclosureDoc | string, opts: SaveOpts = {}): Promise<SaveResult> => {
             setBusy(true);
             try {
                 const issuedAt = new Date().toISOString();
@@ -129,15 +178,26 @@ export function useSaveDisclosure() {
                 } catch (e) {
                     return {ok: false, code: classifyConnectError(e) === "rejected" ? "rejected" : "bad_signature"};
                 }
-                const r = await fetch(`${API_BASE}/api/meta`, {
-                    method: "POST",
-                    headers: {"content-type": "application/json"},
-                    body: JSON.stringify({kind, offering, issuedAt, signature, ...(doc ? {doc} : {text})}),
-                });
-                const body = (await r.json().catch(() => ({}))) as {error?: string; problems?: {field: string; error: string; phrase?: string}[]} & Partial<DocAnswer & AddendumAnswer>;
-                if (!r.ok) {
-                    console.warn("disclosure save refused", r.status, body.error);
-                    return {ok: false, code: body.error ?? "temporary", problems: body.problems};
+                const payload = JSON.stringify({kind, offering, issuedAt, signature, ...(doc ? {doc} : {text})});
+                type Body = {error?: string; problems?: {field: string; error: string; phrase?: string}[]} & Partial<DocAnswer & AddendumAnswer>;
+                let status: number | null = null;
+                let body: Body = {};
+                for (let attempt = 0; ; attempt++) {
+                    try {
+                        const r = await fetch(`${API_BASE}/api/meta`, {method: "POST", headers: {"content-type": "application/json"}, body: payload});
+                        status = r.status;
+                        body = (await r.json().catch(() => ({}))) as Body;
+                    } catch (e) {
+                        console.warn("disclosure save: network error", e);
+                        status = null;
+                        body = {};
+                    }
+                    if (status !== null && status >= 200 && status < 300) break;
+                    console.warn("disclosure save refused", status, body.error);
+                    if (attempt >= (opts.resends ?? 0) || !resendable(status, body.error)) {
+                        return {ok: false, code: body.error ?? "temporary", problems: body.problems};
+                    }
+                    await new Promise((res) => setTimeout(res, opts.resendGapMs ?? RESEND_GAP_MS));
                 }
                 // show the save at once and hold it against old CDN copies, then re-read once
                 const k = key(offering);

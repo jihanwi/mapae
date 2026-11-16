@@ -24,7 +24,7 @@ import {
     normalizeDoc,
     sha256Text,
 } from "./disclosure.js";
-import type {Result, Store} from "./handler.js";
+import {IS_CURVE_GAP_MS, IS_CURVE_TRIES, sleepMs, type Result, type Store} from "./handler.js";
 import {issuedAtValid} from "./validate.js";
 
 export type Address = `0x${string}`;
@@ -42,7 +42,20 @@ export type DisclosureDeps = {
     /** a Committed event of this offering exists in the L1 indexer */
     indexedCommit(offering: Address): Promise<boolean>;
     nowMs: number;
+    /** injected for tests; default setTimeout */
+    sleep?: (ms: number) => Promise<void>;
 };
+
+/** isOffering right after OfferingCreated can be false because the RPC has not seen the block yet:
+ *  read it up to IS_CURVE_TRIES times, IS_CURVE_GAP_MS apart (as the L0 metadata save, ~4.5 s).
+ *  A read error is thrown (503), never taken as "not an offering". */
+async function isOfferingWithRetry(chain: DisclosureChain, offering: Address, sleep: (ms: number) => Promise<void>): Promise<boolean> {
+    for (let i = 0; i < IS_CURVE_TRIES; i++) {
+        if (i > 0) await sleep(IS_CURVE_GAP_MS);
+        if (await chain.isOffering(offering)) return true;
+    }
+    return false;
+}
 
 export const DISCLOSURE_PREFIX = "disclosure/91342/";
 export const DISCLOSURE_HIDDEN_PATH = `${DISCLOSURE_PREFIX}hidden.json`;
@@ -119,7 +132,7 @@ export async function handlePostDisclosure(body: unknown, deps: DisclosureDeps):
     //    read failure refuses the save; it is never taken as "no commitment".
     let committed: boolean;
     try {
-        if (!(await deps.chain.isOffering(offering))) return err(404, "not_offering");
+        if (!(await isOfferingWithRetry(deps.chain, offering, deps.sleep ?? sleepMs))) return err(404, "not_offering");
         const [creator, total, indexed] = await Promise.all([deps.chain.creatorOf(offering), deps.chain.totalCommitted(offering), deps.indexedCommit(offering)]);
         if (creator.toLowerCase() !== signer) return err(403, "not_issuer");
         committed = total > 0n || indexed;
