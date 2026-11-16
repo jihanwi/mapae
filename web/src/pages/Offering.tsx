@@ -10,6 +10,7 @@ import {MockKRWV3Abi} from "../contracts/abisV3";
 import {labelOf, OfferingInfo, useOfferings, useOnboarding, useParticipantCount, useRedeemItems} from "../hooks";
 import {ProceedsPanel} from "../components/ProceedsPanel";
 import {ChainTerms} from "../components/ChainTerms";
+import {RefundPanel} from "../components/RefundPanel";
 import {DisclosureSection} from "../components/DisclosureSection";
 import {spanText} from "../lib/proceedsText";
 import {commitBlock, isIssuerWallet} from "../lib/commitGuard";
@@ -248,18 +249,9 @@ export default function Offering() {
                             </>
                         )}
 
-                        {/* P0 2-b: 마감~정산 구간 — CTA도 설명도 없는 죽은 화면 방지 */}
-                        {ended && (
-                            <div>
-                                <div className="text-[15px] font-semibold mb-2">{copy.offering.endedTitle}</div>
-                                <p className="m-0 text-[13px] text-hanji-400 leading-relaxed">{copy.offering.endedNote}</p>
-                                {myCommitted > 0n && (
-                                    <div className="flex justify-between text-[13px] mt-4 pt-4 border-t border-ink-700">
-                                        <span className="text-hanji-400">{copy.offering.myCommit}</span>
-                                        <span className="text-hanji-100 font-semibold tabular-nums">{fmt(myCommitted, 0)} KRWs</span>
-                                    </div>
-                                )}
-                            </div>
+                        {/* W-T38: after the deadline (unsettled): start refunds, take a refund, or wait for settle */}
+                        {(ended || o.refunding) && (
+                            <RefundPanel o={o} myCommitted={account ? (myCommit.data as bigint | undefined) : undefined} onChanged={() => { refetch(); void detail.refetch(); }} />
                         )}
 
                         {o.settled && <SettledPanel o={o} account={account} alloc={alloc.data ?? null} claimed={(claimed.data as boolean) ?? false}
@@ -270,7 +262,7 @@ export default function Offering() {
                     </div>
                     {live && (
                         <p className="text-[12px] text-hanji-400 mt-3">
-                            {copy.offering.cancelFrozenNote}. {o.refundMode === 0 ? "미달 시 전액이 자동 환불돼요." : "미달 시 판매분만 발행되고 나머지는 소각돼요."}
+                            {copy.offering.cancelFrozenNote}. {o.refundMode === 0 ? copy.refund.modeNote : "미달 시 판매분만 발행되고 나머지는 소각돼요."}
                         </p>
                     )}
                 </div>

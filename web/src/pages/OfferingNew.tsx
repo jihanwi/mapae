@@ -426,6 +426,7 @@ export default function OfferingNew() {
                         <p className="m-0 mb-4 text-[12px] text-brass-400">{copy.disclosure.note}</p>
                         <DocView doc={normalizeDoc(doc)} />
                     </section>
+                    <p className="m-0 mb-2 text-[13px] text-hanji-400">{copy.refund.createNote}</p>
                     <div className="mb-5 space-y-1">
                         {t.confirm.lines.map((line, i) => (
                             <label key={i} className="flex items-start gap-2.5 text-[14px] text-hanji-100 min-h-[44px] py-2">

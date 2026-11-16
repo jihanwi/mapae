@@ -65,6 +65,32 @@ export const ko = {
         proceedsShort: (up: string, span: string) => `모금액 즉시 지급 ${up}% · 나머지 ${span} 잠금`,
         proceedsAllUpfront: "모금액 즉시 지급 100%",
     },
+    // W-T38: 마감 뒤 환불 (환불은 자동이 아니다: enableRefunds / emergencyRefund / refund)
+    refund: {
+        targetMissed: "목표에 못 미쳤어요. 환불을 시작하면 응모한 지갑이 응모금 전액을 돌려받을 수 있어요",
+        startCta: "환불 시작",
+        refundingNote: "환불이 진행 중이에요",
+        claimCta: (n: string) => `환불 받기 · ${n} KRWs`,
+        claimLabel: "환불 받기",
+        refunded: (n: string) => `환불 받았어요 · ${n} KRWs`,
+        refundingOther: "환불이 진행 중이에요. 응모한 지갑으로 연결하면 환불 받을 수 있어요",
+        awaitSettle: (at: string) => `정산을 기다리는 중이에요. ${at}까지 정산되지 않으면 누구나 환불을 시작할 수 있어요`,
+        timeoutPassed: "정산 기한이 지났어요",
+        modeNote: "목표에 못 미치면 마감 뒤 환불을 시작할 수 있고, 응모금 전액을 돌려받아요",
+        createNote: "목표에 못 미친 공모는 환불이 시작된 뒤에야 새 공모를 열 수 있어요",
+        canRefund: "환불 받을 수 있어요",
+        // 미리 실행 실패 이유 (컨트랙트 오류 이름 -> 문구)
+        errors: {
+            TargetReached: "목표를 채운 공모라 환불을 시작할 수 없어요",
+            DeadlineNotReached: "아직 마감 전이에요",
+            RefundNotAvailable: "지금은 환불할 수 없는 상태예요",
+            NothingToRefund: "이 지갑으로 돌려받을 응모금이 없어요",
+            SettleTimeoutNotReached: "정산 기한이 아직 지나지 않았어요",
+            InvalidPhase: "이미 정산되었거나 환불이 시작된 공모예요",
+            stateChanged: "공모 상태가 바뀌었어요. 화면을 새로 읽었어요",
+            unknown: "지금은 처리할 수 없어요. 잠시 후 다시 시도해 주세요",
+        } as Record<string, string>,
+    },
     // W-T34 (결정 58): 공모 상세의 "체인에 고정된 조건" 구역
     terms: {
         title: "체인에 고정된 조건",
