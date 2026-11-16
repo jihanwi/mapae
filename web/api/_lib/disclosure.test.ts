@@ -134,7 +134,7 @@ describe("POST disclosure", () => {
     it("before any commitment: saves version 1, then version 2 (both kept)", async () => {
         const store = memStore();
         const r1 = await handlePostDisclosure(await signedDoc(), deps(store));
-        expect(r1).toMatchObject({status: 201, body: {version: 1, postCommit: false, locked: false}});
+        expect(r1).toMatchObject({status: 201, body: {version: 1, postCommit: false, locked: false, savedAt: new Date(NOW).toISOString()}});
         const r2 = await handlePostDisclosure(await signedDoc({...DOC, summary: "고친 요약"}), deps(store));
         expect(r2).toMatchObject({status: 201, body: {version: 2}});
         expect(store.files.has(versionPath(o, 1))).toBe(true);
@@ -182,7 +182,7 @@ describe("POST disclosure", () => {
         await handlePostDisclosure(await signedDoc(), deps(store));
         expect(await handlePostDisclosure(await signedAddendum("일정 변경 안내"), deps(store))).toEqual({status: 409, body: {error: "not_locked"}});
         const a1 = await handlePostDisclosure(await signedAddendum("일정 변경 안내"), deps(store, {committed: 1n}));
-        expect(a1).toMatchObject({status: 201, body: {n: 1}});
+        expect(a1).toMatchObject({status: 201, body: {n: 1, savedAt: new Date(NOW).toISOString()}});
         const a2 = await handlePostDisclosure(await signedAddendum("두 번째 안내"), deps(store, {committed: 1n}));
         expect(a2).toMatchObject({status: 201, body: {n: 2}});
         expect(JSON.parse(store.files.get(addendumPath(o, 1)) as string).text).toBe("일정 변경 안내");

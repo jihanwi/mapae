@@ -46,3 +46,11 @@ export function proceedsOf(
     const upfront = p.hasLock ? (issuer * BigInt(p.proceedsUpfrontBps)) / BPS : issuer;
     return {raised, krwSeed, platform, issuer, upfront, locked: issuer - upfront};
 }
+
+/** Shares of the total supply in bps, as Offering.sol splits it: sale f, issuer, LP = c x f (floor),
+ *  and the remainder burned at settle (supply - sold - issuer - LP). The four add up to 10,000. */
+export function allocationBps(p: {fBps: number; creatorTokenBps: number; cBps: number}): {sale: number; issuer: number; lp: number; burn: number} {
+    const lp = Number(lpTokenBpsOf(p.cBps, p.fBps));
+    const burn = Math.max(0, Number(BPS) - p.fBps - p.creatorTokenBps - lp);
+    return {sale: p.fBps, issuer: p.creatorTokenBps, lp, burn};
+}
