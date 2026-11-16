@@ -123,6 +123,18 @@ describe("disclosure document", () => {
         expect(forbiddenPhrase("Risk-Free")).toBe("risk-free");
         expect(forbiddenPhrase("원금 손실 가능")).toBeNull();
     });
+    it("W-T42: 17 phrases (6 + 11 English), curly apostrophes, no false hits on normal risk sentences", () => {
+        expect(FORBIDDEN_PHRASES).toHaveLength(17);
+        expect(FORBIDDEN_PHRASES.slice(0, 6)).toEqual(["원금 보장", "수익 보장", "확정 수익", "손실 없", "guaranteed return", "risk-free"]);
+        expect(forbiddenPhrase("You Can\u2019t Lose")).toBe("can't lose");
+        expect(forbiddenPhrase("you can\u2018t lose")).toBe("can't lose");
+        expect(forbiddenPhrase("GUARANTEED  APY of 20%")).toBe("guaranteed apy");
+        expect(FORBIDDEN_PHRASES).not.toContain("no risk");
+        for (const ok of ["There is no risk assessment yet", "Returns are not promised", "Risks: you can lose everything"]) expect(forbiddenPhrase(ok), ok).toBeNull();
+        expect(docProblems(normalizeDoc({...DOC, risks: "There is no risk assessment yet"}))).toEqual([]);
+        expect(addendumProblems("This is guaranteed profit")).toEqual([{field: "text", error: "forbidden_phrase", phrase: "guaranteed profit"}]);
+        expect(addendumProblems("You can\u2019t lose")).toEqual([{field: "text", error: "forbidden_phrase", phrase: "can't lose"}]);
+    });
     it("normalization is stable: field order and whitespace do not change the hash", async () => {
         const shuffled = {risks: DOC.risks + "  ", links: DOC.links, issuer: DOC.issuer, summary: ` ${DOC.summary}`, about: DOC.about.replace("\n", "\r\n"), utility: DOC.utility, useOfFunds: DOC.useOfFunds, priorSales: DOC.priorSales, issuerWallets: []};
         expect(await sha256Text(canonicalJson(normalizeDoc(shuffled)))).toBe(await sha256Text(canonicalJson(normalizeDoc(DOC))));

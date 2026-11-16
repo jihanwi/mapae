@@ -53,8 +53,19 @@ describe("English offering copy (W-T41)", () => {
     });
     it("has no return-expectation words, no em dash", () => {
         for (const s of all) {
-            for (const w of [/invest/i, /profit/i, /\breturns?\b/i, /\byield/i, /guarantee/i, /\bearn/i, /upside/i, /\bmoon/i, /—/]) expect(s, `${w} in "${s}"`).not.toMatch(w);
+            for (const w of [/invest/i, /profit/i, /\breturns?\b/i, /\byield/i, /guarantee/i, /\bearn/i, /upside/i, /\bmoon/i, /—/, /\bshares?\b/i]) expect(s, `${w} in "${s}"`).not.toMatch(w);
         }
+    });
+    it("W-T42: toasts use \" · \" in English and keep \" — \" in Korean; tx copy has no em dash", () => {
+        expect(en.tx.sep).toBe(" · ");
+        expect(ko.tx.sep).toBe(" — ");
+        for (const s of texts(en.tx)) expect(s, s).not.toMatch(/—/);
+        expect(`${en.offering.commitLabel}${en.tx.sep}${en.tx.pendingTx}`).toBe("Commit · Waiting for confirmation…");
+        expect(`${ko.offering.commitLabel}${ko.tx.sep}${ko.tx.pendingTx}`).toBe("응모 — 처리하는 중…");
+    });
+    it("W-T42: the first sentence of an offering", () => {
+        expect(en.offering.about("Nodl", "50,000")).toMatch(/^An offering of the Nodl token\./);
+        expect(en.offering.about(null, "50,000")).toMatch(/^An offering of this token\./);
     });
     it("uses the fixed sentences", () => {
         expect(en.heroTitle).toBe("One price. The same chance for everyone.");
