@@ -1,0 +1,24 @@
+{
+  "version": "v3.2-L1",
+  "chainId": 91342,
+  "deployBlock": 41489012,
+  "deployer": "0x45D52d167d22970f69dCd127dFc38D875A29EFb0",
+  "platformOwner": "0x67a29AE83f3320C5E9b81D8a1531dE8FcCBED00C",
+  "mapaeFactory": "0xa9CA0C10Cd6B6398679B578DCE192cb4cAA5bc71",
+  "offeringDeployer": "0x8F224d8C3271c45Cc2d84bcF7efC40b52C4e04BD",
+  "stackDeployer": "0x279A14b4e891Af8ae08FaF9014Eceb87691a6a1a",
+  "proceedsLockDeployer": "0x755568f5BB314DD67c0ffB91Db491d1f63AA97C9",
+  "proceedsBand": {
+    "maxUpfrontBps": 3000,
+    "minLockDuration": 3600,
+    "maxLockDuration": 94608000,
+    "maxLockCliff": 15552000
+  },
+  "dojangAnyOf": "0x87326FbbF76e724bA2bA954dAc04c3B939999f84",
+  "mockKRW": "0x74eC9141afAd51F346BA5B841Ba93D573e8786fD",
+  "poolFactory": "0xf4E7Bf1ACe429400AC23E271E4409D212677e44F",
+  "feeRouter": "0xAB665B7867080cd62Aa316717400f3Cc094E7bd6",
+  "buybackVault": "0x3Ed11f7Bcc36B3603d51736652884800daa2f54c",
+  "membershipTokenDeployer": "0x9F011858B85b93a73330B56319Dc76a6f3255279",
+  "previousMapaeFactory": "0xC0E22127A44266cCC56B2503504373777d0645A9"
+}

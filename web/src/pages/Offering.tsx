@@ -1,16 +1,18 @@
 import {useEffect, useMemo, useState} from "react";
 import {Link, useParams} from "react-router-dom";
 import {useQuery} from "@tanstack/react-query";
-import {useAccount, useReadContract, useWriteContract} from "wagmi";
-import {parseUnits} from "viem";
+import {useAccount, useReadContracts, useWriteContract} from "wagmi";
+import {Abi, parseUnits} from "viem";
 import {copy} from "../copy";
-import {ADDR} from "../contracts/addresses";
-import {MapaeFactoryAbi, MockKRWAbi, OfferingAbi} from "../contracts/abis";
-import {REDEEMABLE_CREATED, useEventLogs, useOfferings, useOnboarding, useParticipantCount} from "../hooks";
+import {ADDR_L1} from "../contracts/addressesV3L1";
+import {MapaeVestingL1Abi, OfferingL1Abi} from "../contracts/abisV3L1";
+import {MockKRWV3Abi} from "../contracts/abisV3";
+import {labelOf, OfferingInfo, REDEEMABLE_CREATED, useEventLogs, useOfferings, useOnboarding, useParticipantCounts} from "../hooks";
+import {ProceedsPanel} from "../components/ProceedsPanel";
+import {spanText} from "../lib/proceedsText";
 import {Badge, Gauge, Medallion, NetError, PrimaryBtn, SecondaryBtn, Skeleton, TextSkeleton} from "../components/ui";
 import {RunFn, TxButton} from "../components/tx";
 import {countdown, fmt, sanitizeAmountInput} from "../lib/format";
-import {creatorOf} from "../lib/creators";
 import {explorerAddr, giwaSepolia} from "../config/chain";
 import {DEFAULT_TITLE, useTitle} from "../lib/title";
 
@@ -42,7 +44,7 @@ export default function Offering() {
     const o = offerings.find((x) => x.address.toLowerCase() === addr?.toLowerCase());
     const {address: account} = useAccount();
     const {krwBalance, verified} = useOnboarding();
-    const participants = useParticipantCount(o?.address);
+    const participants = useParticipantCounts(o ? [o.address] : []).countOf(o?.address);
     const {writeContractAsync} = useWriteContract();
     const [amount, setAmount] = useState("");
     const [now, setNow] = useState(Date.now());
@@ -53,20 +55,25 @@ export default function Offering() {
 
     const zero = "0x0000000000000000000000000000000000000000" as const;
 
-    const myCommit = useReadContract({
-        address: o?.address, abi: OfferingAbi, functionName: "committed",
-        args: [account ?? zero], query: {enabled: !!o && !!account, refetchInterval: 15_000},
+    // one multicall: the wallet's position, the offering's limits
+    const detail = useReadContracts({
+        contracts: [
+            {address: o?.address, abi: OfferingL1Abi as Abi, functionName: "walletLimit", chainId: giwaSepolia.id},
+            {address: o?.address, abi: OfferingL1Abi as Abi, functionName: "minCommit", chainId: giwaSepolia.id},
+            ...(account ? [
+                {address: o?.address, abi: OfferingL1Abi as Abi, functionName: "committed", args: [account], chainId: giwaSepolia.id},
+                {address: o?.address, abi: OfferingL1Abi as Abi, functionName: "hasClaimed", args: [account], chainId: giwaSepolia.id},
+                {address: ADDR_L1.mockKRW, abi: MockKRWV3Abi as Abi, functionName: "allowance", args: [account, o?.address ?? zero], chainId: giwaSepolia.id},
+            ] : []),
+        ],
+        query: {enabled: !!o, refetchInterval: 15_000},
     });
-    const claimed = useReadContract({
-        address: o?.address, abi: OfferingAbi, functionName: "hasClaimed",
-        args: [account ?? zero], query: {enabled: !!o && !!account, refetchInterval: 15_000},
-    });
-    const allowance = useReadContract({
-        address: ADDR.mockKRW, abi: MockKRWAbi, functionName: "allowance",
-        args: [account ?? zero, o?.address ?? zero], query: {enabled: !!o && !!account, refetchInterval: 15_000},
-    });
-    const walletLimit = useReadContract({address: o?.address, abi: OfferingAbi, functionName: "walletLimit", query: {enabled: !!o}});
-    const minCommit = useReadContract({address: o?.address, abi: OfferingAbi, functionName: "minCommit", query: {enabled: !!o}});
+    const dv = detail.data?.map((x) => (x.status === "success" ? x.result : undefined)) ?? [];
+    const walletLimit = {data: dv[0] as bigint | undefined};
+    const minCommit = {data: dv[1] as bigint | undefined};
+    const myCommit = {data: dv[2] as bigint | undefined};
+    const claimed = {data: dv[3] as boolean | undefined};
+    const allowance = {data: dv[4] as bigint | undefined};
     const alloc = useAllocation(o?.address, account, o?.settled);
 
     const amountWei = useMemo(() => {
@@ -91,7 +98,7 @@ export default function Offering() {
             </div>
         );
     }
-    const c = creatorOf(o);
+    const c = labelOf(o);
     const live = !o.settled && !o.refunding && Number(o.deadline) * 1000 > now;
     const frozen = live && Number(o.deadline) * 1000 - now < 2 * 3600 * 1000;
     const ended = !o.settled && !o.refunding && !live; // P0 2: 마감 후 정산 전
@@ -115,11 +122,11 @@ export default function Offering() {
         if (!o || amountWei === 0n) return;
         if (((allowance.data as bigint) ?? 0n) < amountWei) {
             const ok = await run("KRWs 사용 승인", () =>
-                writeContractAsync({address: ADDR.mockKRW, abi: MockKRWAbi, functionName: "approve", args: [o.address, amountWei], chainId: giwaSepolia.id}));
+                writeContractAsync({address: ADDR_L1.mockKRW, abi: MockKRWV3Abi, functionName: "approve", args: [o.address, amountWei], chainId: giwaSepolia.id}));
             if (!ok) return;
         }
         const ok = await run("응모", () =>
-            writeContractAsync({address: o.address, abi: OfferingAbi, functionName: "commit", args: [amountWei], chainId: giwaSepolia.id}));
+            writeContractAsync({address: o.address, abi: OfferingL1Abi, functionName: "commit", args: [amountWei], chainId: giwaSepolia.id}));
         if (ok) setAmount("");
     };
 
@@ -130,10 +137,10 @@ export default function Offering() {
                 {/* 좌: 발행자와 공모 설명 (모바일에선 응모 패널 아래로) */}
                 <div className="w-full sm:flex-1 order-2 sm:order-1" style={{minWidth: 0}}>
                     <div className="flex items-center gap-4 sm:gap-5 mb-6 sm:mb-7">
-                        <Medallion char={c ? c.name[0] : "…"} size={104} glow />
-                        <div>
-                            <h1 className="m-0 text-[24px] sm:text-[28px] font-bold">
-                                {c ? <>{c.name} <span className="text-hanji-400 font-normal">{c.en}</span></> : <TextSkeleton w={180} h={28} />}
+                        <Medallion char={c ? [...c.name][0] : "…"} size={104} glow />
+                        <div className="min-w-0">
+                            <h1 className="m-0 text-[24px] sm:text-[28px] font-bold break-words">
+                                {c ? <>{c.name} <span className="text-hanji-400 font-normal">{c.symbol}</span></> : <TextSkeleton w={180} h={28} />}
                             </h1>
                             <div className="flex items-center gap-2 mt-2 text-[13px] text-success">
                                 <span>✓</span> {copy.home.verifiedCreator} — Dojang Verified
@@ -142,13 +149,14 @@ export default function Offering() {
                     </div>
                     <div className="text-[15px] leading-relaxed text-hanji-100 space-y-4">
                         <p className="m-0">{copy.offering.about(c ? c.name : null, fmt(o.qSale, 2))}</p>
-                        <RedeemNote offering={o.address} />
-                        <p className="m-0">{copy.offering.aboutVesting}</p>
+                        <RedeemNote redeemManager={o.redeemManager} />
+                        <VestingNote vesting={o.vesting} />
                     </div>
                     <div className="mt-7 rounded-input px-4 py-3.5 text-[13px] text-hanji-400"
                         style={{background: "rgba(195,154,59,.08)", border: "1px solid rgba(195,154,59,.3)"}}>
                         {copy.offering.allocNote} <a href="https://github.com/jihanwi/mapae/blob/main/script/allocation/README.md" target="_blank" rel="noreferrer">검증 방법 보기</a>
                     </div>
+                    <ProceedsPanel o={o} />
                 </div>
 
                 {/* 우: 응모 패널 (모바일 최상단 — CTA 우선) */}
@@ -214,7 +222,7 @@ export default function Offering() {
                                         ) : (
                                             <TxButton variant="secondary" className="w-full" action={(run) =>
                                                 run("응모 취소", () =>
-                                                    writeContractAsync({address: o.address, abi: OfferingAbi, functionName: "cancel", args: [myCommitted], chainId: giwaSepolia.id}))
+                                                    writeContractAsync({address: o.address, abi: OfferingL1Abi, functionName: "cancel", args: [myCommitted], chainId: giwaSepolia.id}))
                                             }>전액 취소하기</TxButton>
                                         )}
                                     </div>
@@ -239,7 +247,7 @@ export default function Offering() {
                         {o.settled && <SettledPanel o={o} account={account} alloc={alloc.data ?? null} claimed={(claimed.data as boolean) ?? false}
                             myCommitted={myCommitted} claim={(a) => (run: RunFn) =>
                                 run("배정 수령", () =>
-                                    writeContractAsync({address: o.address, abi: OfferingAbi, functionName: "claim", args: [a.allocation, a.refund, a.proof], chainId: giwaSepolia.id}))
+                                    writeContractAsync({address: o.address, abi: OfferingL1Abi, functionName: "claim", args: [a.allocation, a.refund, a.proof], chainId: giwaSepolia.id}))
                             } />}
                     </div>
                     {live && (
@@ -253,7 +261,7 @@ export default function Offering() {
     );
 }
 
-function InfoGrid({o, walletLimit, minCommit}: {o: ReturnType<typeof useOfferings>["offerings"][number]; walletLimit: bigint; minCommit: bigint}) {
+function InfoGrid({o, walletLimit, minCommit}: {o: OfferingInfo; walletLimit: bigint; minCommit: bigint}) {
     const rows: [string, string][] = [
         ["정가", `${fmt(o.price, 0)} KRWs / ${copy.offering.unit}`],
         [copy.offering.saleQty, `${fmt(o.qSale, 2)}${copy.offering.unit}`], // C1: (고정 공급) 라벨 제거
@@ -281,7 +289,7 @@ function FragmentRow({k, v}: {k: string; v: string}) {
 }
 
 function SettledPanel({o, account, alloc, claimed, myCommitted, claim}: {
-    o: ReturnType<typeof useOfferings>["offerings"][number];
+    o: OfferingInfo;
     account: `0x${string}` | undefined;
     alloc: {allocation: bigint; refund: bigint; proof: `0x${string}`[]} | null;
     claimed: boolean;
@@ -321,11 +329,22 @@ function SettledPanel({o, account, alloc, claimed, myCommitted, claim}: {
 
 /** Decision 55: the redeem paragraph only for an offering with redeem items (its RedeemManager's
  *  RedeemableCreated log, the read the redeem page uses). */
-function RedeemNote({offering}: {offering: `0x${string}`}) {
-    const rm = useReadContract({address: ADDR.factory, abi: MapaeFactoryAbi, functionName: "redeemManagerOf", args: [offering]});
-    const m = rm.data as `0x${string}` | undefined;
-    const has = m && m !== "0x0000000000000000000000000000000000000000";
-    const logs = useEventLogs(has ? m : undefined, REDEEMABLE_CREATED);
-    if (!logs.data || logs.data.length === 0) return null;
+function RedeemNote({redeemManager}: {redeemManager: `0x${string}` | undefined}) {
+    const logs = useEventLogs(redeemManager, REDEEMABLE_CREATED);
+    if (!logs.logs || logs.logs.length === 0) return null;
     return <p className="m-0">{copy.offering.aboutRedeem}</p>;
+}
+
+/** W-T32: the issuer vesting from the offering's own MapaeVesting (no fixed wording): duration, and
+ *  the cliff when there is one. Nothing is written when the reads fail. */
+function VestingNote({vesting}: {vesting: `0x${string}` | undefined}) {
+    const reads = useReadContracts({
+        contracts: vesting
+            ? (["start", "duration", "cliff"] as const).map((fn) => ({address: vesting, abi: MapaeVestingL1Abi as Abi, functionName: fn, chainId: giwaSepolia.id}))
+            : [],
+        query: {enabled: !!vesting},
+    });
+    const [start, duration, cliff] = (reads.data?.map((x) => (x.status === "success" ? x.result : undefined)) ?? []) as [bigint?, bigint?, bigint?];
+    if (start === undefined || duration === undefined || cliff === undefined) return null;
+    return <p className="m-0">{copy.offering.aboutVesting(spanText(duration), cliff > start ? spanText(cliff - start) : null)}</p>;
 }

@@ -2,13 +2,12 @@ import {Link} from "react-router-dom";
 import {useAccount, useReadContracts} from "wagmi";
 import {Abi} from "viem";
 import {copy} from "../copy";
-import {useOfferings, useRedeemPeripherals, OfferingInfo} from "../hooks";
+import {labelOf, useOfferings, useRedeemPeripherals, OfferingInfo} from "../hooks";
 import {Medallion, NetError, PrimaryBtn, Skeleton, TextSkeleton} from "../components/ui";
 import {fmt} from "../lib/format";
-import {creatorOf} from "../lib/creators";
 import {TIERS, tierIndex, toNextTier} from "../lib/tier";
-import {MembershipTokenAbi} from "../contracts/abis";
-import {explorerAddr} from "../config/chain";
+import {MembershipTokenV3Abi} from "../contracts/abisV3";
+import {explorerAddr, giwaSepolia} from "../config/chain";
 import {DEFAULT_TITLE, useTitle} from "../lib/title";
 
 /** Decision 55: the tier ladder (一馬 to 五馬) is a screen constant (lib/tier.ts, not a contract or
@@ -22,7 +21,7 @@ export default function Membership() {
     const zero = "0x0000000000000000000000000000000000000000" as const;
     const balances = useReadContracts({
         contracts: offerings.map((o) => ({
-            address: o.token, abi: MembershipTokenAbi as Abi, functionName: "balanceOf", args: [address ?? zero],
+            address: o.token, abi: MembershipTokenV3Abi as Abi, functionName: "balanceOf", args: [address ?? zero], chainId: giwaSepolia.id,
         })),
         query: {enabled: !!address && offerings.length > 0, refetchInterval: 15_000},
     });
@@ -55,7 +54,7 @@ export default function Membership() {
 }
 
 function Holding({o, balance, canRedeem}: {o: OfferingInfo; balance: bigint; canRedeem: boolean}) {
-    const c = creatorOf(o);
+    const c = labelOf(o);
     const idx = tierIndex(balance, o.totalSupply);
     const tier = idx >= 0 ? TIERS[idx] : null;
     const next = toNextTier(balance, o.totalSupply);
@@ -64,7 +63,7 @@ function Holding({o, balance, canRedeem}: {o: OfferingInfo; balance: bigint; can
     return (
         <div className="flex flex-wrap gap-6 sm:gap-7 items-start bg-ink-800 border border-ink-700 rounded-card p-4 sm:p-8 mb-6">
             <div className="flex flex-col items-center gap-4 flex-none mx-auto sm:mx-0">
-                <Medallion char={SHOW_TIERS ? (tier?.hanja ?? "馬") : c ? c.name[0] : "馬"} size={132} glow />
+                <Medallion char={SHOW_TIERS ? (tier?.hanja ?? "馬") : c ? [...c.name][0] : "馬"} size={132} glow />
                 <div className="text-center">
                     {SHOW_TIERS && <div className="font-serif text-[21px] font-bold text-brass-400">{tier?.hanja} 등급</div>}
                     <div className="text-[13px] text-hanji-400 mt-1">{copy.membership.share(shareBps.toFixed(1))} {copy.membership.holding}</div>
@@ -73,7 +72,7 @@ function Holding({o, balance, canRedeem}: {o: OfferingInfo; balance: bigint; can
             <div className="w-full sm:flex-1" style={{minWidth: 0}}>
                 <div className="flex justify-between items-baseline flex-wrap gap-2 mb-3">
                     <div className="text-[17px] font-bold">
-                        {c ? <>{c.name} <span className="text-hanji-400 font-normal">{c.en}</span> {copy.membership.tokenLabel}</> : <TextSkeleton w={160} h={17} />}
+                        {c ? <>{c.name} <span className="text-hanji-400 font-normal">{c.symbol}</span> {copy.membership.tokenLabel}</> : <TextSkeleton w={160} h={17} />}
                     </div>
                     <a href={explorerAddr(o.token)} target="_blank" rel="noreferrer" className="text-[13px]">{copy.tx.viewOnChain}</a>
                 </div>
