@@ -6,6 +6,8 @@
 
 import assert from "node:assert/strict";
 import {computeAllocations, verifyResult} from "./allocate.js";
+import {CHUNK, splitRange} from "./ranges.js";
+import {spawnSync} from "node:child_process";
 
 const WAD = 10n ** 18n;
 const PRICE = 10_000n * WAD;
@@ -95,6 +97,38 @@ check("dust: cost floor rounds in favor of the fan (D1)", () => {
     assert.ok(row.cost <= 10n * WAD);
     assert.equal(row.refund, row.committed - row.cost);
     assert.ok(row.refund > 0n); // dust went back to the fan
+});
+
+check("ranges: 9,000-block windows (GIWA RPC refuses > 10,000)", () => {
+    assert.equal(CHUNK, 9_000n);
+    // start == end: one window of one block
+    assert.deepEqual(splitRange(100n, 100n), [[100n, 100n]]);
+    // exactly 9,000 blocks: one window; 18,000: two, no overlap, no gap
+    assert.deepEqual(splitRange(0n, 8_999n), [[0n, 8_999n]]);
+    assert.deepEqual(splitRange(0n, 17_999n), [[0n, 8_999n], [9_000n, 17_999n]]);
+    // one block over a multiple: a last window of one block
+    assert.deepEqual(splitRange(0n, 9_000n), [[0n, 8_999n], [9_000n, 9_000n]]);
+    assert.deepEqual(splitRange(41_491_893n, 41_500_893n), [[41_491_893n, 41_500_892n], [41_500_893n, 41_500_893n]]);
+    // from > to: nothing to read
+    assert.deepEqual(splitRange(10n, 9n), []);
+    // every window within the RPC limit and contiguous
+    const w = splitRange(41_491_893n, 41_560_000n);
+    for (const [a, b] of w) assert.ok(b - a + 1n <= 9_000n && b - a + 1n <= 10_000n);
+    for (let i = 1; i < w.length; i++) assert.equal(w[i][0], w[i - 1][1] + 1n);
+    assert.equal(w[0][0], 41_491_893n);
+    assert.equal(w[w.length - 1][1], 41_560_000n);
+});
+
+check("snapshot.js: --from-block is required (usage, exit 1, no RPC call)", () => {
+    const run = (...a) => spawnSync(process.execPath, ["snapshot.js", ...a], {cwd: new URL(".", import.meta.url).pathname, encoding: "utf8"});
+    for (const r of [
+        run("--rpc", "http://127.0.0.1:9", "--offering", "0xA1AA8da4Fe05fe0bF51d3d8a464ea0269f39bB9f"),
+        run("--rpc", "http://127.0.0.1:9", "--offering", "0xA1AA8da4Fe05fe0bF51d3d8a464ea0269f39bB9f", "--from-block", "latest"),
+    ]) {
+        assert.equal(r.status, 1);
+        assert.match(r.stderr, /usage: node snapshot\.js .*--from-block <block>/);
+        assert.doesNotMatch(r.stderr, /fetch failed|ECONNREFUSED/);
+    }
 });
 
 process.exit(failures === 0 ? 0 : 1);

@@ -3,7 +3,11 @@
 // Also suggests the allocation seed: the hash of the first block at/after the
 // offering deadline (documented public rule → anyone can re-verify).
 //
-//   node snapshot.js --rpc <url> --offering <address> --out snapshot.json
+//   node snapshot.js --rpc <url> --offering <address> --from-block <block> --out snapshot.json
+//
+// --from-block is required: use the offering's creation block (OfferingCreated)
+// or the factory's deployBlock from deployments/*.json. Reading only a recent
+// window would silently drop earlier commitments.
 //
 // Output feeds allocate.js:
 //   node allocate.js --snapshot snapshot.json --seed <suggestedSeed> \
@@ -11,6 +15,7 @@
 
 import {keccak256} from "ethereum-cryptography/keccak.js";
 import {writeFileSync} from "node:fs";
+import {splitRange} from "./ranges.js";
 
 const args = Object.fromEntries(
     process.argv.slice(2).reduce((acc, v, i, arr) => {
@@ -18,8 +23,11 @@ const args = Object.fromEntries(
         return acc;
     }, [])
 );
-if (!args.rpc || !args.offering) {
-    console.error("usage: node snapshot.js --rpc <url> --offering <address> [--out snapshot.json]");
+const USAGE = `usage: node snapshot.js --rpc <url> --offering <address> --from-block <block> [--out snapshot.json]
+  --from-block  first block to read Committed/Cancelled from (required): the offering's
+                creation block, or its factory's deployBlock in deployments/*.json`;
+if (!args.rpc || !args.offering || !args["from-block"] || !/^\d+$/.test(args["from-block"])) {
+    console.error(USAGE);
     process.exit(1);
 }
 
@@ -55,17 +63,13 @@ const deadline = BigInt(await callView(offering, "deadline()"));
 // --- event replay: final committed = last `cumulative` per wallet ---
 // Committed(address indexed participant, uint256 amount, uint256 cumulative)
 // Cancelled(address indexed participant, uint256 amount, uint256 cumulative)
-// GIWA's RPC caps eth_getLogs at 100k blocks — scan in 90k-block chunks from
-// --from-block (default: last 90k) up to latest, so offerings of any age work.
+// GIWA's RPC refuses eth_getLogs ranges over 10,000 blocks: scan --from-block
+// up to latest in 9,000-block windows (ranges.js).
 const latestNum = BigInt(await rpc("eth_blockNumber", []));
-const startBlock = args["from-block"]
-    ? BigInt(args["from-block"])
-    : latestNum > 90_000n ? latestNum - 90_000n : 0n;
+const startBlock = BigInt(args["from-block"]);
 const topics = [topic("Committed(address,uint256,uint256)"), topic("Cancelled(address,uint256,uint256)")];
-const CHUNK = 90_000n;
 const logs = [];
-for (let from = startBlock; from <= latestNum; from += CHUNK) {
-    const to = from + CHUNK - 1n < latestNum ? from + CHUNK - 1n : latestNum;
+for (const [from, to] of splitRange(startBlock, latestNum)) {
     const chunk = await rpc("eth_getLogs", [
         {
             address: offering,
