@@ -7,7 +7,7 @@ import {copy} from "../copy";
 import {ADDR_L1} from "../contracts/addressesV3L1";
 import {MapaeVestingL1Abi, OfferingL1Abi} from "../contracts/abisV3L1";
 import {MockKRWV3Abi} from "../contracts/abisV3";
-import {labelOf, OfferingInfo, REDEEMABLE_CREATED, useEventLogs, useOfferings, useOnboarding, useParticipantCounts} from "../hooks";
+import {labelOf, OfferingInfo, useOfferings, useOnboarding, useParticipantCount, useRedeemItems} from "../hooks";
 import {ProceedsPanel} from "../components/ProceedsPanel";
 import {spanText} from "../lib/proceedsText";
 import {Badge, Gauge, Medallion, NetError, PrimaryBtn, SecondaryBtn, Skeleton, TextSkeleton} from "../components/ui";
@@ -44,7 +44,7 @@ export default function Offering() {
     const o = offerings.find((x) => x.address.toLowerCase() === addr?.toLowerCase());
     const {address: account} = useAccount();
     const {krwBalance, verified} = useOnboarding();
-    const participants = useParticipantCounts(o ? [o.address] : []).countOf(o?.address);
+    const participants = useParticipantCount(o?.address);
     const {writeContractAsync} = useWriteContract();
     const [amount, setAmount] = useState("");
     const [now, setNow] = useState(Date.now());
@@ -149,7 +149,7 @@ export default function Offering() {
                     </div>
                     <div className="text-[15px] leading-relaxed text-hanji-100 space-y-4">
                         <p className="m-0">{copy.offering.about(c ? c.name : null, fmt(o.qSale, 2))}</p>
-                        <RedeemNote redeemManager={o.redeemManager} />
+                        <RedeemNote offering={o.address} redeemManager={o.redeemManager} />
                         <VestingNote vesting={o.vesting} />
                     </div>
                     <div className="mt-7 rounded-input px-4 py-3.5 text-[13px] text-hanji-400"
@@ -329,9 +329,9 @@ function SettledPanel({o, account, alloc, claimed, myCommitted, claim}: {
 
 /** Decision 55: the redeem paragraph only for an offering with redeem items (its RedeemManager's
  *  RedeemableCreated log, the read the redeem page uses). */
-function RedeemNote({redeemManager}: {redeemManager: `0x${string}` | undefined}) {
-    const logs = useEventLogs(redeemManager, REDEEMABLE_CREATED);
-    if (!logs.logs || logs.logs.length === 0) return null;
+function RedeemNote({offering, redeemManager}: {offering: `0x${string}`; redeemManager: `0x${string}` | undefined}) {
+    const {items} = useRedeemItems(offering, redeemManager);
+    if (!items || items.length === 0) return null;
     return <p className="m-0">{copy.offering.aboutRedeem}</p>;
 }
 

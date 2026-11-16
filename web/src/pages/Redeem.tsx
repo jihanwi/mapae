@@ -5,7 +5,8 @@ import {copy} from "../copy";
 import {ADDR_L1} from "../contracts/addressesV3L1";
 import {RedeemManagerL1Abi, SponsorshipL1Abi} from "../contracts/abisV3L1";
 import {MembershipTokenV3Abi, MockKRWV3Abi} from "../contracts/abisV3";
-import {labelOf, REDEEMABLE_CREATED, useEventLogs, useOfferings, useOnboarding, OfferingInfo, EventLogsResult} from "../hooks";
+import {ApiFeedRow, EventLog, labelOf, RedeemItemInfo, useOfferingHistory, useOfferings, useOnboarding, useRedeemItems, OfferingInfo} from "../hooks";
+import {LogState, ScanWindow} from "../lib/logRange";
 import {LogStateNote} from "../components/LogStateNote";
 import {redeemSections} from "../lib/redeemTab";
 import {Medallion, NetError, Skeleton, TextSkeleton} from "../components/ui";
@@ -24,16 +25,10 @@ export default function Redeem() {
     const redeemManager = o?.redeemManager;
     const sponsorship = o?.sponsorship;
     // decision 55: the catalog only with redeem items, the sponsor panel only with a sponsorship.
-    // RedeemManager ids are issuer-chosen with no count view, so items come from RedeemableCreated.
-    const created = useEventLogs(redeemManager, REDEEMABLE_CREATED);
-    const ids = useMemo(() => {
-        const seen = new Map<string, Redeemable>();
-        for (const l of created.logs ?? []) {
-            const a = l.args as Redeemable;
-            seen.set(a.id.toString(), a);
-        }
-        return [...seen.values()];
-    }, [created.logs]);
+    // RedeemManager ids are issuer-chosen with no count view, so items come from RedeemableCreated:
+    // the indexer's list plus the browser's read after it (W-T33)
+    const created = useRedeemItems(o?.address, redeemManager);
+    const ids = created.items ?? [];
     // a failed or partial-and-empty read is "unknown": the catalog shows that state instead of hiding
     const unknown = !!redeemManager && (created.state === "error" || (created.state === "partial" && ids.length === 0));
     const items = !o ? undefined : !redeemManager ? 0 : created.state === "complete" || ids.length > 0 ? ids.length : undefined;
@@ -58,7 +53,6 @@ export default function Redeem() {
     );
 }
 
-type Redeemable = {id: bigint; burnAmount: bigint; maxClaims: bigint; deadline: bigint};
 
 function OfferingTabs({list, sel, onSel}: {list: OfferingInfo[]; sel: number; onSel: (i: number) => void}) {
     return (
@@ -76,7 +70,7 @@ function OfferingTabs({list, sel, onSel}: {list: OfferingInfo[]; sel: number; on
     );
 }
 
-function Catalog({o, redeemManager, ids, scan}: {o: OfferingInfo; redeemManager: `0x${string}`; ids: Redeemable[]; scan: EventLogsResult}) {
+function Catalog({o, redeemManager, ids, scan}: {o: OfferingInfo; redeemManager: `0x${string}`; ids: RedeemItemInfo[]; scan: {state: LogState; window: ScanWindow | undefined; refetch: () => void}}) {
     const {address} = useAccount();
     const {writeContractAsync} = useWriteContract();
     const states = useReadContracts({
@@ -114,7 +108,9 @@ function Catalog({o, redeemManager, ids, scan}: {o: OfferingInfo; redeemManager:
                     const s = states.data?.[i]?.result as [bigint, bigint, bigint, bigint, boolean] | undefined;
                     const claimCount = s?.[3] ?? 0n;
                     const soldOut = r.maxClaims > 0n && claimCount >= r.maxClaims;
-                    const expired = r.deadline > 0n && Number(r.deadline) < now;
+                    // deadline from the item's on-chain state (redeemables(id): burnAmount, maxClaims, deadline, claimCount, exists)
+                    const deadline = s?.[2] ?? 0n;
+                    const expired = deadline > 0n && Number(deadline) < now;
                     // 9-a: 미연결·보유 부족 사전 차단
                     const reason = !address ? copy.hints.connectWallet
                         : (tokenBal !== undefined && tokenBal < r.burnAmount) ? copy.hints.needTokenToRedeem
@@ -151,8 +147,10 @@ function SponsorPanel({o, sponsorship}: {o: OfferingInfo; sponsorship: `0x${stri
     const [amount, setAmount] = useState("");
     const [message, setMessage] = useState("");
     const burnBps = useReadContract({address: sponsorship, abi: SponsorshipL1Abi, functionName: "burnShareBps", chainId: giwaSepolia.id});
-    const feed = useEventLogs(sponsorship,
-        "event Sponsored(address indexed sponsor, bool krwIn, uint256 amountIn, uint256 krwValue, uint256 tokensBurned, uint256 creatorAmount, bytes32 indexed messageHash, string message)");
+    // W-T33: the indexer's feed, the browser reads only the blocks after it
+    const feed = useOfferingHistory<SponsorItem>({
+        offering: o.address, feed: "sponsors", address: sponsorship, eventSig: SPONSORED, fromApi: sponsorFromApi, fromLog: sponsorFromLog,
+    });
 
     const amountWei = useMemo(() => {
         try { return parseUnits(amount || "0", 18); } catch { return 0n; }
@@ -176,7 +174,7 @@ function SponsorPanel({o, sponsorship}: {o: OfferingInfo; sponsorship: `0x${stri
         if (done) { setAmount(""); setMessage(""); }
     };
 
-    const events = [...(feed.logs ?? [])].reverse().slice(0, 8);
+    const events = (feed.items ?? []).slice(0, 8);
     return (
         <div className="w-full sm:flex-1" style={{minWidth: 0}}>
             <div className="bg-ink-800 border border-ink-700 rounded-card p-4 sm:p-7">
@@ -199,8 +197,7 @@ function SponsorPanel({o, sponsorship}: {o: OfferingInfo; sponsorship: `0x${stri
             <div className="mt-6">
                 <h3 className="m-0 mb-4 text-[17px] font-bold">{copy.redeem.feed}</h3>
                 <LogStateNote scan={feed} count={events.length} recent={copy.logs.noSponsorsRecent} none={copy.logs.noSponsors} />
-                {events.map((l, i) => {
-                    const a = l.args as {sponsor: string; krwValue: bigint; tokensBurned: bigint; message: string};
+                {events.map((a, i) => {
                     return (
                         <div key={i} className="bg-ink-900 rounded-stat px-4 py-3.5 mb-2.5">
                             <div className="flex justify-between text-[13px] mb-1">
@@ -216,3 +213,17 @@ function SponsorPanel({o, sponsorship}: {o: OfferingInfo; sponsorship: `0x${stri
         </div>
     );
 }
+
+const SPONSORED = "event Sponsored(address indexed sponsor, bool krwIn, uint256 amountIn, uint256 krwValue, uint256 tokensBurned, uint256 creatorAmount, bytes32 indexed messageHash, string message)";
+
+type SponsorItem = {tx: string; logIndex: number; block: bigint; sponsor: string; krwValue: bigint; tokensBurned: bigint; message: string};
+
+const sponsorFromApi = (r: ApiFeedRow): SponsorItem => ({
+    tx: r.tx, logIndex: r.logIndex, block: BigInt(r.block), sponsor: r.actor as string,
+    krwValue: BigInt((r.amount as string) ?? "0"), tokensBurned: BigInt((r.amount2 as string) ?? "0"), message: (r.message as string | null) ?? "",
+});
+
+const sponsorFromLog = (l: EventLog): SponsorItem => {
+    const a = l.args as {sponsor: string; krwValue: bigint; tokensBurned: bigint; message: string};
+    return {tx: l.transactionHash!, logIndex: l.logIndex!, block: l.blockNumber!, sponsor: a.sponsor, krwValue: a.krwValue, tokensBurned: a.tokensBurned, message: a.message};
+};

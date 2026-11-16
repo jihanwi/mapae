@@ -5,6 +5,8 @@ import {MockDojangV3Abi} from "../../src/contracts/abisV3.js";
 import {giwaSepolia} from "../../src/config/chain.js";
 import type {RawLog} from "../../src/lib/activity.js";
 import type {CronDeps} from "./indexer.js";
+import type {L1Deps} from "./indexerL1.js";
+import {MembershipTokenV3Abi} from "../../src/contracts/abisV3.js";
 
 /** Multicall3 (same address on every OP Stack chain; also in config/chain.ts). */
 export const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
@@ -59,6 +61,31 @@ export function giwaRpc(): CronDeps["rpc"] {
                     transactionHash: l.transactionHash,
                 })
             );
+        },
+    };
+}
+
+/** W-T33: the L1 indexer's RPC: the L0 calls plus token name() / symbol() of new offerings in ONE
+ *  Multicall3 aggregate3 call. A failed sub-call fails the range (it is read again next run). */
+export function giwaRpcL1(): L1Deps["rpc"] {
+    const base = giwaRpc();
+    const client = createPublicClient({chain: giwaSepolia, transport: http(process.env.GIWA_RPC_URL || undefined)});
+    return {
+        blockNumber: base.blockNumber,
+        blockTime: base.blockTime,
+        getLogs: base.getLogs,
+        tokenNames: async (tokens) => {
+            const calls = tokens.flatMap((t) =>
+                (["name", "symbol"] as const).map((fn) => ({target: t, allowFailure: false, callData: encodeFunctionData({abi: MembershipTokenV3Abi, functionName: fn})}))
+            );
+            const res = (await client.readContract({address: MULTICALL3, abi: AGGREGATE3, functionName: "aggregate3", args: [calls]})) as readonly {success: boolean; returnData: Hex}[];
+            const out = new Map<string, {name: string; symbol: string}>();
+            tokens.forEach((t, i) => {
+                const name = decodeFunctionResult({abi: MembershipTokenV3Abi, functionName: "name", data: res[i * 2].returnData}) as string;
+                const symbol = decodeFunctionResult({abi: MembershipTokenV3Abi, functionName: "symbol", data: res[i * 2 + 1].returnData}) as string;
+                out.set(t.toLowerCase(), {name, symbol});
+            });
+            return out;
         },
     };
 }

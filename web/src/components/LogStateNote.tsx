@@ -2,7 +2,7 @@
 // read says so with a retry, a partial read names the range it covers, and only a read that reached
 // the deployment block may say there is nothing yet.
 import {copy} from "../copy";
-import {EventLogsResult} from "../hooks";
+import {LogState, ScanWindow} from "../lib/logRange";
 
 /** GIWA blocks are ~1 s apart: hours covered by a partial window (at least 1). */
 export function windowHours(w: {fromBlock: bigint; toBlock: bigint} | undefined): string {
@@ -11,7 +11,7 @@ export function windowHours(w: {fromBlock: bigint; toBlock: bigint} | undefined)
 }
 
 export function LogStateNote({scan, count, recent, none}: {
-    scan: EventLogsResult;
+    scan: {state: LogState; window: ScanWindow | undefined; refetch: () => void};
     /** rows shown from scan.logs */
     count: number;
     /** empty partial read, e.g. "최근 약 N시간 안에는 거래가 없어요" */

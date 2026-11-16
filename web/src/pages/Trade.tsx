@@ -5,7 +5,7 @@ import {Abi, formatUnits, parseUnits} from "viem";
 import {copy} from "../copy";
 import {ADDR_L1} from "../contracts/addressesV3L1";
 import {FeeRouterAbi, MapaePoolV3Abi, MembershipTokenV3Abi, MockKRWV3Abi} from "../contracts/abisV3";
-import {labelOf, useBlockTimestamps, useEventLogs, useOfferings, OfferingInfo} from "../hooks";
+import {ApiFeedRow, EventLog, labelOf, useBlockTimestamps, useOfferingHistory, useOfferings, OfferingInfo} from "../hooks";
 import {LogStateNote} from "../components/LogStateNote";
 import {bpsPct} from "../lib/proceedsText";
 import {NetError, Skeleton, Stat, TextSkeleton} from "../components/ui";
@@ -91,8 +91,10 @@ function TradePanel({o}: {o: OfferingInfo}) {
         args: [Number(pi[6] ?? 0)], chainId: giwaSepolia.id, query: {enabled: pi[5] !== undefined && pi[6] !== undefined},
     });
     const fees = feeParts(pi[2] as number | undefined, pi[3] as number | undefined, pi[4] as number | undefined, tierFees.data as {swapPlatformBps: number; swapLpBps: number} | undefined);
-    const swaps = useEventLogs(pool,
-        "event Swapped(address indexed sender, address indexed to, bool quoteIn, uint256 amountIn, uint256 amountOut, uint256 royalty)");
+    // W-T33: history from the indexer, the browser reads only the blocks after it
+    const swaps = useOfferingHistory<SwapItem>({
+        offering: o.address, feed: "swaps", address: pool, eventSig: SWAPPED, fromApi: swapFromApi, fromLog: swapFromLog,
+    });
 
     // T3: 내 보유 (multicall 배칭으로 부담 없음)
     const myBalances = useReadContracts({
@@ -131,17 +133,18 @@ function TradePanel({o}: {o: OfferingInfo}) {
     }, [quote.data, amountWei, dir, o.spotPrice]);
 
     // T4: 체결가 시계열 — Swapped별 실효가(KRWs/장) + 블록 타임스탬프
-    const blockTs = useBlockTimestamps((swaps.logs ?? []).map((l) => l.blockNumber!));
+    // block times only for the browser's own rows (indexed rows carry ts)
+    const blockTs = useBlockTimestamps((swaps.items ?? []).filter((x) => x.ts === undefined).map((x) => x.block));
     const points: PricePoint[] = useMemo(() => {
-        if (!swaps.logs || !blockTs.data) return [];
-        return swaps.logs
-            .map((l) => {
-                const a = l.args as {quoteIn: boolean; amountIn: bigint; amountOut: bigint};
+        if (!swaps.items) return [];
+        return [...swaps.items]
+            .reverse()
+            .map((a) => {
                 const price = a.quoteIn ? Number(a.amountIn) / Number(a.amountOut) : Number(a.amountOut) / Number(a.amountIn);
-                return {t: blockTs.data[l.blockNumber!.toString()] ?? 0, price, buy: a.quoteIn};
+                return {t: a.ts ?? blockTs.data?.[a.block.toString()] ?? 0, price, buy: a.quoteIn};
             })
             .filter((p) => p.t > 0 && Number.isFinite(p.price));
-    }, [swaps.logs, blockTs.data]);
+    }, [swaps.items, blockTs.data]);
 
     // 4-b / 9-a: 클릭 전 사전 검증 — 미연결·견적 실패·잔고 초과 사유를 표시하고 disabled
     const swapReason =
@@ -170,7 +173,7 @@ function TradePanel({o}: {o: OfferingInfo}) {
         if (done) setAmount("");
     };
 
-    const events = [...(swaps.logs ?? [])].reverse().slice(0, 10);
+    const events = (swaps.items ?? []).slice(0, 10);
     const burned = computeBurned(o);
     return (
         <>
@@ -257,8 +260,7 @@ function TradePanel({o}: {o: OfferingInfo}) {
                 <div className="w-full sm:flex-1" style={{minWidth: 0}}>
                     <h3 className="m-0 mb-4 text-[17px] font-bold">{copy.trade.history}</h3>
                     <LogStateNote scan={swaps} count={events.length} recent={copy.logs.noTradesRecent} none={copy.logs.noTrades} />
-                    {events.map((l, i) => {
-                        const a = l.args as {sender: string; quoteIn: boolean; amountIn: bigint; amountOut: bigint};
+                    {events.map((a, i) => {
                         const mine = !!address && a.sender.toLowerCase() === address.toLowerCase();
                         return (
                             <div key={i} className="flex justify-between items-center gap-2 flex-wrap bg-ink-900 rounded-stat px-4 py-3 mb-2 text-[13px]">
@@ -295,4 +297,21 @@ export function feeParts(
     if (totalBps === undefined || royaltyBps === undefined || burnBps === undefined || !tier) return undefined;
     if (Number(royaltyBps) + Number(burnBps) + Number(tier.swapLpBps) + Number(tier.swapPlatformBps) !== Number(totalBps)) return undefined;
     return {total: bpsPct(totalBps), royalty: bpsPct(royaltyBps), burn: bpsPct(burnBps), lp: bpsPct(tier.swapLpBps), platform: bpsPct(tier.swapPlatformBps)};
+}
+
+const SWAPPED = "event Swapped(address indexed sender, address indexed to, bool quoteIn, uint256 amountIn, uint256 amountOut, uint256 royalty)";
+
+/** One pool swap, from the indexer or from the browser's log (newest first in lists). */
+export type SwapItem = {tx: string; logIndex: number; block: bigint; ts?: number; sender: string; quoteIn: boolean; amountIn: bigint; amountOut: bigint};
+
+export function swapFromApi(r: ApiFeedRow): SwapItem {
+    const quoteIn = r.quoteIn === true;
+    const q = BigInt(r.quoteAmount as string);
+    const t = BigInt(r.tokenAmount as string);
+    return {tx: r.tx, logIndex: r.logIndex, block: BigInt(r.block), ts: Number(r.ts), sender: r.trader as string, quoteIn, amountIn: quoteIn ? q : t, amountOut: quoteIn ? t : q};
+}
+
+export function swapFromLog(l: EventLog): SwapItem {
+    const a = l.args as {sender: string; quoteIn: boolean; amountIn: bigint; amountOut: bigint};
+    return {tx: l.transactionHash!, logIndex: l.logIndex!, block: l.blockNumber!, sender: a.sender, quoteIn: a.quoteIn, amountIn: a.amountIn, amountOut: a.amountOut};
 }
