@@ -2,139 +2,127 @@
 
 <p align="center"><img src="assets/logo.png" alt="MAPAE" width="240"></p>
 
-GIWA 체인(업비트/두나무의 이더리움 L2) 위의 크리에이터 온체인 회원권 플랫폼 — 검증된 크리에이터가 실명 지갑으로 발행하는 고정 공급 양도가능 회원권 ERC-20. 발행은 정가 공모, 유통은 AMM, 소비(리딤)는 원화 고정가.
+**A launchpad on GIWA where every launch starts from the same line.**
 
-## 🏛 GASOK 1기 제출물 (GIWA Sepolia)
+모두가 같은 출발선에서 시작하는 런치패드. 한국어 문서는 [mapae.gitbook.io/mapae](https://mapae.gitbook.io/mapae/)에 있습니다.
 
-- **🌐 MVP 데모**: **https://jihanwi.github.io/mapae/** — 접속 → 지갑 연결 → 상단 온보딩(① 테스트 KRWs 받기 → ② 실명 인증(데모)) → 홈 최상단의 「응모중」 카드에 응모까지 3분. 정산 완료된 회원권으로 거래·리딤·후원 체험 가능
-- **심사위원용 5분 워크스루**: [`docs/SUBMISSION.md`](docs/SUBMISSION.md) — explorer 링크 순서대로 클릭하면 전체 수명주기 확인
-- **배포 주소·verify 상태·데모 히스토리**: [`docs/DEPLOYMENTS.md`](docs/DEPLOYMENTS.md)
-- **GIWA-Native**: [`DojangEASAdapter`](src/DojangEASAdapter.sol)가 실 DojangScroll + EAS predeploy를 조회 — Verified Address(업비트 KYC 증명) 지갑이 곧 크리에이터 온보딩 ([`docs/DOJANG.md`](docs/DOJANG.md))
-- **데모**: Offering A(초과 응모·추첨 배정) / Offering B(미달·미판매분 소각) 2단계 시나리오 — 아래 "데모 실행 절차"
-- **재현**: 배정은 결정론적 — `Settled` 이벤트의 시드로 누구나 재계산 검증 가능 ([`script/allocation/`](script/allocation/README.md))
+> Status: live on GIWA Sepolia testnet. The contracts have not been audited.
 
-### 데모 실행 절차 (오너 런북)
+## Why
 
-```sh
-source .env
-# -1) [재배포 시] 직전 배포 기록 아카이브 + 신규 데모 니모닉 (기존 지갑 재사용 금지)
-mkdir -p deployments/archive-m3 && git mv deployments/*.json deployments/archive-m3/
-cast wallet new-mnemonic --words 12   # 출력된 니모닉을 아래에 export (데모 전용, 실가치 보관 금지)
-export DEMO_MNEMONIC="<새 니모닉>"     # 모든 DemoStage 스크립트가 이 값을 사용 (미설정 시 기본값)
+Open token launches reward whoever is fastest. Bots buy in the first block, insiders hold supply nobody can see, and regular buyers arrive last.
 
-# 0) 최초 1회: 배포 + 직접 배포분 verify (keystore 패스워드 입력 필요)
-forge script script/Deploy.s.sol --account deployer --rpc-url $GIWA_SEPOLIA_RPC_URL \
-  --broadcast --verify --verifier blockscout --verifier-url $BLOCKSCOUT_API_URL
+GIWA has Dojang, an onchain attestation that a verified person is behind a wallet. MAPAE uses it at the moment it matters most: the start of a launch.
 
-# 1) Stage 1: 데모 지갑 세팅 + L0(≈1h)·L1(≈12h) 개설 + 응모. 데모 니모닉 기본값 출처 = DemoStage1On.s.sol
-#    주소·deadline은 deployments/demo-v2-state.json에 기록된다
-forge script script/DemoStage1On.s.sol --account deployer --rpc-url $GIWA_SEPOLIA_RPC_URL --broadcast
+## Two tracks
 
-# 1.5) Factory 내부 생성분(Offering/Token/RedeemManager) verify
-FACTORY=$(python3 -c "import json;print(json.load(open('deployments/giwa-sepolia.json'))['factoryMock'])")
-node script/verify-children.js --rpc $GIWA_SEPOLIA_RPC_URL --verifier-url $BLOCKSCOUT_API_URL --factory $FACTORY
+### Bonding-curve launch (L0)
 
-# ---- deadline 경과 후 (deployments/demo-v2-state.json의 deadlineL0/deadlineL1 확인) ----
-# (2)는 v1.0 다수 응모자 배정 절차 — v2 Stage 2a/2b는 단일 leaf 루트를 스크립트 안에서 계산한다
+| Rule | Enforced by |
+|---|---|
+| For the first 10 minutes only real-name wallets can buy; after that anyone can. | `CurveSale._buyerVerified` (reverts `NotVerified` before `priorityUntil`), window from `CurveFactory.priorityWindow` (600 s) |
+| No Dev pre-allocation: the whole supply is minted to the curve contract itself. | `CurveSale` constructor (`mintAllocations` to `address(this)`) |
+| A Dev first buy inside the launch transaction is capped at 5% of total supply; a larger one reverts the whole launch. | `CurveFactory._checkDevFirstBuy` (`DevFirstBuyTooLarge`), `CurvePresets.DEV_FIRST_BUY_MAX_TOKENS` |
+| Every token has the same supply, the same curve and the same graduation point. | `CurvePresets` constants (`TOTAL_SUPPLY`, `CURVE_SUPPLY`, `DEX_SUPPLY`, virtual reserves) |
+| No minting after launch. | `MembershipToken.mintAllocations` (callable once; sets `minter` to `address(0)`) |
+| On graduation the pool's liquidity is locked for good. | `CurveSale._graduate` (LP shares minted to the pool's `DEAD` address) |
 
-# 2) 스냅샷 → 배정 (Offering A, B 각각)
-OFF_A=$(python3 -c "import json;print(json.load(open('deployments/demo-state.json'))['offeringA'])")
-OFF_B=$(python3 -c "import json;print(json.load(open('deployments/demo-state.json'))['offeringB'])")
-cd script/allocation
-node snapshot.js --rpc $GIWA_SEPOLIA_RPC_URL --offering $OFF_A --out ../../deployments/snapshot-a.json
-node allocate.js --snapshot ../../deployments/snapshot-a.json \
-  --seed $(python3 -c "import json;print(json.load(open('../../deployments/snapshot-a.json'))['suggestedSeed'])") \
-  --out ../../deployments/allocations-a.json --foundry-out ../../deployments/alloc-a.json
-node snapshot.js --rpc $GIWA_SEPOLIA_RPC_URL --offering $OFF_B --out ../../deployments/snapshot-b.json
-node allocate.js --snapshot ../../deployments/snapshot-b.json \
-  --seed $(python3 -c "import json;print(json.load(open('../../deployments/snapshot-b.json'))['suggestedSeed'])") \
-  --out ../../deployments/allocations-b.json --foundry-out ../../deployments/alloc-b.json
-cd ../..
+### Fixed-price offering (L1)
 
-# 3) Stage 2a (L0, ≈1h 후): settle → 정가 상장(LP → 0xdEaD) → claim → 스왑
-forge script script/DemoStage2aL0.s.sol --account deployer --rpc-url $GIWA_SEPOLIA_RPC_URL --broadcast
+| Rule | Enforced by |
+|---|---|
+| One price for everyone. | `Offering.price` (immutable) |
+| Oversubscribed: an equal share first, then a lottery for the rest. The seed is published, so anyone can recompute the result. | [`script/allocation`](script/allocation/README.md) (`allocate.js`); `Offering.settle` stores `allocationRoot` and `seed` and emits `Settled`; `Offering.claim` checks the Merkle proof (`InvalidProof`) |
+| Only part of the proceeds is paid at settlement; the rest is released over time by a lock contract per offering, which the platform cannot move. | `Offering._distributeProceeds`; `ProceedsLock` (no admin or revoke path, `transferOwnership` and `renounceOwnership` revert) |
+| The issuer's disclosure is saved with a wallet signature and can be edited only until the first commitment; after that only dated addenda are added. | Off-chain: `web/api/_lib/disclosureHandler.ts` (signature check, `locked` after the first commitment, addenda) |
+| Target missed: either a full refund or only the sold amount is issued. A refund takes two steps: `enableRefunds`, then `refund`. | `IOffering.RefundMode` (`AllOrNothing`, `Partial`); `Offering.settle` (`TargetNotReached` in `AllOrNothing`), `Offering.enableRefunds`, `Offering.refund` |
 
-# 4) Stage 2b (L1, ≈12h 후): settle → claim → 스왑 → 후원(swapForBurn) → 리딤 → 유료 드랍 → 바이백
-#    DEMO_BUNDLE=1~4로 서명자별 묶음 실행 가능 (스크립트 상단 주석)
-forge script script/DemoStage2bL1.s.sol --account deployer --rpc-url $GIWA_SEPOLIA_RPC_URL --broadcast --slow
+## What the token page shows
 
-# 5) 체험용 공모 (48시간 수명 — 응모 밴드가 12~48h로 온체인 강제, Offering.sol:140)
-#    ★ 롤링: 같은 스크립트를 그대로 재실행하면 새 공모가 "열리지 않고" ActiveOfferingExists로
-#      revert한다 — 정산된 크리에이터는 one-live 규칙(MapaeFactory.sol:169-175)으로 슬롯을
-#      영구 점유한다. 다음 사이클은 반드시 새 파생 index + 새 심볼로 열어야 한다.
-#      (DemoOfferingC.s.sol이 아직 index 8·MAPC를 하드코딩 중이면 CREATOR_IDX·SYMBOL을
-#       바꿔 재빌드 후 실행 — 스크립트 env 분리는 페이즈 4에서 처리.)
-forge script script/DemoOfferingC.s.sol --account deployer --rpc-url $GIWA_SEPOLIA_RPC_URL --broadcast --slow
-# 5.5) ★ 개설 직후 필수 — 자식 컨트랙트 verify. 기본 스캔 창이 90k 블록(GIWA ~1블록/s → 약 25h)
-#      뿐이라 즉시 돌리고, --from-block은 개설 블록 기준으로 준다. done: N/N + exit 0 육안 확인.
-node script/verify-children.js --rpc $GIWA_SEPOLIA_RPC_URL --verifier-url $BLOCKSCOUT_API_URL \
-  --factory $FACTORY --from-block <개설블록-100>
-```
+Dev first buy, Dev holdings, Dev sell history, the share held by the top 10 wallets and the share held by real-name wallets. These are shown as facts, without a score or a grade.
 
-### 웹 MVP (web/)
+## Fees
 
-```sh
-cd web && npm install
-npm run codegen   # out/ + deployments/ → src/contracts (재배포·재정산 후 재실행)
-npm run dev       # 로컬 (http://localhost:5173)
-npm run build     # 배포 빌드 — main push 시 GitHub Pages 자동 배포 (deploy-web.yml)
-```
-공모 정산 후에는 `deployments/alloc-*.json`을 `web/public/allocations/<offering주소>.json`으로 복사해야 claim이 동작한다.
-
-스펙 단일 기준(SSOT): [`docs/SPEC.md`](docs/SPEC.md) · 신뢰 모델: [`docs/TRUST.md`](docs/TRUST.md) · Dojang 연동: [`docs/DOJANG.md`](docs/DOJANG.md) · 배정 스크립트: [`script/allocation/`](script/allocation/README.md)
-
-## 모듈 구성
-
-| # | 모듈 | 역할 | 범위 |
-|---|---|---|---|
-| 1 | MapaeFactory | 크리에이터별 토큰+공모 배포 (Dojang Verified 필수) | ✅ 제출 범위 |
-| 2 | MembershipToken | 고정 공급 회원권 ERC-20 (1회 민트 후 민트 권한 소각) | ✅ 제출 범위 |
-| 3 | Offering | 정가 단일 공모 (균등+추첨 배정, 머클 클레임) | ✅ 제출 범위 |
-| 4 | RedeemManager | 회원권 소각형 리딤 (장수 고정 교환비) | ✅ 제출 범위 |
-| 5 | MapaeVesting | 크리에이터 배분 베스팅 (36mo linear + 6mo cliff) | ✅ M4 |
-| 6 | Sponsorship | 후원 — X% 풀 매수·소각, 오버레이 이벤트 | ✅ M4 |
-| 7 | MapaePool (AMM/LP) | 정가 상장 CPAMM + LP 영구 락업(0xdEaD) + 미니 바이백 | ✅ M4 |
-| 8 | BuybackVault | 매출 환원분 TWAP 매수 후 전량 소각 | 로드맵 |
-
-## 마일스톤
-
-| 단계 | 내용 | 상태 |
+| Where | Total | Split |
 |---|---|---|
-| M0 | 리포 스캐폴드 — 인터페이스·목업·체인 설정·CI | ✅ 완료 |
-| M1 | Offering + MembershipToken 구현, 배정 스크립트, invariant 테스트 | ✅ 완료 |
-| M2 | Factory + RedeemManager, 토크노믹스 파라미터화 | ✅ 완료 |
-| M3 | GIWA Sepolia 배포·verify + Dojang EAS 어댑터 + 데모 | ✅ 완료 |
-| M4 | AMM 정가 상장 + LP 영구 락업 + Vesting + Sponsorship | ✅ 완료 |
-| M5 | 최종 클린 재배포 + 풀사이클 데모 + 제출 패키지 (`v1.0-gasok`) | ✅ 완료 |
+| Bonding-curve trade (L0) | 1.00% | platform 0.50% · Dev 0.35% · liquidity 0.15% |
+| L0 pool after graduation | 1.00% | platform 0.40% · Dev 0.30% · liquidity 0.30% |
+| L1 offering fee | 0% | allowed range in the contract: 0% to 5% |
+| L1 pool (default) | 1.50% | platform 0.40% · issuer 0.60% · burn 0.30% · liquidity 0.20% (cap 1.50%) |
 
-## 개발
+Values read on chain on 2026-11-17 (`FeeRouter.getCurveFees`, `getFees(L0)`, `getFees(L1)`). The two offerings opened on v3.2-L1 keep their original terms (7.5% offering fee).
 
-[Foundry](https://getfoundry.sh/) 기반. OpenZeppelin Contracts v5 외 외부 의존성 없음. 전 모듈 논업그레이더블.
+The platform never receives the issued token by any path (`test/NoPlatformTokens.t.sol`, `CurveSale` accounting, [`docs/TRUST.md`](docs/TRUST.md)).
+
+## Deployments (GIWA Sepolia)
+
+Chain ID `91342` · RPC `https://sepolia-rpc.giwa.io` · Explorer [sepolia-explorer.giwa.io](https://sepolia-explorer.giwa.io)
+
+L0, from [`deployments/giwa-sepolia-v3_2.json`](deployments/giwa-sepolia-v3_2.json):
+
+| Contract | Address | Role |
+|---|---|---|
+| CurveFactory | [`0x9b8155C39cdB912557d8588157fC11e8D989e652`](https://sepolia-explorer.giwa.io/address/0x9b8155C39cdB912557d8588157fC11e8D989e652) | bonding-curve launches |
+| FeeRouter | [`0xAB665B7867080cd62Aa316717400f3Cc094E7bd6`](https://sepolia-explorer.giwa.io/address/0xAB665B7867080cd62Aa316717400f3Cc094E7bd6) | curve and L0 pool fees |
+| PoolFactory | [`0xf4E7Bf1ACe429400AC23E271E4409D212677e44F`](https://sepolia-explorer.giwa.io/address/0xf4E7Bf1ACe429400AC23E271E4409D212677e44F) | pools after graduation or settlement (shared with L1) |
+| DojangAnyOf | [`0x87326FbbF76e724bA2bA954dAc04c3B939999f84`](https://sepolia-explorer.giwa.io/address/0x87326FbbF76e724bA2bA954dAc04c3B939999f84) | real-name check (shared with L1) |
+| DojangEASAdapter | [`0x6cADa83208B32c2Ee0D0dB0341cfD0BF7B1584a4`](https://sepolia-explorer.giwa.io/address/0x6cADa83208B32c2Ee0D0dB0341cfD0BF7B1584a4) | reads the official Dojang attestation |
+| MockDojang | [`0xaf80C431813EC4d2Cb34B3EC5b064095256871f8`](https://sepolia-explorer.giwa.io/address/0xaf80C431813EC4d2Cb34B3EC5b064095256871f8) | testnet demo verification |
+| MockKRW | [`0x74eC9141afAd51F346BA5B841Ba93D573e8786fD`](https://sepolia-explorer.giwa.io/address/0x74eC9141afAd51F346BA5B841Ba93D573e8786fD) | testnet KRW stand-in (shared with L1) |
+| MembershipTokenDeployer | [`0x9F011858B85b93a73330B56319Dc76a6f3255279`](https://sepolia-explorer.giwa.io/address/0x9F011858B85b93a73330B56319Dc76a6f3255279) | linked library (shared with L1) |
+
+L1, from [`deployments/giwa-sepolia-v3_3_l1.json`](deployments/giwa-sepolia-v3_3_l1.json):
+
+| Contract | Address | Role |
+|---|---|---|
+| MapaeFactory | [`0x3b1D679d6CFA5f2e92832aFfBf516319204D767f`](https://sepolia-explorer.giwa.io/address/0x3b1D679d6CFA5f2e92832aFfBf516319204D767f) | fixed-price offerings |
+| FeeRouter | [`0xC8EF125aa945aF92144ECadc39CeE1a0b7415a70`](https://sepolia-explorer.giwa.io/address/0xC8EF125aa945aF92144ECadc39CeE1a0b7415a70) | L1 offering and pool fees |
+| OfferingDeployer | [`0x08c51863170835Cb86a9e214f5B0b13F0380086b`](https://sepolia-explorer.giwa.io/address/0x08c51863170835Cb86a9e214f5B0b13F0380086b) | created by the factory |
+| StackDeployer | [`0x5EE46f45af61270b5738e78ccad51b89dAC9F792`](https://sepolia-explorer.giwa.io/address/0x5EE46f45af61270b5738e78ccad51b89dAC9F792) | created by the factory |
+| ProceedsLockDeployer | [`0x755568f5BB314DD67c0ffB91Db491d1f63AA97C9`](https://sepolia-explorer.giwa.io/address/0x755568f5BB314DD67c0ffB91Db491d1f63AA97C9) | per-offering proceeds locks |
+| BuybackVault | [`0x3Ed11f7Bcc36B3603d51736652884800daa2f54c`](https://sepolia-explorer.giwa.io/address/0x3Ed11f7Bcc36B3603d51736652884800daa2f54c) | |
+
+Earlier versions and their addresses: [`docs/DEPLOYMENTS.md`](docs/DEPLOYMENTS.md).
+
+## Trust model and known limits
+
+- Settlement of an offering is run only by the platform operator wallet (`Offering.settle` is `onlyOwner`). The allocation can be recomputed by anyone from the published seed ([`docs/TRUST.md`](docs/TRUST.md)).
+- On testnet, the demo verification (`MockDojang`) also counts as real-name (`DojangAnyOf`: the official Dojang or MockDojang).
+- Images, descriptions, disclosures, nicknames and comments are stored off chain.
+- No external audit.
+
+## Repository
+
+- `src/`: Solidity contracts (Foundry).
+- `test/`: Foundry tests.
+- `script/`: deploy scripts, child-contract verification and the allocation script.
+- `web/`: the web app (Vite, React) and its serverless API.
+- `docs/`: deployment records, deploy procedures, trust model and specs.
+
+## Development
 
 ```sh
-# 환경 설정
-cp .env.example .env
-
-# 빌드 / 테스트 / 포맷
 forge build
-forge test -vvv
-forge fmt --check
+forge test
 ```
 
-## 배포 (GIWA Sepolia)
+```sh
+cd web
+npm ci
+npm run codegen
+npx vitest run
+npm run build
+```
 
-체인 정보: chain ID `91342` · RPC `https://sepolia-rpc.giwa.io` · Explorer [Blockscout](https://sepolia-explorer.giwa.io)
+Deploy procedures: [`docs/DEPLOY_V3_1.md`](docs/DEPLOY_V3_1.md), [`docs/DEPLOY_V3_2.md`](docs/DEPLOY_V3_2.md), [`docs/DEPLOY_V3_2_L1.md`](docs/DEPLOY_V3_2_L1.md), [`docs/DEPLOY_V3_3_L1.md`](docs/DEPLOY_V3_3_L1.md).
 
-**프라이빗 키는 절대 `.env`에 저장하지 않는다.** 암호화 키스토어를 사용한다:
+**Never store a private key in `.env`.** Use an encrypted keystore:
 
 ```sh
 cast wallet import deployer --interactive
 ```
 
-배포 + verify (Blockscout, API key 불필요):
+## History
 
-```sh
-source .env
-forge script script/Deploy.s.sol --account deployer --rpc-url $GIWA_SEPOLIA_RPC_URL \
-  --broadcast --verify --verifier blockscout --verifier-url $BLOCKSCOUT_API_URL
-```
+The v1.0 / v2.0.1 creator-membership version is recorded in [`docs/README_v2.md`](docs/README_v2.md), [`docs/SUBMISSION.md`](docs/SUBMISSION.md) and [`docs/DEPLOYMENTS.md`](docs/DEPLOYMENTS.md).
+Its contracts stay on GIWA Sepolia; the web app no longer lists them.

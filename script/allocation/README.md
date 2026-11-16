@@ -11,12 +11,21 @@
 ```sh
 npm install
 
-# snapshot.json + 시드 → allocations.json (루트·배정·proof)
+# 1) 응모 스냅샷: Committed/Cancelled 이벤트를 --from-block 부터 최신 블록까지 다시 읽고
+#    지갑마다 committed(address) 와 대조한다. --from-block 은 필수다(공모의 개설 블록,
+#    또는 deployments/*.json 의 팩토리 deployBlock).
+node snapshot.js --rpc https://sepolia-rpc.giwa.io --offering <offering> --from-block <block> --out snapshot.json
+
+# 2) snapshot.json + 시드 → allocations.json (루트·배정·proof)
 node allocate.js --snapshot snapshot.json --seed 0x<bytes32> --out allocations.json
 
 # 스냅샷/회귀 테스트
 npm test
 ```
+
+GIWA RPC 는 `eth_getLogs` 범위가 10,000블록을 넘으면 거부한다(`block range greater than 10000 max`).
+`snapshot.js` 는 9,000블록 단위로 나눠 읽는다(`ranges.js`). `--from-block` 이 없으면 사용법을 출력하고
+멈춘다. 최근 구간만 읽으면 그보다 앞선 응모가 빠지기 때문이다.
 
 `snapshot.json` 형식:
 
@@ -32,7 +41,8 @@ npm test
 
 ## 커밋 스냅샷 얻기 (이벤트 리플레이)
 
-마감 시점 최종 커밋은 온체인 이벤트로 재구성한다. 예 (cast):
+마감 시점 최종 커밋은 온체인 이벤트로 재구성한다. `snapshot.js` 가 이 일을 한다(위 사용법).
+직접 확인하려면 예 (cast, 한 번에 10,000블록 이하로 나눠서):
 
 ```sh
 # Committed(participant, amount, cumulative) — cumulative의 마지막 값이 최종 커밋

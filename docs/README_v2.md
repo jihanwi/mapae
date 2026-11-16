@@ -1,0 +1,142 @@
+Historical README of the v1.0 / v2.0.1 creator-membership version (through 2026-10).
+
+# MAPAE (마패)
+
+<p align="center"><img src="../assets/logo.png" alt="MAPAE" width="240"></p>
+
+GIWA 체인(업비트/두나무의 이더리움 L2) 위의 크리에이터 온체인 회원권 플랫폼 — 검증된 크리에이터가 실명 지갑으로 발행하는 고정 공급 양도가능 회원권 ERC-20. 발행은 정가 공모, 유통은 AMM, 소비(리딤)는 원화 고정가.
+
+## 🏛 GASOK 1기 제출물 (GIWA Sepolia)
+
+- **🌐 MVP 데모**: **https://jihanwi.github.io/mapae/** — 접속 → 지갑 연결 → 상단 온보딩(① 테스트 KRWs 받기 → ② 실명 인증(데모)) → 홈 최상단의 「응모중」 카드에 응모까지 3분. 정산 완료된 회원권으로 거래·리딤·후원 체험 가능
+- **심사위원용 5분 워크스루**: [`docs/SUBMISSION.md`](SUBMISSION.md) — explorer 링크 순서대로 클릭하면 전체 수명주기 확인
+- **배포 주소·verify 상태·데모 히스토리**: [`docs/DEPLOYMENTS.md`](DEPLOYMENTS.md)
+- **GIWA-Native**: [`DojangEASAdapter`](../src/DojangEASAdapter.sol)가 실 DojangScroll + EAS predeploy를 조회 — Verified Address(업비트 KYC 증명) 지갑이 곧 크리에이터 온보딩 ([`docs/DOJANG.md`](DOJANG.md))
+- **데모**: Offering A(초과 응모·추첨 배정) / Offering B(미달·미판매분 소각) 2단계 시나리오 — 아래 "데모 실행 절차"
+- **재현**: 배정은 결정론적 — `Settled` 이벤트의 시드로 누구나 재계산 검증 가능 ([`script/allocation/`](../script/allocation/README.md))
+
+### 데모 실행 절차 (오너 런북)
+
+```sh
+source .env
+# -1) [재배포 시] 직전 배포 기록 아카이브 + 신규 데모 니모닉 (기존 지갑 재사용 금지)
+mkdir -p deployments/archive-m3 && git mv deployments/*.json deployments/archive-m3/
+cast wallet new-mnemonic --words 12   # 출력된 니모닉을 아래에 export (데모 전용, 실가치 보관 금지)
+export DEMO_MNEMONIC="<새 니모닉>"     # 모든 DemoStage 스크립트가 이 값을 사용 (미설정 시 기본값)
+
+# 0) 최초 1회: 배포 + 직접 배포분 verify (keystore 패스워드 입력 필요)
+forge script script/Deploy.s.sol --account deployer --rpc-url $GIWA_SEPOLIA_RPC_URL \
+  --broadcast --verify --verifier blockscout --verifier-url $BLOCKSCOUT_API_URL
+
+# 1) Stage 1: 데모 지갑 세팅 + L0(≈1h)·L1(≈12h) 개설 + 응모. 데모 니모닉 기본값 출처 = DemoStage1On.s.sol
+#    주소·deadline은 deployments/demo-v2-state.json에 기록된다
+forge script script/DemoStage1On.s.sol --account deployer --rpc-url $GIWA_SEPOLIA_RPC_URL --broadcast
+
+# 1.5) Factory 내부 생성분(Offering/Token/RedeemManager) verify
+FACTORY=$(python3 -c "import json;print(json.load(open('deployments/giwa-sepolia.json'))['factoryMock'])")
+node script/verify-children.js --rpc $GIWA_SEPOLIA_RPC_URL --verifier-url $BLOCKSCOUT_API_URL --factory $FACTORY
+
+# ---- deadline 경과 후 (deployments/demo-v2-state.json의 deadlineL0/deadlineL1 확인) ----
+# (2)는 v1.0 다수 응모자 배정 절차 — v2 Stage 2a/2b는 단일 leaf 루트를 스크립트 안에서 계산한다
+
+# 2) 스냅샷 → 배정 (Offering A, B 각각)
+OFF_A=$(python3 -c "import json;print(json.load(open('deployments/demo-state.json'))['offeringA'])")
+OFF_B=$(python3 -c "import json;print(json.load(open('deployments/demo-state.json'))['offeringB'])")
+cd script/allocation
+node snapshot.js --rpc $GIWA_SEPOLIA_RPC_URL --offering $OFF_A --out ../../deployments/snapshot-a.json
+node allocate.js --snapshot ../../deployments/snapshot-a.json \
+  --seed $(python3 -c "import json;print(json.load(open('../../deployments/snapshot-a.json'))['suggestedSeed'])") \
+  --out ../../deployments/allocations-a.json --foundry-out ../../deployments/alloc-a.json
+node snapshot.js --rpc $GIWA_SEPOLIA_RPC_URL --offering $OFF_B --out ../../deployments/snapshot-b.json
+node allocate.js --snapshot ../../deployments/snapshot-b.json \
+  --seed $(python3 -c "import json;print(json.load(open('../../deployments/snapshot-b.json'))['suggestedSeed'])") \
+  --out ../../deployments/allocations-b.json --foundry-out ../../deployments/alloc-b.json
+cd ../..
+
+# 3) Stage 2a (L0, ≈1h 후): settle → 정가 상장(LP → 0xdEaD) → claim → 스왑
+forge script script/DemoStage2aL0.s.sol --account deployer --rpc-url $GIWA_SEPOLIA_RPC_URL --broadcast
+
+# 4) Stage 2b (L1, ≈12h 후): settle → claim → 스왑 → 후원(swapForBurn) → 리딤 → 유료 드랍 → 바이백
+#    DEMO_BUNDLE=1~4로 서명자별 묶음 실행 가능 (스크립트 상단 주석)
+forge script script/DemoStage2bL1.s.sol --account deployer --rpc-url $GIWA_SEPOLIA_RPC_URL --broadcast --slow
+
+# 5) 체험용 공모 (48시간 수명 — 응모 밴드가 12~48h로 온체인 강제, Offering.sol:140)
+#    ★ 롤링: 같은 스크립트를 그대로 재실행하면 새 공모가 "열리지 않고" ActiveOfferingExists로
+#      revert한다 — 정산된 크리에이터는 one-live 규칙(MapaeFactory.sol:169-175)으로 슬롯을
+#      영구 점유한다. 다음 사이클은 반드시 새 파생 index + 새 심볼로 열어야 한다.
+#      (DemoOfferingC.s.sol이 아직 index 8·MAPC를 하드코딩 중이면 CREATOR_IDX·SYMBOL을
+#       바꿔 재빌드 후 실행 — 스크립트 env 분리는 페이즈 4에서 처리.)
+forge script script/DemoOfferingC.s.sol --account deployer --rpc-url $GIWA_SEPOLIA_RPC_URL --broadcast --slow
+# 5.5) ★ 개설 직후 필수 — 자식 컨트랙트 verify. 기본 스캔 창이 90k 블록(GIWA ~1블록/s → 약 25h)
+#      뿐이라 즉시 돌리고, --from-block은 개설 블록 기준으로 준다. done: N/N + exit 0 육안 확인.
+node script/verify-children.js --rpc $GIWA_SEPOLIA_RPC_URL --verifier-url $BLOCKSCOUT_API_URL \
+  --factory $FACTORY --from-block <개설블록-100>
+```
+
+### 웹 MVP (web/)
+
+```sh
+cd web && npm install
+npm run codegen   # out/ + deployments/ → src/contracts (재배포·재정산 후 재실행)
+npm run dev       # 로컬 (http://localhost:5173)
+npm run build     # 배포 빌드 — main push 시 GitHub Pages 자동 배포 (deploy-web.yml)
+```
+공모 정산 후에는 `deployments/alloc-*.json`을 `web/public/allocations/<offering주소>.json`으로 복사해야 claim이 동작한다.
+
+스펙 단일 기준(SSOT): [`docs/SPEC.md`](SPEC.md) · 신뢰 모델: [`docs/TRUST.md`](TRUST.md) · Dojang 연동: [`docs/DOJANG.md`](DOJANG.md) · 배정 스크립트: [`script/allocation/`](../script/allocation/README.md)
+
+## 모듈 구성
+
+| # | 모듈 | 역할 | 범위 |
+|---|---|---|---|
+| 1 | MapaeFactory | 크리에이터별 토큰+공모 배포 (Dojang Verified 필수) | ✅ 제출 범위 |
+| 2 | MembershipToken | 고정 공급 회원권 ERC-20 (1회 민트 후 민트 권한 소각) | ✅ 제출 범위 |
+| 3 | Offering | 정가 단일 공모 (균등+추첨 배정, 머클 클레임) | ✅ 제출 범위 |
+| 4 | RedeemManager | 회원권 소각형 리딤 (장수 고정 교환비) | ✅ 제출 범위 |
+| 5 | MapaeVesting | 크리에이터 배분 베스팅 (36mo linear + 6mo cliff) | ✅ M4 |
+| 6 | Sponsorship | 후원 — X% 풀 매수·소각, 오버레이 이벤트 | ✅ M4 |
+| 7 | MapaePool (AMM/LP) | 정가 상장 CPAMM + LP 영구 락업(0xdEaD) + 미니 바이백 | ✅ M4 |
+| 8 | BuybackVault | 매출 환원분 TWAP 매수 후 전량 소각 | 로드맵 |
+
+## 마일스톤
+
+| 단계 | 내용 | 상태 |
+|---|---|---|
+| M0 | 리포 스캐폴드 — 인터페이스·목업·체인 설정·CI | ✅ 완료 |
+| M1 | Offering + MembershipToken 구현, 배정 스크립트, invariant 테스트 | ✅ 완료 |
+| M2 | Factory + RedeemManager, 토크노믹스 파라미터화 | ✅ 완료 |
+| M3 | GIWA Sepolia 배포·verify + Dojang EAS 어댑터 + 데모 | ✅ 완료 |
+| M4 | AMM 정가 상장 + LP 영구 락업 + Vesting + Sponsorship | ✅ 완료 |
+| M5 | 최종 클린 재배포 + 풀사이클 데모 + 제출 패키지 (`v1.0-gasok`) | ✅ 완료 |
+
+## 개발
+
+[Foundry](https://getfoundry.sh/) 기반. OpenZeppelin Contracts v5 외 외부 의존성 없음. 전 모듈 논업그레이더블.
+
+```sh
+# 환경 설정
+cp .env.example .env
+
+# 빌드 / 테스트 / 포맷
+forge build
+forge test -vvv
+forge fmt --check
+```
+
+## 배포 (GIWA Sepolia)
+
+체인 정보: chain ID `91342` · RPC `https://sepolia-rpc.giwa.io` · Explorer [Blockscout](https://sepolia-explorer.giwa.io)
+
+**프라이빗 키는 절대 `.env`에 저장하지 않는다.** 암호화 키스토어를 사용한다:
+
+```sh
+cast wallet import deployer --interactive
+```
+
+배포 + verify (Blockscout, API key 불필요):
+
+```sh
+source .env
+forge script script/Deploy.s.sol --account deployer --rpc-url $GIWA_SEPOLIA_RPC_URL \
+  --broadcast --verify --verifier blockscout --verifier-url $BLOCKSCOUT_API_URL
+```
