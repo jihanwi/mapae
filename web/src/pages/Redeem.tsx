@@ -4,7 +4,8 @@ import {Abi, parseUnits} from "viem";
 import {copy} from "../copy";
 import {ADDR} from "../contracts/addresses";
 import {MapaeFactoryAbi, MembershipTokenAbi, MockKRWAbi, RedeemManagerAbi, SponsorshipAbi} from "../contracts/abis";
-import {useEventLogs, useOfferings, useOnboarding, OfferingInfo} from "../hooks";
+import {REDEEMABLE_CREATED, useEventLogs, useOfferings, useOnboarding, OfferingInfo} from "../hooks";
+import {redeemSections} from "../lib/redeemTab";
 import {Medallion, NetError, Skeleton, TextSkeleton} from "../components/ui";
 import {RunFn, TxButton} from "../components/tx";
 import {fmt, sanitizeAmountInput, shortAddr} from "../lib/format";
@@ -21,7 +22,10 @@ function usePeripherals(o: OfferingInfo | undefined) {
         address: ADDR.factory, abi: MapaeFactoryAbi, functionName: "sponsorshipOf",
         args: [o?.address ?? "0x0000000000000000000000000000000000000000"], query: {enabled: !!o},
     });
-    return {redeemManager: rm.data as `0x${string}` | undefined, sponsorship: sp.data as `0x${string}` | undefined};
+    const zero = "0x0000000000000000000000000000000000000000";
+    const r = rm.data as `0x${string}` | undefined;
+    const p = sp.data as `0x${string}` | undefined;
+    return {redeemManager: r && r !== zero ? r : undefined, sponsorship: p && p !== zero ? p : undefined, loaded: rm.isSuccess && sp.isSuccess};
 }
 
 export default function Redeem() {
@@ -30,7 +34,19 @@ export default function Redeem() {
     const settled = offerings.filter((o) => o.settled);
     const [sel, setSel] = useState(0);
     const o = settled[sel];
-    const {redeemManager, sponsorship} = usePeripherals(o);
+    const {redeemManager, sponsorship, loaded} = usePeripherals(o);
+    // decision 55: the catalog only with redeem items, the sponsor panel only with a sponsorship
+    const created = useEventLogs(redeemManager, REDEEMABLE_CREATED);
+    const ids = useMemo(() => {
+        const seen = new Map<string, Redeemable>();
+        for (const l of created.data ?? []) {
+            const a = l.args as Redeemable;
+            seen.set(a.id.toString(), a);
+        }
+        return [...seen.values()];
+    }, [created.data]);
+    const items = !redeemManager ? (loaded ? 0 : undefined) : created.data ? ids.length : undefined;
+    const show = redeemSections({items, sponsorship: !!sponsorship});
 
     if (isLoading) return <div className="max-w-page mx-auto px-4 sm:px-8 pt-12"><Skeleton h={300} /></div>;
     if (isError && offerings.length === 0) return <div className="max-w-page mx-auto px-4 sm:px-8 pt-12"><NetError onRetry={refetch} /></div>;
@@ -38,18 +54,21 @@ export default function Redeem() {
     return (
         <div className="max-w-page mx-auto px-4 sm:px-8 pt-8 sm:pt-10 pb-16 sm:pb-20">
             <h1 className="m-0 mb-2 text-[24px] sm:text-[28px] font-bold">{copy.redeem.title}</h1>
-            <CreatorTabs list={settled} sel={sel} onSel={setSel} />
-            {o && redeemManager && (
+            <OfferingTabs list={settled} sel={sel} onSel={setSel} />
+            {o && (show.catalog || show.sponsor) && (
                 <div className="flex flex-col sm:flex-row flex-wrap gap-6 sm:gap-7 items-start mt-6 sm:mt-8">
-                    <Catalog o={o} redeemManager={redeemManager} />
-                    {sponsorship && <SponsorPanel o={o} sponsorship={sponsorship} />}
+                    {show.catalog && redeemManager && <Catalog o={o} redeemManager={redeemManager} ids={ids} />}
+                    {show.sponsor && sponsorship && <SponsorPanel o={o} sponsorship={sponsorship} />}
                 </div>
             )}
+            {o && show.empty && <p className="mt-6 text-[14px] text-hanji-400">{copy.redeem.noItems}</p>}
         </div>
     );
 }
 
-function CreatorTabs({list, sel, onSel}: {list: OfferingInfo[]; sel: number; onSel: (i: number) => void}) {
+type Redeemable = {id: bigint; burnAmount: bigint; maxClaims: bigint; deadline: bigint};
+
+function OfferingTabs({list, sel, onSel}: {list: OfferingInfo[]; sel: number; onSel: (i: number) => void}) {
     return (
         <div className="flex gap-2 mt-5 flex-wrap">
             {list.map((o, i) => {
@@ -65,19 +84,9 @@ function CreatorTabs({list, sel, onSel}: {list: OfferingInfo[]; sel: number; onS
     );
 }
 
-function Catalog({o, redeemManager}: {o: OfferingInfo; redeemManager: `0x${string}`}) {
+function Catalog({o, redeemManager, ids}: {o: OfferingInfo; redeemManager: `0x${string}`; ids: Redeemable[]}) {
     const {address} = useAccount();
     const {writeContractAsync} = useWriteContract();
-    const created = useEventLogs(redeemManager,
-        "event RedeemableCreated(uint256 indexed id, address indexed creator, uint256 burnAmount, uint256 maxClaims, uint256 deadline)");
-    const ids = useMemo(() => {
-        const seen = new Map<string, {id: bigint; burnAmount: bigint; maxClaims: bigint; deadline: bigint}>();
-        for (const l of created.data ?? []) {
-            const a = l.args as {id: bigint; burnAmount: bigint; maxClaims: bigint; deadline: bigint};
-            seen.set(a.id.toString(), a);
-        }
-        return [...seen.values()];
-    }, [created.data]);
     const states = useReadContracts({
         contracts: ids.map((r) => ({address: redeemManager, abi: RedeemManagerAbi as Abi, functionName: "redeemables", args: [r.id]})),
         query: {enabled: ids.length > 0, refetchInterval: 15_000},
@@ -95,7 +104,7 @@ function Catalog({o, redeemManager}: {o: OfferingInfo; redeemManager: `0x${strin
 
     const doRedeem = (r: (typeof ids)[number]) => async (run: RunFn) => {
         if (((allowance.data as bigint) ?? 0n) < r.burnAmount) {
-            const ok = await run("회원권 사용 승인", () =>
+            const ok = await run(copy.redeem.approveLabel, () =>
                 writeContractAsync({address: o.token, abi: MembershipTokenAbi, functionName: "approve", args: [redeemManager, r.burnAmount], chainId: giwaSepolia.id}));
             if (!ok) return;
         }
@@ -121,7 +130,7 @@ function Catalog({o, redeemManager}: {o: OfferingInfo; redeemManager: `0x${strin
                     return (
                         <div key={r.id.toString()} className="bg-ink-800 border border-ink-700 rounded-card p-4 sm:p-6">
                             <div className="flex items-center gap-4 mb-4">
-                                <Medallion char={fmt(r.burnAmount, 0)} sub="장 소각" size={64} />
+                                <Medallion char={fmt(r.burnAmount, 0)} sub={copy.redeem.burnUnit} size={64} />
                                 <div className="flex-1">
                                     <div className="text-[17px] font-bold">{copy.redeem.names[`${o.tokenSymbol}:${r.id.toString()}`] ?? `리딤 #${r.id.toString()}`}</div>
                                     <div className="text-[12px] text-hanji-400 mt-1 tabular-nums">

@@ -1,6 +1,6 @@
 import {OfferingInfo} from "../hooks";
 
-/** 데모 크리에이터 표시명 — 토큰 심볼 기준 매핑 (재배포에도 유지), 미등록은 토큰명 */
+/** 데모 발행자 표시명: 토큰 심볼 기준 매핑 (재배포에도 유지), 미등록은 토큰명 */
 const BY_SYMBOL: Record<string, {name: string; en: string}> = {
     MAPA: {name: "하늘", en: "HANEUL"},
     MAPB: {name: "무진", en: "MUJIN"},

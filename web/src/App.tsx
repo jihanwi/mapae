@@ -9,7 +9,8 @@ import {ADDR} from "./contracts/addresses";
 import {MockKRWAbi, MockDojangAbi} from "./contracts/abis";
 import {ADDR_V3} from "./contracts/addressesV3";
 import {MockKRWV3Abi} from "./contracts/abisV3";
-import {useOnboarding} from "./hooks";
+import {useOnboarding, useRedeemPeripherals} from "./hooks";
+import {redeemTabVisible} from "./lib/redeemTab";
 import {ToastRouteReset, useTx, useGlobalTxBusy} from "./components/tx";
 import {fmt, shortAddr} from "./lib/format";
 import {OnboardingProvider} from "./components/OnboardingModal";
@@ -109,10 +110,14 @@ function Nav() {
         {to: "/offerings", label: tr.nav.home, active: legacy},
     ];
     // Offering-section sub tabs (routes unchanged)
+    // decision 55: "리딤" only when some offering has redeem items or a sponsorship (shown on read
+    // failure, hidden while loading); /redeem itself works either way
+    const redeem = useRedeemPeripherals(legacy);
+    const showRedeem = redeemTabVisible(redeem.status === "done" ? {status: "done", sponsors: redeem.sponsors, items: redeem.items, itemsError: redeem.itemsError} : {status: redeem.status}) || pathname.startsWith("/redeem");
     const subTabs = [
         {to: "/offerings", end: false, label: tr.nav.offeringList},
         {to: "/membership", end: false, label: tr.nav.membership},
-        {to: "/redeem", end: false, label: tr.nav.redeem},
+        ...(showRedeem ? [{to: "/redeem", end: false, label: tr.nav.redeem}] : []),
         {to: "/trade", end: false, label: tr.nav.trade},
     ];
     const inlineCls = (active: boolean) =>
@@ -179,7 +184,7 @@ function Nav() {
             {/* 공모 섹션 하위 탭 */}
             {legacy && (
                 <nav className="border-t border-ink-700">
-                    <div className="max-w-page mx-auto px-4 sm:px-8 grid grid-cols-4 sm:flex sm:gap-2">
+                    <div className={`max-w-page mx-auto px-4 sm:px-8 grid ${subTabs.length === 4 ? "grid-cols-4" : "grid-cols-3"} sm:flex sm:gap-2`}>
                         {subTabs.map((t) => (
                             <NavLink key={t.to} to={t.to} end={t.end} className={subCls}>{t.label}</NavLink>
                         ))}

@@ -5,8 +5,8 @@ import {useAccount, useReadContract, useWriteContract} from "wagmi";
 import {parseUnits} from "viem";
 import {copy} from "../copy";
 import {ADDR} from "../contracts/addresses";
-import {MockKRWAbi, OfferingAbi} from "../contracts/abis";
-import {useOfferings, useOnboarding, useParticipantCount} from "../hooks";
+import {MapaeFactoryAbi, MockKRWAbi, OfferingAbi} from "../contracts/abis";
+import {REDEEMABLE_CREATED, useEventLogs, useOfferings, useOnboarding, useParticipantCount} from "../hooks";
 import {Badge, Gauge, Medallion, NetError, PrimaryBtn, SecondaryBtn, Skeleton, TextSkeleton} from "../components/ui";
 import {RunFn, TxButton} from "../components/tx";
 import {countdown, fmt, sanitizeAmountInput} from "../lib/format";
@@ -127,7 +127,7 @@ export default function Offering() {
         <div className="max-w-page mx-auto px-4 sm:px-8 pt-8 sm:pt-10 pb-16 sm:pb-20">
             <Link to="/offerings" className="text-[14px]">← 공모 목록</Link>
             <div className="flex flex-col sm:flex-row flex-wrap gap-6 sm:gap-7 mt-5 sm:mt-6 items-start">
-                {/* 좌: 크리에이터 (모바일에선 응모 패널 아래로) */}
+                {/* 좌: 발행자와 공모 설명 (모바일에선 응모 패널 아래로) */}
                 <div className="w-full sm:flex-1 order-2 sm:order-1" style={{minWidth: 0}}>
                     <div className="flex items-center gap-4 sm:gap-5 mb-6 sm:mb-7">
                         <Medallion char={c ? c.name[0] : "…"} size={104} glow />
@@ -141,15 +141,9 @@ export default function Offering() {
                         </div>
                     </div>
                     <div className="text-[15px] leading-relaxed text-hanji-100 space-y-4">
-                        <p className="m-0">
-                            {c ? `${c.name}의` : "이"} 온체인 회원권입니다. 공모 수량 {fmt(o.qSale, 2)}장을 단 한 번만 발행하며,
-                            총공급은 정산 시점에 확정돼요. 이후 추가 발행은 불가능해요.
-                        </p>
-                        <p className="m-0">
-                            회원권으로는 리딤 카탈로그의 혜택을 소각 방식으로 사용할 수 있고, 보유 비율에 따라
-                            一馬부터 五馬까지의 등급이 부여됩니다. 리딤에 사용된 회원권은 소각되어 총공급이 줄어듭니다.
-                        </p>
-                        <p className="m-0">발행 대금은 크리에이터 활동비와 리딤 운영에 사용됩니다. 크리에이터 배분 물량은 36개월 베스팅(6개월 클리프)으로 잠깁니다.</p>
+                        <p className="m-0">{copy.offering.about(c ? c.name : null, fmt(o.qSale, 2))}</p>
+                        <RedeemNote offering={o.address} />
+                        <p className="m-0">{copy.offering.aboutVesting}</p>
                     </div>
                     <div className="mt-7 rounded-input px-4 py-3.5 text-[13px] text-hanji-400"
                         style={{background: "rgba(195,154,59,.08)", border: "1px solid rgba(195,154,59,.3)"}}>
@@ -202,7 +196,7 @@ export default function Offering() {
                                     <span className="text-hanji-400 text-[14px] flex-none">KRWs</span>
                                 </div>
                                 <div className="text-[12px] text-hanji-400 mb-4 tabular-nums">
-                                    ≈ {o.price > 0n ? fmt((amountWei * 10n ** 18n) / o.price) : "0"}장
+                                    ≈ {o.price > 0n ? fmt((amountWei * 10n ** 18n) / o.price) : "0"}{copy.offering.unit}
                                 </div>
                                 <TxButton className="w-full" disabled={commitDisabled} action={commit}>
                                     {myCommitted > 0n ? copy.offering.commitMore : copy.offering.commitCta}
@@ -261,8 +255,8 @@ export default function Offering() {
 
 function InfoGrid({o, walletLimit, minCommit}: {o: ReturnType<typeof useOfferings>["offerings"][number]; walletLimit: bigint; minCommit: bigint}) {
     const rows: [string, string][] = [
-        ["정가", `${fmt(o.price, 0)} KRWs / 장`],
-        [copy.offering.saleQty, `${fmt(o.qSale, 2)}장`], // C1: (고정 공급) 라벨 제거
+        ["정가", `${fmt(o.price, 0)} KRWs / ${copy.offering.unit}`],
+        [copy.offering.saleQty, `${fmt(o.qSale, 2)}${copy.offering.unit}`], // C1: (고정 공급) 라벨 제거
         [copy.offering.minCommit, minCommit > 0n ? `${fmt(minCommit, 0)} KRWs` : "—"], // 9-b: 최소 응모 표기
         [copy.offering.walletLimit, walletLimit > 0n ? `${fmt(walletLimit, 0)} KRWs` : "—"],
         ["미달 시", o.refundMode === 0 ? "전액 환불" : "판매분만 발행 · 미판매분 소각"],
@@ -317,10 +311,21 @@ function SettledPanel({o, account, alloc, claimed, myCommitted, claim}: {
                 <SecondaryBtn className="w-full" disabled>{copy.offering.claimed}</SecondaryBtn>
             ) : (
                 <TxButton className="w-full" action={claim(alloc)}>
-                    {copy.offering.claimCta} — {fmt(alloc.allocation, 2)}장{alloc.refund > 0n ? " + 환불" : ""}
+                    {copy.offering.claimCta} — {fmt(alloc.allocation, 2)}{copy.offering.unit}{alloc.refund > 0n ? " + 환불" : ""}
                 </TxButton>
             )}
             <p className="text-[12px] text-hanji-400 mt-3 mb-0 text-center">배정 계산은 Settled 이벤트의 시드로 누구나 재검증할 수 있습니다</p>
         </div>
     );
+}
+
+/** Decision 55: the redeem paragraph only for an offering with redeem items (its RedeemManager's
+ *  RedeemableCreated log, the read the redeem page uses). */
+function RedeemNote({offering}: {offering: `0x${string}`}) {
+    const rm = useReadContract({address: ADDR.factory, abi: MapaeFactoryAbi, functionName: "redeemManagerOf", args: [offering]});
+    const m = rm.data as `0x${string}` | undefined;
+    const has = m && m !== "0x0000000000000000000000000000000000000000";
+    const logs = useEventLogs(has ? m : undefined, REDEEMABLE_CREATED);
+    if (!logs.data || logs.data.length === 0) return null;
+    return <p className="m-0">{copy.offering.aboutRedeem}</p>;
 }
