@@ -1,0 +1,25 @@
+{
+  "buybackVault": "0x3Ed11f7Bcc36B3603d51736652884800daa2f54c",
+  "chainId": 91342,
+  "deployBlock": 41506506,
+  "deployer": "0x45D52d167d22970f69dCd127dFc38D875A29EFb0",
+  "dojangAnyOf": "0x87326FbbF76e724bA2bA954dAc04c3B939999f84",
+  "feeRouter": "0xC8EF125aa945aF92144ECadc39CeE1a0b7415a70",
+  "mapaeFactory": "0x3b1D679d6CFA5f2e92832aFfBf516319204D767f",
+  "membershipTokenDeployer": "0x9F011858B85b93a73330B56319Dc76a6f3255279",
+  "mockKRW": "0x74eC9141afAd51F346BA5B841Ba93D573e8786fD",
+  "offeringDeployer": "0x08c51863170835Cb86a9e214f5B0b13F0380086b",
+  "platformOwner": "0x67a29AE83f3320C5E9b81D8a1531dE8FcCBED00C",
+  "poolFactory": "0xf4E7Bf1ACe429400AC23E271E4409D212677e44F",
+  "previousFeeRouter": "0xAB665B7867080cd62Aa316717400f3Cc094E7bd6",
+  "previousMapaeFactory": "0xa9CA0C10Cd6B6398679B578DCE192cb4cAA5bc71",
+  "proceedsBand": {
+    "maxLockCliff": 15552000,
+    "maxLockDuration": 94608000,
+    "maxUpfrontBps": 3000,
+    "minLockDuration": 3600
+  },
+  "proceedsLockDeployer": "0x755568f5BB314DD67c0ffB91Db491d1f63AA97C9",
+  "stackDeployer": "0x5EE46f45af61270b5738e78ccad51b89dAC9F792",
+  "version": "v3.3-L1"
+}

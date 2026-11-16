@@ -1,9 +1,9 @@
-// v3.2-L1 offering indexer (W-T33). Pure logic (no DB, no RPC): log -> row conversion and the run
+// L1 offering indexer (W-T33; W-T40: every L1 factory). Pure logic (no DB, no RPC): log -> row conversion and the run
 // over ranges with injected dependencies. Separate cursor row from L0 (L1_INDEXER_STATE_ID in db.ts);
 // runs after L0 in the same cron call and catch-up request.
 //
 // getLogs per range (at most 3, plus address chunks of TRANSFER_CHUNK):
-//   1) the factory's OfferingCreated
+//   1) OfferingCreated of every L1 factory (one call, address list)
 //   2) every known offering (and the ones created in 1) for its 8 events, one topic list
 //   3) every known RedeemManager, Sponsorship and pool (pools listed in 2 included) for
 //      RedeemableCreated, Redeemed, Sponsored and Swapped, one topic list
@@ -42,6 +42,8 @@ export const CHILD_TOPICS: Hex[] = [topicOf(REDEEM_EVENTS, "RedeemableCreated"),
 
 export type OfferingRow = {
     offering: Address;
+    /** the factory that emitted OfferingCreated */
+    factory: Address;
     token: Address;
     creator: Address;
     redeemManager: Address;
@@ -116,16 +118,19 @@ function decode(abi: readonly never[], l: RawLog): {eventName: string; args: Rec
     }
 }
 
-/** OfferingCreated from the factory -> offering rows without name and symbol (read from the token). */
-export function toOfferingRows(logs: readonly RawLog[], factory: string, a: BlockTime, b: BlockTime): Omit<OfferingRow, "name" | "symbol">[] {
+/** OfferingCreated from the L1 factories -> offering rows without name and symbol (read from the
+ *  token). A log from any other address is dropped. */
+export function toOfferingRows(logs: readonly RawLog[], factories: readonly string[], a: BlockTime, b: BlockTime): Omit<OfferingRow, "name" | "symbol">[] {
     const out: Omit<OfferingRow, "name" | "symbol">[] = [];
+    const ok = new Set(factories.map(lc));
     for (const l of logs) {
-        if (!done(l) || lc(l.address) !== lc(factory)) continue;
+        if (!done(l) || !ok.has(lc(l.address))) continue;
         const ev = decode(FACTORY_EVENTS, l);
         if (!ev || ev.eventName !== "OfferingCreated") continue;
         const x = ev.args as Record<string, string>;
         out.push({
             offering: lc(x.offering),
+            factory: lc(l.address),
             token: lc(x.token),
             creator: lc(x.creator),
             redeemManager: lc(x.redeemManager),
@@ -284,7 +289,8 @@ export type L1Deps = {
         tokenNames(tokens: readonly Address[]): Promise<Map<string, {name: string; symbol: string}>>;
     };
     nowMs(): number;
-    factory: string;
+    /** every L1 MapaeFactory (L1_FACTORIES); OfferingCreated is read from all of them in one call */
+    factories: readonly string[];
     deployBlock: bigint;
 };
 
@@ -313,7 +319,7 @@ export async function indexL1Once(deps: L1Deps, opts: IndexOpts): Promise<CronRe
         try {
             const [a, b] = await Promise.all([deps.rpc.blockTime(from), deps.rpc.blockTime(to)]);
             // 1) offerings created in this range (known before their own events are read)
-            const created = toOfferingRows(await deps.rpc.getLogs({fromBlock: from, toBlock: to, address: deps.factory, topics: [OFFERING_CREATED_TOPIC]}), deps.factory, a, b);
+            const created = toOfferingRows(await deps.rpc.getLogs({fromBlock: from, toBlock: to, address: [...deps.factories], topics: [OFFERING_CREATED_TOPIC]}), deps.factories, a, b);
             let names = new Map<string, {name: string; symbol: string}>();
             if (created.length > 0) names = await deps.rpc.tokenNames(created.map((c) => c.token));
             const newRows: OfferingRow[] = created.map((c) => ({...c, name: names.get(c.token)?.name ?? "", symbol: names.get(c.token)?.symbol ?? ""}));

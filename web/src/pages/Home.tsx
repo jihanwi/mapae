@@ -116,7 +116,7 @@ export function computeBurned(o: OfferingInfo): bigint {
 export default function Home() {
     useTitle(DEFAULT_TITLE);
     const {offerings, empty, isLoading, isError, refetch} = useOfferings();
-    const participants = useParticipantCounts(offerings.map((o) => o.address));
+    const participants = useParticipantCounts(offerings);
     // lock length per offering: one multicall over every ProceedsLock in the list
     const locks = offerings.map((o) => o.proceedsLock).filter((l): l is `0x${string}` => !!l);
     const lockReads = useReadContracts({

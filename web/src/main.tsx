@@ -35,7 +35,7 @@ const router = createHashRouter([
             {path: "create", element: <Create />}, // v3 curve creation
             {path: "feed", element: <Feed />}, // trades of followed wallets (decision 53)
             {path: "offerings", element: <Home />}, // legacy fixed-price offerings (was "/")
-            {path: "offerings/new", element: <OfferingNew />}, // W-T34: open a v3.2-L1 offering
+            {path: "offerings/new", element: <OfferingNew />}, // W-T34: open an offering on the current L1 factory
             {path: "offering/:addr", element: <Offering />},
             {path: "membership", element: <Membership />},
             {path: "redeem", element: <Redeem />},

@@ -90,18 +90,25 @@ jobs:
             --from-block "${{ steps.window.outputs.from }}" \
             --allow-empty 1
 
-      # C-T2: once deployments/giwa-sepolia-v3_2_l1.json exists (the v3.2-L1 MapaeFactory is
-      # deployed), also verify its deployers and every offering's children (Offering, token,
-      # RedeemManager, MapaeVesting, optional Sponsorship, ProceedsLock, pool after settle).
-      - name: Verify v3.2-L1 offering children
-        if: ${{ hashFiles('deployments/giwa-sepolia-v3_2_l1.json') != '' }}
-        env:
-          L1_DEPLOYMENT: deployments/giwa-sepolia-v3_2_l1.json
+      # C-T2 / W-T40: every L1 deployment record (deployments/giwa-sepolia-v*_l1.json: v3.2-L1, v3.3-L1,
+      # and any later one without editing this file): verify its deployers and every offering's
+      # children (Offering, token, RedeemManager, MapaeVesting, optional Sponsorship, ProceedsLock,
+      # pool after settle). One record failing does not skip the others; the step fails at the end.
+      - name: Verify L1 offering children (every L1 deployment)
         run: |
-          node script/verify-children.js \
-            --rpc "$RPC_URL" \
-            --verifier-url "$VERIFIER_URL" \
-            --deployment "$L1_DEPLOYMENT" \
-            --factory "$(jq -r .mapaeFactory "$L1_DEPLOYMENT")" \
-            --from-block "${{ steps.window.outputs.from }}" \
-            --allow-empty 1
+          shopt -s nullglob
+          files=(deployments/giwa-sepolia-v*_l1.json)
+          if [ ${#files[@]} -eq 0 ]; then echo "no L1 deployment record"; exit 0; fi
+          failed=0
+          for f in "${files[@]}"; do
+            echo "::group::$f ($(jq -r .version "$f"))"
+            node script/verify-children.js \
+              --rpc "$RPC_URL" \
+              --verifier-url "$VERIFIER_URL" \
+              --deployment "$f" \
+              --factory "$(jq -r .mapaeFactory "$f")" \
+              --from-block "${{ steps.window.outputs.from }}" \
+              --allow-empty 1 || failed=1
+            echo "::endgroup::"
+          done
+          exit $failed

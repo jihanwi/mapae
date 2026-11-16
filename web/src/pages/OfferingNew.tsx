@@ -1,4 +1,4 @@
-// /offerings/new (W-T34, decisions 2, 55, 56, 58): an issuer opens a v3.2-L1 offering in three
+// /offerings/new (W-T34, decisions 2, 55, 56, 58): an issuer opens an offering on the current L1 factory (ADDR_L1) in three
 // steps (조건 -> 공시 -> 확인). Bands come from the chain (guide, proceedsBand, minRaise, FeeRouter
 // L1 table) and from codegen (contract constants); the form never hard-codes a range. The send is
 // simulated first (no wallet prompt on a revert), the deadline is recomputed from the chain time
@@ -9,6 +9,7 @@ import {useAccount, usePublicClient, useReadContract, useReadContracts, useWrite
 import {Abi, BaseError, ContractFunctionRevertedError, parseEventLogs} from "viem";
 import {copy} from "../copy";
 import {ADDR_L1} from "../contracts/addressesV3L1";
+import {activeOfferingOf} from "../lib/l1Factories";
 import {ADDR_V3} from "../contracts/addressesV3";
 import {MapaeFactoryL1Abi, MapaeVestingL1Abi, OfferingL1Abi, ProceedsLockAbi} from "../contracts/abisV3L1";
 import {CurveFactoryAbi, FeeRouterAbi, MembershipTokenV3Abi} from "../contracts/abisV3";
@@ -80,8 +81,10 @@ function useBounds(): {bounds: ChainBounds | null; failed: boolean} {
     };
 }
 
-/** The wallet's offerings that still count for the factory's live cap (MapaeFactory._enforceLiveCap:
- *  every L1/L2 offering except a failed one, i.e. refunding with zero supply). */
+/** The wallet's offerings that still count for the current factory's live cap (MapaeFactory._enforceLiveCap:
+ *  every L1/L2 offering except a failed one, i.e. refunding with zero supply). W-T40: the contract
+ *  counts per factory, so only the current factory (ADDR_L1) is read; an older factory's live
+ *  offering never blocks (lib/l1Factories activeOfferingOf). */
 function useActiveOffering(account: `0x${string}` | undefined): {active: `0x${string}` | null | undefined} {
     const list = useReadContract({
         address: ADDR_L1.mapaeFactory, abi: MapaeFactoryL1Abi, functionName: "offeringsByCreator", args: [account!], chainId: giwaSepolia.id,
@@ -106,14 +109,15 @@ function useActiveOffering(account: `0x${string}` | undefined): {active: `0x${st
     if (!account || !list.data) return {active: undefined};
     if (addrs.length === 0) return {active: null};
     if (!first.data || !second.data) return {active: undefined};
-    for (let i = addrs.length - 1; i >= 0; i--) {
-        const phase = Number(first.data[i * 2]?.result);
-        const supply = second.data[i * 2]?.result as bigint | undefined;
-        const tier = Number(second.data[i * 2 + 1]?.result);
-        const failed = phase === 4 && supply === 0n;
-        if (!failed && tier !== 0) return {active: addrs[i]};
-    }
-    return {active: null};
+    const num = (v: unknown) => (v === undefined ? undefined : Number(v));
+    return {
+        active: activeOfferingOf(addrs.map((address, i) => ({
+            address,
+            phase: num(first.data![i * 2]?.result),
+            totalSupply: second.data![i * 2]?.result as bigint | undefined,
+            tier: num(second.data![i * 2 + 1]?.result),
+        }))),
+    };
 }
 
 /** Revert name of a simulate failure -> Korean text (ko.ts table). */

@@ -28,7 +28,7 @@ export default function Redeem() {
     // decision 55: the catalog only with redeem items, the sponsor panel only with a sponsorship.
     // RedeemManager ids are issuer-chosen with no count view, so items come from RedeemableCreated:
     // the indexer's list plus the browser's read after it (W-T33)
-    const created = useRedeemItems(o?.address, redeemManager);
+    const created = useRedeemItems(o?.address, redeemManager, o?.factory);
     const ids = created.items ?? [];
     // a failed or partial-and-empty read is "unknown": the catalog shows that state instead of hiding
     const unknown = !!redeemManager && (created.state === "error" || (created.state === "partial" && ids.length === 0));
@@ -154,7 +154,7 @@ function SponsorPanel({o, sponsorship}: {o: OfferingInfo; sponsorship: `0x${stri
     const burnBps = useReadContract({address: sponsorship, abi: SponsorshipL1Abi, functionName: "burnShareBps", chainId: giwaSepolia.id});
     // W-T33: the indexer's feed, the browser reads only the blocks after it
     const feed = useOfferingHistory<SponsorItem>({
-        offering: o.address, feed: "sponsors", address: sponsorship, eventSig: SPONSORED, fromApi: sponsorFromApi, fromLog: sponsorFromLog,
+        offering: o.address, factory: o.factory, feed: "sponsors", address: sponsorship, eventSig: SPONSORED, fromApi: sponsorFromApi, fromLog: sponsorFromLog,
     });
 
     const amountWei = useMemo(() => {

@@ -62,7 +62,7 @@ function OfferingView() {
     const o = offerings.find((x) => x.address.toLowerCase() === addr?.toLowerCase());
     const {address: account} = useAccount();
     const {krwBalance, verified} = useOnboarding();
-    const participants = useParticipantCount(o?.address);
+    const participants = useParticipantCount(o?.address, o?.factory);
     const {writeContractAsync} = useWriteContract();
     // W-T37: shared approval step (exact amount, only when short, waits for the new allowance)
     const approval = useApprovalStep({}, copy.offering.approveLabel);
@@ -172,7 +172,7 @@ function OfferingView() {
                     </div>
                     <div className="text-[15px] leading-relaxed text-hanji-100 space-y-4">
                         <p className="m-0">{copy.offering.about(c ? c.name : null, fmt(o.qSale, 2))}</p>
-                        <RedeemNote offering={o.address} redeemManager={o.redeemManager} />
+                        <RedeemNote offering={o.address} redeemManager={o.redeemManager} factory={o.factory} />
                         <VestingNote vesting={o.vesting} />
                     </div>
                     <div className="mt-7 rounded-input px-4 py-3.5 text-[13px] text-hanji-400"
@@ -352,8 +352,8 @@ function SettledPanel({o, account, alloc, claimed, myCommitted, claim}: {
 
 /** Decision 55: the redeem paragraph only for an offering with redeem items (its RedeemManager's
  *  RedeemableCreated log, the read the redeem page uses). */
-function RedeemNote({offering, redeemManager}: {offering: `0x${string}`; redeemManager: `0x${string}` | undefined}) {
-    const {items} = useRedeemItems(offering, redeemManager);
+function RedeemNote({offering, redeemManager, factory}: {offering: `0x${string}`; redeemManager: `0x${string}` | undefined; factory: `0x${string}`}) {
+    const {items} = useRedeemItems(offering, redeemManager, factory);
     if (!items || items.length === 0) return null;
     return <p className="m-0">{copy.offering.aboutRedeem}</p>;
 }

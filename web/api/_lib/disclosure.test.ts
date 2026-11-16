@@ -22,6 +22,8 @@ import {
     versionPath,
 } from "./disclosureHandler.js";
 import type {Store} from "./handler.js";
+import {isOfferingOfAny} from "./chain.js";
+import {L1_FACTORIES} from "../../src/contracts/addressesV3L1.js";
 
 const issuer = privateKeyToAccount("0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80");
 const other = privateKeyToAccount("0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d");
@@ -165,6 +167,28 @@ describe("POST disclosure", () => {
         expect(await handlePostDisclosure(await signedDoc(), {...deps(memStore()), chain: never, sleep: async (ms: number) => void slept.push(ms)})).toEqual({status: 404, body: {error: "not_offering"}});
         expect(calls).toBe(4);
         expect(slept).toEqual([1500, 1500, 1500]);
+    });
+    it("W-T40: an offering of the old or the new L1 factory passes; one neither knows is 404", async () => {
+        const OLD = "0xa9ca0c10cd6b6398679b578dce192cb4caa5bc71";
+        const NEW = "0x3b1d679d6cfa5f2e92832affbf516319204d767f";
+        const NEW_O = "0x00000000000000000000000000000000000000a2";
+        const rm = (f: string, o: string) => `${f}:${o.toLowerCase()}`;
+        const reader = (known: Record<string, string>, calls: string[] = []) => async (f: string, o: string) =>
+            (calls.push(f), known[rm(f.toLowerCase(), o)] ?? "0x0000000000000000000000000000000000000000");
+        const both = {[rm(OLD, OFFERING)]: "0x00000000000000000000000000000000000000b1", [rm(NEW, NEW_O)]: "0x00000000000000000000000000000000000000b2"};
+        // the real factory list from codegen holds both
+        expect(L1_FACTORIES.map((f) => f.mapaeFactory.toLowerCase()).sort()).toEqual([NEW, OLD]);
+        const calls: string[] = [];
+        expect(await isOfferingOfAny(reader(both, calls), OFFERING as `0x${string}`)).toBe(true);
+        expect(await isOfferingOfAny(reader(both, calls), NEW_O as `0x${string}`)).toBe(true);
+        expect(await isOfferingOfAny(reader(both, calls), "0x00000000000000000000000000000000000000ff")).toBe(false);
+        // one read per factory, whatever the offering
+        expect(calls).toHaveLength(6);
+        const via = (known: Record<string, string>) => ({...deps(memStore()), chain: {...chainOf(), isOffering: (x: `0x${string}`) => isOfferingOfAny(reader(known), x)}, sleep: async () => {}});
+        // an old-factory offering saves; the same offering unknown to both factories is 404
+        expect((await handlePostDisclosure(await signedDoc(), via(both))).status).toBe(201);
+        expect((await handlePostDisclosure(await signedDoc(), via({[rm(NEW, OFFERING)]: "0x00000000000000000000000000000000000000b3"}))).status).toBe(201);
+        expect(await handlePostDisclosure(await signedDoc(), via({}))).toEqual({status: 404, body: {error: "not_offering"}});
     });
     it("an offering of another factory is refused", async () => {
         expect(await handlePostDisclosure(await signedDoc(), deps(memStore(), {isOffering: false}))).toEqual({status: 404, body: {error: "not_offering"}});

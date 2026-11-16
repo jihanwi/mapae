@@ -7,7 +7,7 @@
 // POST /api/chain/summary (no body): on-demand catch-up (STATUS 결정 47). Indexes at most one range
 // (9,000 blocks, 8 s budget), at most once per 20 s across all callers (claim on the cursor row);
 // otherwise just answers the current position. 200 {indexedBlock, ran}, 503 on failure, no-store.
-// The same run then indexes one range of the v3.2-L1 offerings (W-T33, own cursor).
+// The same run then indexes one range of the L1 offerings (W-T33, W-T40: every L1 factory, own cursor).
 import {badRequest, chainGet, SUMMARY_CACHE} from "../_lib/chainApi.js";
 import {claimPoke, curveList, ensureSchema, getSql, LIST_MAX, readState, summary} from "../_lib/db.js";
 import {cors, forbiddenOrigin, json} from "../_lib/http.js";
@@ -51,7 +51,7 @@ export async function POST(request: Request): Promise<Response> {
         const r = await handlePoke({
             claim: (now) => claimPoke(sql, now),
             ensureSchema: () => ensureSchema(sql),
-            // L0 then the v3.2-L1 offerings (W-T33); an L1 failure is logged, L0's answer stands
+            // L0 then the L1 offerings (W-T33); an L1 failure is logged, L0's answer stands
             index: () => withL1(() => indexOnce(cronDeps(sql), POKE_INDEX_OPTS), () => indexL1Once(l1Deps(sql), POKE_INDEX_OPTS)),
             indexedBlock: async () => (await readState(sql)).indexedBlock,
             nowMs: () => Date.now(),

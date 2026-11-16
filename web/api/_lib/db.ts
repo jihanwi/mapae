@@ -6,6 +6,7 @@ import {neon, NeonQueryFunction} from "@neondatabase/serverless";
 import type {FoldRow} from "./positions.js";
 import type {Interval, KnownCurve, RangeWrite} from "./indexer.js";
 import type {KnownOffering, RangeWriteL1} from "./indexerL1.js";
+import {ADDR_L1, L1_FACTORIES} from "../../src/contracts/addressesV3L1.js";
 
 export type Sql = NeonQueryFunction<false, false>;
 
@@ -16,6 +17,13 @@ export function getSql(): Sql {
     if (!url) throw new Error("DATABASE_URL is not set");
     return neon(url);
 }
+
+/** The only factory the W-T33 indexer read (rows without a factory column value came from it). */
+const L1_V32_FACTORY = (() => {
+    const f = L1_FACTORIES.find((x) => x.version === "v3.2-L1");
+    if (!f || !/^0x[0-9a-fA-F]{40}$/.test(f.mapaeFactory)) throw new Error("v3.2-L1 factory missing from L1_FACTORIES");
+    return f.mapaeFactory.toLowerCase();
+})();
 
 const SCHEMA = [
     `CREATE TABLE IF NOT EXISTS mapae_indexer_state (
@@ -105,7 +113,7 @@ const SCHEMA = [
         PRIMARY KEY (follower, target)
     )`,
     `CREATE INDEX IF NOT EXISTS mapae_follows_target ON mapae_follows (target)`,
-    // W-T33: v3.2-L1 fixed-price offerings (own cursor row L1_INDEXER_STATE_ID). Pool swaps of these
+    // W-T33: L1 fixed-price offerings (own cursor row L1_INDEXER_STATE_ID). Pool swaps of these
     // offerings live in mapae_offering_swaps, never in mapae_trades (L0 aggregates stay L0 only).
     `CREATE TABLE IF NOT EXISTS mapae_offerings (
         offering text PRIMARY KEY,
@@ -157,6 +165,10 @@ const SCHEMA = [
         ts bigint NOT NULL
     )`,
     `CREATE INDEX IF NOT EXISTS mapae_offering_swaps_ob ON mapae_offering_swaps (offering, block DESC)`,
+    // W-T40: the factory of each offering. Rows written before it (W-T33, only the v3.2-L1 factory was
+    // read) get that factory; new rows always carry the emitting factory.
+    `ALTER TABLE mapae_offerings ADD COLUMN IF NOT EXISTS factory text`,
+    `UPDATE mapae_offerings SET factory = '${L1_V32_FACTORY}' WHERE factory IS NULL`,
 ];
 
 export async function ensureSchema(sql: Sql): Promise<void> {
@@ -195,9 +207,28 @@ export async function withSchemaRetry<T>(label: string, run: () => Promise<T>, e
  *  s_after on (tx, log_index); curves and transfers keep DO NOTHING, graduations are idempotent. */
 export const INDEXER_STATE_ID = 33;
 
-/** W-T33: cursor row of the v3.2-L1 offering indexer (starts at ADDR_L1.deployBlock). Separate from
- *  INDEXER_STATE_ID so L0 is never read again; the catch-up throttle stays on the L0 row. */
-export const L1_INDEXER_STATE_ID = 132;
+/** Cursor row of the L1 offering indexer. Separate from INDEXER_STATE_ID so L0 is never read again;
+ *  the catch-up throttle stays on the L0 row. id 132 = W-T33 (v3.2-L1 factory only, left untouched);
+ *  id 133 = W-T40 (every L1 factory). Row 133 starts where no OfferingCreated of the v3.3-L1 factory
+ *  can have been missed (l1Resume): the v3.3-L1 deployment block, or row 132's position when that is
+ *  earlier, or the oldest L1 deployment on an empty database. Blocks row 132 already read are read
+ *  again; every table is keyed (offering, (tx, log_index)) with DO NOTHING and settlements COALESCE,
+ *  so nothing is counted twice. */
+export const L1_INDEXER_STATE_ID = 133;
+export const L1_PREV_STATE_ID = 132;
+
+/** First block of an empty L1 index (no cursor row at all): the oldest L1 deployment. */
+export function l1IndexStart(): bigint {
+    return ADDR_L1.firstBlock;
+}
+
+/** Where the L1 cursor continues. `own`: row 133; `prev`: row 132; `current`: the newest L1
+ *  factory's deployment block. null: no row, start at l1IndexStart(). */
+export function l1Resume(own: bigint | null, prev: bigint | null, current: bigint): bigint | null {
+    if (own !== null) return own;
+    if (prev !== null) return prev < current ? prev : current;
+    return null;
+}
 
 /** Minimum seconds between two on-demand catch-up runs, across all callers. */
 export const POKE_GAP_SEC = 20;
@@ -785,12 +816,16 @@ export async function feed(sql: Sql, wallet: string, factory: string, before: bi
 }
 
 // ---------------------------------------------------------------------------------------------
-// v3.2-L1 offerings (W-T33): indexer writes and /api/chain/offerings queries (lowercase addresses)
+// L1 offerings (W-T33, W-T40): indexer writes and /api/chain/offerings queries (lowercase addresses)
 // ---------------------------------------------------------------------------------------------
 
 export async function readNextBlockL1(sql: Sql): Promise<bigint | null> {
-    const rows = (await sql.query(`SELECT next_block::text AS n FROM mapae_indexer_state WHERE id = $1`, [L1_INDEXER_STATE_ID])) as {n: string}[];
-    return rows[0] ? BigInt(rows[0].n) : null;
+    const rows = (await sql.query(`SELECT id, next_block::text AS n FROM mapae_indexer_state WHERE id = ANY($1::int[])`, [[L1_INDEXER_STATE_ID, L1_PREV_STATE_ID]])) as {id: number; n: string}[];
+    const at = (id: number) => {
+        const r = rows.find((x) => Number(x.id) === id);
+        return r ? BigInt(r.n) : null;
+    };
+    return l1Resume(at(L1_INDEXER_STATE_ID), at(L1_PREV_STATE_ID), L1_FACTORIES[0].deployBlock);
 }
 
 export async function readStateL1(sql: Sql): Promise<{indexedBlock: string | null; indexedTs: string | null}> {
@@ -819,10 +854,10 @@ export async function writeRangeL1(sql: Sql, w: RangeWriteL1): Promise<void> {
     const x = w.swaps;
     await sql.transaction([
         sql.query(
-            `INSERT INTO mapae_offerings (offering, token, creator, redeem_manager, vesting, sponsorship, proceeds_lock, name, symbol, created_block, created_ts)
-             SELECT * FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[], $9::text[], $10::bigint[], $11::bigint[])
+            `INSERT INTO mapae_offerings (offering, token, creator, redeem_manager, vesting, sponsorship, proceeds_lock, name, symbol, created_block, created_ts, factory)
+             SELECT * FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[], $9::text[], $10::bigint[], $11::bigint[], $12::text[])
              ON CONFLICT (offering) DO NOTHING`,
-            [o.map((r) => r.offering), o.map((r) => r.token), o.map((r) => r.creator), o.map((r) => r.redeemManager), o.map((r) => r.vesting), o.map((r) => r.sponsorship), o.map((r) => r.proceedsLock), o.map((r) => r.name), o.map((r) => r.symbol), o.map((r) => r.createdBlock), o.map((r) => r.createdTs)]
+            [o.map((r) => r.offering), o.map((r) => r.token), o.map((r) => r.creator), o.map((r) => r.redeemManager), o.map((r) => r.vesting), o.map((r) => r.sponsorship), o.map((r) => r.proceedsLock), o.map((r) => r.name), o.map((r) => r.symbol), o.map((r) => r.createdBlock), o.map((r) => r.createdTs), o.map((r) => r.factory)]
         ),
         sql.query(
             `UPDATE mapae_offerings AS m SET
@@ -856,6 +891,8 @@ export async function writeRangeL1(sql: Sql, w: RangeWriteL1): Promise<void> {
 
 export type OfferingListRow = {
     offering: string;
+    /** W-T40: the L1 factory that created it (lowercase) */
+    factory: string;
     token: string;
     creator: string;
     redeemManager: string;
@@ -885,7 +922,7 @@ const LAST_COMMITMENT = `
     ORDER BY offering, actor, block DESC, log_index DESC`;
 
 const OFFERING_COLUMNS = `
-    o.offering, o.token, o.creator, o.redeem_manager AS "redeemManager", o.vesting, o.sponsorship, o.proceeds_lock AS "proceedsLock",
+    o.offering, o.factory, o.token, o.creator, o.redeem_manager AS "redeemManager", o.vesting, o.sponsorship, o.proceeds_lock AS "proceedsLock",
     o.name, o.symbol, o.created_block::text AS "createdBlock", o.created_ts::text AS "createdTs",
     (o.settled_block IS NOT NULL) AS settled, o.settled_block::text AS "settledBlock", o.pool,
     COALESCE(c.n, 0)::int AS participants, COALESCE(c.total, 0)::text AS "totalCommitted",
