@@ -37,6 +37,9 @@ jobs:
             web:
               - 'web/**'
               - '.github/workflows/**'
+              # web/api/_lib/verifyArgs.test.ts tests these
+              - 'script/verify-children.js'
+              - 'script/ctorArgs.mjs'
 
   contracts:
     needs: changes
