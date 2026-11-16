@@ -52,6 +52,7 @@ export const en = {
     terms: ko.terms,
     disclosure: ko.disclosure,
     offeringCreate: ko.offeringCreate,
+    refund: ko.refund,
     curve: {
         listTitle: "Tokens",
         listSub: `For the first ${PRIORITY_MINUTES} minutes after launch, only verified wallets can buy. After that, anyone can. When a token sells out, it graduates to a pool in the same transaction.`,

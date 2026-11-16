@@ -7,6 +7,7 @@ import {Medallion, NetError, PrimaryBtn, Skeleton, TextSkeleton} from "../compon
 import {fmt} from "../lib/format";
 import {TIERS, tierIndex, toNextTier} from "../lib/tier";
 import {MembershipTokenV3Abi} from "../contracts/abisV3";
+import {OfferingL1Abi} from "../contracts/abisV3L1";
 import {explorerAddr, giwaSepolia} from "../config/chain";
 import {DEFAULT_TITLE, useTitle} from "../lib/title";
 
@@ -25,6 +26,16 @@ export default function Membership() {
         })),
         query: {enabled: !!address && offerings.length > 0, refetchInterval: 15_000},
     });
+
+    // W-T38: offerings in refund where this wallet still has a commitment to take back (one multicall)
+    const refunding = offerings.filter((o) => o.refunding);
+    const commits = useReadContracts({
+        contracts: refunding.map((o) => ({address: o.address, abi: OfferingL1Abi as Abi, functionName: "committed", args: [address ?? zero], chainId: giwaSepolia.id})),
+        query: {enabled: !!address && refunding.length > 0, refetchInterval: 15_000},
+    });
+    const refundable = refunding
+        .map((o, i) => ({o, amount: commits.data?.[i]?.result as bigint | undefined}))
+        .filter((r): r is {o: OfferingInfo; amount: bigint} => r.amount !== undefined && r.amount > 0n);
 
     // redeem button per offering: only with redeem items or a sponsorship (shown when unknown)
     const peripherals = useRedeemPeripherals();
@@ -47,7 +58,18 @@ export default function Membership() {
     return (
         <div className="max-w-page mx-auto px-4 sm:px-8 pt-8 sm:pt-10 pb-16 sm:pb-20">
             <h1 className="m-0 mb-6 sm:mb-8 text-[24px] sm:text-[28px] font-bold">{copy.membership.title}</h1>
-            {holdings.length === 0 ? <Empty /> : holdings.map((h) => <Holding key={h.o.address} o={h.o} balance={h.balance} canRedeem={canRedeem(h.o)} />)}
+            {refundable.map((r) => {
+                const c = labelOf(r.o);
+                return (
+                    <Link key={r.o.address} to={`/offering/${r.o.address}`} className="block text-hanji-100 mb-4">
+                        <div className="flex items-center justify-between gap-3 flex-wrap bg-ink-800 border border-brass-600 rounded-card px-4 py-4 sm:px-6">
+                            <span className="font-semibold min-w-0 break-words">{c ? `${c.name} ${c.symbol}` : r.o.address}</span>
+                            <span className="text-[13px] text-brass-400 tabular-nums">{copy.refund.canRefund} · {fmt(r.amount, 0)} KRWs →</span>
+                        </div>
+                    </Link>
+                );
+            })}
+            {holdings.length === 0 ? (refundable.length === 0 ? <Empty /> : null) : holdings.map((h) => <Holding key={h.o.address} o={h.o} balance={h.balance} canRedeem={canRedeem(h.o)} />)}
             {SHOW_TIERS && <Ladder holdings={holdings} />}
         </div>
     );

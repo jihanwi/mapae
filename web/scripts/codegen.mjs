@@ -68,7 +68,7 @@ console.log("codegen: abisV3L1.ts + addressesV3L1.ts written");
 // follow the contracts; a missing name fails codegen. Factory bands (guide, proceedsBand, minRaise)
 // are read on chain by the page, not here.
 const CONSTANTS = {
-    Offering: ["MIN_DURATION", "MAX_DURATION", "CANCEL_FREEZE", "MIN_F_BPS", "MAX_F_BPS", "MIN_CREATOR_TOKEN_BPS", "MAX_CREATOR_TOKEN_BPS", "MIN_C_BPS", "MAX_C_BPS", "MAX_SWAP_ROYALTY_BPS", "MAX_SWAP_BURN_BPS"],
+    Offering: ["MIN_DURATION", "MAX_DURATION", "CANCEL_FREEZE", "SETTLE_TIMEOUT", "MIN_F_BPS", "MAX_F_BPS", "MIN_CREATOR_TOKEN_BPS", "MAX_CREATOR_TOKEN_BPS", "MIN_C_BPS", "MAX_C_BPS", "MAX_SWAP_ROYALTY_BPS", "MAX_SWAP_BURN_BPS"],
     MapaeVesting: ["MIN_VESTING_DURATION", "MAX_VESTING_DURATION", "MIN_CLIFF"],
     Sponsorship: ["MAX_BURN_SHARE_BPS"],
 };
