@@ -965,3 +965,9 @@ export async function offeringFeed(sql: Sql, offering: string, feed: OfferingFee
         [offering, kinds, b, OFFERING_FEED_PAGE]
     )) as OfferingFeedRow[];
 }
+
+/** W-T34: whether the L1 indexer has seen a Committed event of this offering (disclosure lock). */
+export async function hasIndexedCommit(sql: Sql, offering: string): Promise<boolean> {
+    const rows = (await sql.query(`SELECT EXISTS (SELECT 1 FROM mapae_offering_events WHERE offering = $1 AND kind = 'commit') AS e`, [offering.toLowerCase()])) as {e: boolean}[];
+    return rows[0]?.e === true;
+}

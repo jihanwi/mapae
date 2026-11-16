@@ -9,6 +9,8 @@ import {MapaeVestingL1Abi, OfferingL1Abi} from "../contracts/abisV3L1";
 import {MockKRWV3Abi} from "../contracts/abisV3";
 import {labelOf, OfferingInfo, useOfferings, useOnboarding, useParticipantCount, useRedeemItems} from "../hooks";
 import {ProceedsPanel} from "../components/ProceedsPanel";
+import {ChainTerms} from "../components/ChainTerms";
+import {DisclosureSection} from "../components/DisclosureSection";
 import {spanText} from "../lib/proceedsText";
 import {Badge, Gauge, Medallion, NetError, PrimaryBtn, SecondaryBtn, Skeleton, TextSkeleton} from "../components/ui";
 import {RunFn, TxButton} from "../components/tx";
@@ -156,7 +158,10 @@ export default function Offering() {
                         style={{background: "rgba(195,154,59,.08)", border: "1px solid rgba(195,154,59,.3)"}}>
                         {copy.offering.allocNote} <a href="https://github.com/jihanwi/mapae/blob/main/script/allocation/README.md" target="_blank" rel="noreferrer">검증 방법 보기</a>
                     </div>
+                    {/* decision 58: chain-fixed terms and the issuer's own document, kept apart */}
+                    <ChainTerms o={o} />
                     <ProceedsPanel o={o} />
+                    <DisclosureSection o={o} />
                 </div>
 
                 {/* 우: 응모 패널 (모바일 최상단 — CTA 우선) */}
