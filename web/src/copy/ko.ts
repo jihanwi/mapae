@@ -81,7 +81,9 @@ export const ko = {
         supplyIfFull: (n: string) => `${n}개 (전량 판매 시)`,
         supplySettled: (n: string) => `${n}개 (정산 확정)`,
         allocation: "배분",
-        allocationValue: (sale: string, issuer: string, lp: string) => `판매 ${sale}% · 발행자 ${issuer}% · 유동성 ${lp}%`,
+        allocationValue: (sale: string, issuer: string, lp: string, burn: string | null) =>
+            `판매 ${sale}% · 발행자 ${issuer}% · 유동성 ${lp}%${burn ? ` · 소각 ${burn}%` : ""}`,
+        allocationNote: "소각 몫은 정산 때 바로 소각돼요",
         vesting: "발행자 몫 베스팅",
         vestingValue: (dur: string, cliff: string | null) => (cliff ? `${dur}에 걸쳐 풀림 · 처음 ${cliff}은 잠김` : `${dur}에 걸쳐 풀림`),
         proceeds: "모금액 지급",

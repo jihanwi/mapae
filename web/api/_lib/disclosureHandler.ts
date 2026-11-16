@@ -161,7 +161,8 @@ export async function handlePostDisclosure(body: unknown, deps: DisclosureDeps):
             console.error("disclosure: storage failed", e);
             return err(503, "temporary");
         }
-        return {status: 201, body: {ok: true, offering, version, sha256, postCommit: record.postCommit, locked: state.locked}};
+        // savedAt: the server's time of this version (the screen shows it without re-reading)
+        return {status: 201, body: {ok: true, offering, version, sha256, postCommit: record.postCommit, locked: state.locked, savedAt}};
     }
 
     if (!state.locked) return err(409, "not_locked");
@@ -177,7 +178,7 @@ export async function handlePostDisclosure(body: unknown, deps: DisclosureDeps):
         console.error("disclosure: storage failed", e);
         return err(503, "temporary");
     }
-    return {status: 201, body: {ok: true, offering, n, sha256}};
+    return {status: 201, body: {ok: true, offering, n, sha256, savedAt}};
 }
 
 export type DisclosureOut = {

@@ -17,6 +17,8 @@ import {useOnboarding} from "../hooks";
 import {clearDraft, loadDraft, saveDraft, useSaveDisclosure} from "../hooks/disclosure";
 import {DisclosureForm} from "../components/DisclosureForm";
 import {DocView} from "../components/DisclosureSection";
+import {allocationText} from "../components/ChainTerms";
+import {allocationBps} from "../lib/offeringMath";
 import {RunFn, TxButton} from "../components/tx";
 import {PrimaryBtn, SecondaryBtn, Skeleton} from "../components/ui";
 import {ChainBounds, checkCreate, createParams, CreateForm, DEFAULT_FORM, deadlineFor, derive, Values} from "../lib/createOffering";
@@ -149,6 +151,11 @@ function Rows({rows}: {rows: [string, string][]}) {
     );
 }
 
+/** "소각 몫은 정산 때 바로 소각돼요" when the allocation leaves a burned share. */
+function BurnNote({v}: {v: Values}) {
+    return allocationBps(v).burn > 0 ? <p className="m-0 mt-3 text-[12px] text-hanji-400">{copy.terms.allocationNote}</p> : null;
+}
+
 const at = (ms: number) => new Date(ms).toLocaleString("ko-KR", {month: "long", day: "numeric", hour: "2-digit", minute: "2-digit"});
 
 /** Terms table shared by the derived box (step 1) and the confirm step (step 3). */
@@ -164,7 +171,7 @@ function termRows(v: Values, b: ChainBounds): [string, string][] {
         [T.minCommit, `${fmt(v.minCommit, 0)} KRWs`],
         [T.period, `${Number(v.durationSec / 3600n)}시간`],
         [t.derived.supply, `${fmt(d.alloc.supply, 2)}${u}`],
-        [T.allocation, T.allocationValue(bpsPct(v.fBps), bpsPct(v.creatorTokenBps), bpsPct(d.lpTokenBps))],
+        [T.allocation, allocationText(v.fBps, v.creatorTokenBps, v.cBps)],
         [t.derived.issuerTokens, `${fmt(d.alloc.creator, 2)}${u}`],
         [t.derived.lpTokens, `${fmt(d.alloc.lp, 2)}${u}`],
         [t.derived.burned, `${fmt(d.alloc.remainder, 2)}${u}`],
@@ -365,6 +372,7 @@ export default function OfferingNew() {
                             <h2 className="m-0 mb-1 text-[15px] font-bold">{t.derived.title}</h2>
                             <p className="m-0 mb-4 text-[12px] text-hanji-400">{t.derived.deadline(at(now + Number(v.durationSec) * 1000))}</p>
                             <Rows rows={termRows(v, bounds)} />
+                            <BurnNote v={v} />
                         </section>
                     )}
                     <PrimaryBtn onClick={() => { setShowAll(true); if (v) setStep(1); }}>{t.next}</PrimaryBtn>
@@ -391,6 +399,7 @@ export default function OfferingNew() {
                         <h2 className="m-0 mb-1 text-[17px] font-bold">{t.confirm.title}</h2>
                         <p className="m-0 mb-4 text-[12px] text-hanji-400">{t.derived.deadline(at(now + Number(v.durationSec) * 1000))}</p>
                         <Rows rows={[[t.fixed.tier, "L1"], [copy.offeringCreate.name, v.name], [copy.offeringCreate.symbol, v.symbol], ...termRows(v, bounds)]} />
+                        <BurnNote v={v} />
                         <h3 className="m-0 mt-5 mb-3 text-[14px] font-bold">{t.fixed.title}</h3>
                         <Rows rows={[
                             [t.fixed.royalty, `${bpsPct(bounds.swapRoyaltyBps)}%`],

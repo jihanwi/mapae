@@ -1,15 +1,16 @@
 // "체인에 고정된 조건" (decision 58, W-T34): every row is read from the offering and its children
-// (one multicall for the offering, its MapaeVesting and ProceedsLock, then the FeeRouter tier). A
-// value that could not be read is left out, never filled in.
+// (one multicall for the offering and its MapaeVesting, then the FeeRouter tier). A value that could
+// not be read is left out, never filled in. The proceeds terms are in ProceedsPanel right below
+// (W-T35: shown once).
 import {useReadContract, useReadContracts} from "wagmi";
 import {Abi} from "viem";
 import {copy} from "../copy";
-import {MapaeVestingL1Abi, OfferingL1Abi, ProceedsLockAbi} from "../contracts/abisV3L1";
+import {MapaeVestingL1Abi, OfferingL1Abi} from "../contracts/abisV3L1";
 import {FeeRouterAbi} from "../contracts/abisV3";
 import {giwaSepolia} from "../config/chain";
 import {OfferingInfo, useOfferingDetailApi} from "../hooks";
 import {fmt} from "../lib/format";
-import {allocationOf} from "../lib/offeringMath";
+import {allocationBps, allocationOf} from "../lib/offeringMath";
 import {bpsPct, spanText} from "../lib/proceedsText";
 
 const OFFERING_FNS = ["minCommit", "walletLimit", "cBps", "creatorTokenBps", "lpTokenBps", "swapRoyaltyBps", "swapBurnBps", "offeringFeeBps", "feeRouter"] as const;
@@ -28,14 +29,12 @@ export function ChainTerms({o}: {o: OfferingInfo}) {
         contracts: [
             ...OFFERING_FNS.map((fn) => ({address: o.address, abi: OfferingL1Abi as Abi, functionName: fn, chainId: giwaSepolia.id})),
             ...(o.vesting ? (["start", "duration", "cliff"] as const).map((fn) => ({address: o.vesting!, abi: MapaeVestingL1Abi as Abi, functionName: fn, chainId: giwaSepolia.id})) : []),
-            ...(o.proceedsLock ? (["start", "duration", "cliff"] as const).map((fn) => ({address: o.proceedsLock!, abi: ProceedsLockAbi as Abi, functionName: fn, chainId: giwaSepolia.id})) : []),
         ],
     });
     const r = reads.data?.map((x) => (x.status === "success" ? x.result : undefined)) ?? [];
     const v = Object.fromEntries(OFFERING_FNS.map((fn, i) => [fn, r[i]])) as Record<(typeof OFFERING_FNS)[number], unknown>;
     let i = OFFERING_FNS.length;
     const vest = o.vesting ? (r.slice(i, (i += 3)) as (bigint | undefined)[]) : [];
-    const lock = o.proceedsLock ? (r.slice(i, (i += 3)) as (bigint | undefined)[]) : [];
     const fees = useReadContract({
         address: v.feeRouter as `0x${string}` | undefined, abi: FeeRouterAbi, functionName: "getFees", args: [o.tier], chainId: giwaSepolia.id,
         query: {enabled: v.feeRouter !== undefined},
@@ -44,7 +43,7 @@ export function ChainTerms({o}: {o: OfferingInfo}) {
     const createdTs = (detail.data?.offering as {createdTs?: string} | undefined)?.createdTs;
 
     const n = (x: unknown) => (x === undefined ? undefined : Number(x));
-    const cBps = n(v.cBps), creatorBps = n(v.creatorTokenBps), lpBps = n(v.lpTokenBps);
+    const cBps = n(v.cBps), creatorBps = n(v.creatorTokenBps);
     const alloc = cBps !== undefined && creatorBps !== undefined ? allocationOf(o.qSale, {fBps: o.fBps, creatorTokenBps: creatorBps, cBps}) : undefined;
     const end = new Date(Number(o.deadline) * 1000).toLocaleString("ko-KR", {month: "long", day: "numeric", hour: "2-digit", minute: "2-digit"});
     const t = copy.terms;
@@ -60,15 +59,10 @@ export function ChainTerms({o}: {o: OfferingInfo}) {
         ...(o.settled
             ? [[t.supply, t.supplySettled(fmt(o.totalSupply, 2))] as [string, string]]
             : alloc ? [[t.supply, t.supplyIfFull(fmt(alloc.supply, 2))] as [string, string]] : []),
-        ...(creatorBps !== undefined && lpBps !== undefined ? [[t.allocation, t.allocationValue(bpsPct(o.fBps), bpsPct(creatorBps), bpsPct(lpBps))] as [string, string]] : []),
+        ...(creatorBps !== undefined && cBps !== undefined ? [[t.allocation, allocationText(o.fBps, creatorBps, cBps)] as [string, string]] : []),
         ...(vest.length === 3 && vest.every((x) => x !== undefined)
             ? [[t.vesting, t.vestingValue(spanText(vest[1]!), vest[2]! > vest[0]! ? spanText(vest[2]! - vest[0]!) : null)] as [string, string]]
             : []),
-        ...(o.proceedsLock
-            ? lock.every((x) => x !== undefined)
-                ? [[t.proceeds, copy.offering.proceedsTerms(bpsPct(o.proceedsUpfrontBps), spanText(lock[1]!)) + (lock[2]! > lock[0]! ? ` · ${copy.offering.proceedsCliff(spanText(lock[2]! - lock[0]!))}` : "")] as [string, string]]
-                : []
-            : [[t.proceeds, copy.offering.proceedsAllUpfront] as [string, string]]),
         [t.refundMode, o.refundMode === 0 ? t.refundAll : t.refundPartial],
         ...(v.offeringFeeBps !== undefined ? [[t.offeringFee, `${bpsPct(n(v.offeringFeeBps)!)}%`] as [string, string]] : []),
         ...(royalty !== undefined && burn !== undefined && fees
@@ -85,7 +79,16 @@ export function ChainTerms({o}: {o: OfferingInfo}) {
             <div className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-2 text-[13px]">
                 {rows.map(([k, val]) => <Row key={k} k={k} v={val} />)}
             </div>
+            {creatorBps !== undefined && cBps !== undefined && allocationBps({fBps: o.fBps, creatorTokenBps: creatorBps, cBps}).burn > 0 && (
+                <p className="m-0 mt-3 text-[12px] text-hanji-400">{t.allocationNote}</p>
+            )}
             {reads.isError && <p className="m-0 mt-3 text-[12px] text-brass-400">{t.readError}</p>}
         </section>
     );
+}
+
+/** "판매 60% · 발행자 20% · 유동성 12% · 소각 8%" (the burned share left out when it is 0). */
+export function allocationText(fBps: number, creatorTokenBps: number, cBps: number): string {
+    const a = allocationBps({fBps, creatorTokenBps, cBps});
+    return copy.terms.allocationValue(bpsPct(a.sale), bpsPct(a.issuer), bpsPct(a.lp), a.burn > 0 ? bpsPct(a.burn) : null);
 }
