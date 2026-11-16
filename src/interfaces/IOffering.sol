@@ -73,6 +73,11 @@ interface IOffering is IPrimaryMarket {
         IFeeRouter.UtilityTier tier; // utility grade (gates + fee schedule)
         address mapaeFactory; // burner registry the pool consults for swapForBurn
         AllocationRecipients recipients;
+        // decision 56: the issuer's share of the proceeds is split at settle into an upfront part
+        // (proceedsUpfrontBps of it) and the rest, sent to `proceedsLock` (a ProceedsLock). A zero
+        // proceedsLock pays the whole issuer share at settle (L0; the factory gives L1/L2 a lock).
+        address proceedsLock;
+        uint16 proceedsUpfrontBps;
     }
 
     // ---------------------------------------------------------------------
@@ -128,6 +133,10 @@ interface IOffering is IPrimaryMarket {
     /// @param emergency False = mode A target missed (enableRefunds),
     ///                  true = settle timeout escape hatch (emergencyRefund).
     event RefundsEnabled(bool emergency);
+
+    /// @notice Proceeds split at settle (decision 56): platform cut, the issuer's upfront part
+    ///         and the part sent to the ProceedsLock (0 and address(0) when there is no lock).
+    event ProceedsDistributed(uint256 platformProceeds, uint256 upfront, uint256 locked, address proceedsLock);
 
     // ---------------------------------------------------------------------
     // Errors

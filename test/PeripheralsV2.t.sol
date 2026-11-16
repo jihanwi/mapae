@@ -10,6 +10,8 @@ import {IFeeRouter} from "../src/interfaces/IFeeRouter.sol";
 import {IRedeemManager} from "../src/interfaces/IRedeemManager.sol";
 import {FeeRouter} from "../src/FeeRouter.sol";
 import {MapaeFactory} from "../src/MapaeFactory.sol";
+import {ProceedsLockDeployer} from "../src/ProceedsLockDeployer.sol";
+import {TEST_PROCEEDS_BAND} from "./utils/ProceedsDefaults.sol";
 import {Offering} from "../src/Offering.sol";
 import {MembershipToken} from "../src/MembershipToken.sol";
 import {MapaePool} from "../src/MapaePool.sol";
@@ -73,7 +75,9 @@ contract PeripheralsV2Test is Test {
                 maxRaise: 500_000_000e18,
                 minWalletLimitBps: 10,
                 maxWalletLimitBps: 3000
-            })
+            }),
+            TEST_PROCEEDS_BAND(),
+            new ProceedsLockDeployer()
         );
         dojang.setVerified(creator, true);
         dojang.setVerified(fan, true);
@@ -98,6 +102,10 @@ contract PeripheralsV2Test is Test {
         cp.sponsorBurnBps = 1000;
         cp.vestingDuration = 1080 days;
         cp.vestingCliff = 180 days;
+        cp.withSponsorship = true;
+        cp.proceedsUpfrontBps = 10_000; // pre-56 expectations: the whole issuer share at settle
+        cp.proceedsLockDuration = 1 hours;
+        cp.proceedsLockCliff = 0;
     }
 
     function _createAndSettleL1() internal {

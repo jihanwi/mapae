@@ -23,6 +23,12 @@
 // (default latest): the RPC rejects ranges over 10,000 blocks ("block range greater than 10000
 // max"). The deployment json defaults to giwa-sepolia-v3_2.json when present (same library).
 //
+// v3.2-L1 (C-T2): a factory that exposes proceedsLockDeployer() emits OfferingCreated with a 4th data
+// word (proceedsLock), its Offering takes (proceedsLock, proceedsUpfrontBps) after recipients, its
+// Sponsorship is optional (zero = skipped) and each L1/L2 offering has a ProceedsLock
+// (beneficiary, start, duration, cliff() - start()). ProceedsLockDeployer is verified with the
+// other deployers. Older factories keep the v3 layout.
+//
 //   node script/verify-children.js --rpc $GIWA_SEPOLIA_RPC_URL --verifier-url $BLOCKSCOUT_API_URL \
 //     --from-block <deployBlock> [--factory <MapaeFactory>] [--curve-factory <CurveFactory>] [--library <addr>]
 //
@@ -121,8 +127,22 @@ function scan(address, eventSig, label) {
     }
     return found;
 }
+// v3.2-L1 factories (C-T2) expose proceedsLockDeployer(): their OfferingCreated carries a 4th data
+// word (proceedsLock, zero for L0) and Offering takes (proceedsLock, proceedsUpfrontBps) after the
+// recipients tuple. Older factories keep the v3 layout.
+function tryCall(to, sig) {
+    try {
+        return call(to, sig);
+    } catch {
+        return undefined;
+    }
+}
+const proceedsLockDeployer = args.factory ? tryCall(args.factory, "proceedsLockDeployer()(address)") : undefined;
+const L1_LAYOUT = proceedsLockDeployer !== undefined;
 const logs = args.factory
-    ? scan(args.factory, "OfferingCreated(address,address,address,address,address,address)", "OfferingCreated")
+    ? L1_LAYOUT
+        ? scan(args.factory, "OfferingCreated(address,address,address,address,address,address,address)", "OfferingCreated")
+        : scan(args.factory, "OfferingCreated(address,address,address,address,address,address)", "OfferingCreated")
     : [];
 const curveLogs = args["curve-factory"]
     ? scan(args["curve-factory"], "CurveCreated(address,address,address,address,uint256,string,string,uint64)", "CurveCreated")
@@ -134,6 +154,10 @@ const curveLogs = args["curve-factory"]
 // (quote, dojang, dev, feeRouter, poolFactory, mapaeFactory, tokenName, tokenSymbol, virtualQuote, priorityWindow).
 const OFFERING_CTOR =
     "constructor((address,address,address,address,string,string,uint256,uint256,uint256,uint256,uint256,uint256,uint16,uint16,uint16,uint16,uint16,uint8,uint256,uint16,address,address,uint8,address,(address,address)))";
+// v3.2-L1: OfferingParams gained (proceedsLock, proceedsUpfrontBps) at the end.
+const OFFERING_L1_CTOR =
+    "constructor((address,address,address,address,string,string,uint256,uint256,uint256,uint256,uint256,uint256,uint16,uint16,uint16,uint16,uint16,uint8,uint256,uint16,address,address,uint8,address,(address,address),address,uint16))";
+const PROCEEDS_LOCK_CTOR = "constructor(address,uint64,uint64,uint64)";
 const TOKEN_CTOR = "constructor(string,string,address,uint256,uint16,address[])";
 const RM_CTOR = "constructor(address,address,address,address,uint8,address)";
 const VESTING_CTOR = "constructor(address,uint64,uint64,uint64,uint8)";
@@ -222,16 +246,22 @@ if (args.factory) {
     await verify(offeringDeployer, "src/OfferingDeployer.sol:OfferingDeployer", "constructor()", [], LIB_FLAGS);
     const stackDeployer = call(args.factory, "stackDeployer()(address)");
     await verify(stackDeployer, "src/StackDeployer.sol:StackDeployer", "constructor()", []);
+    // v3.2-L1: deployed separately and passed to the factory constructor (no args)
+    if (L1_LAYOUT) {
+        await verify(proceedsLockDeployer, "src/ProceedsLockDeployer.sol:ProceedsLockDeployer", "constructor()", []);
+    }
 }
 
 for (const log of logs) {
   try {
     const offering = "0x" + log.topics[2].slice(26);
     const token = "0x" + log.topics[3].slice(26);
-    // data: redeemManager, vesting, sponsorship (3 words)
+    // data: redeemManager, vesting, sponsorship (3 words) [+ proceedsLock on v3.2-L1]; sponsorship
+    // and proceedsLock are zero when not deployed
     const redeemManager = "0x" + log.data.slice(26, 66);
     const vesting = "0x" + log.data.slice(90, 130);
     const sponsorship = "0x" + log.data.slice(154, 194);
+    const proceedsLock = L1_LAYOUT ? "0x" + log.data.slice(218, 258) : ZERO;
 
     // ---- Offering: reconstruct OfferingParams from public views ----
     const paymentToken = call(offering, "paymentToken()(address)");
@@ -268,8 +298,11 @@ for (const log of logs) {
         refundMode, lockDuration, capBps,
         poolFactory, feeRouter, tier, mapaeFactory, [cv, pf],
     ];
+    if (L1_LAYOUT) {
+        params.push(call(offering, "proceedsLock()(address)"), call(offering, "proceedsUpfrontBps()(uint16)"));
+    }
 
-    await verify(offering, "src/Offering.sol:Offering", OFFERING_CTOR, [params], LIB_FLAGS);
+    await verify(offering, "src/Offering.sol:Offering", L1_LAYOUT ? OFFERING_L1_CTOR : OFFERING_CTOR, [params], LIB_FLAGS);
     // T11: capExempt is [creatorVesting] only (platform dropped, reserve gone).
     await verify(token, "src/MembershipToken.sol:MembershipToken", TOKEN_CTOR, [
         name, symbol, offering, lockDuration, capBps, [cv],
@@ -290,13 +323,28 @@ for (const log of logs) {
         creator, vStart, vDuration, vCliffSeconds, tier,
     ]);
 
-    // ---- Sponsorship(token, krw, creator, burnBps, slippageBps, tier, vault) ----
-    const spBurnBps = call(sponsorship, "burnShareBps()(uint16)");
-    const spSlippageBps = call(sponsorship, "maxSlippageBps()(uint16)");
-    const spVault = call(sponsorship, "buybackVault()(address)");
-    await verify(sponsorship, "src/Sponsorship.sol:Sponsorship", SPONSORSHIP_CTOR, [
-        token, paymentToken, creator, spBurnBps, spSlippageBps, tier, spVault,
-    ]);
+    // ---- Sponsorship(token, krw, creator, burnBps, slippageBps, tier, vault): optional on v3.2-L1 ----
+    if (sponsorship !== ZERO) {
+        const spBurnBps = call(sponsorship, "burnShareBps()(uint16)");
+        const spSlippageBps = call(sponsorship, "maxSlippageBps()(uint16)");
+        const spVault = call(sponsorship, "buybackVault()(address)");
+        await verify(sponsorship, "src/Sponsorship.sol:Sponsorship", SPONSORSHIP_CTOR, [
+            token, paymentToken, creator, spBurnBps, spSlippageBps, tier, spVault,
+        ]);
+    }
+
+    // ---- ProceedsLock(beneficiary, start, duration, cliffSeconds): L1/L2 on v3.2-L1 ----
+    // beneficiary = owner(); cliffSeconds = cliff() − start() (as for MapaeVesting)
+    if (proceedsLock !== ZERO) {
+        const plBeneficiary = call(proceedsLock, "owner()(address)");
+        const plStart = num(call(proceedsLock, "start()(uint256)"));
+        const plDuration = num(call(proceedsLock, "duration()(uint256)"));
+        const plCliffAbs = num(call(proceedsLock, "cliff()(uint256)"));
+        const plCliffSeconds = (BigInt(plCliffAbs) - BigInt(plStart)).toString();
+        await verify(proceedsLock, "src/ProceedsLock.sol:ProceedsLock", PROCEEDS_LOCK_CTOR, [
+            plBeneficiary, plStart, plDuration, plCliffSeconds,
+        ]);
+    }
 
     // ---- MapaePool: only exists after settle. ----
     const pool = call(offering, "pool()(address)");

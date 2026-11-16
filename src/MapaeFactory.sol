@@ -12,6 +12,7 @@ import {IBurnerRegistry} from "./interfaces/IBurnerRegistry.sol";
 import {Offering} from "./Offering.sol";
 import {OfferingDeployer} from "./OfferingDeployer.sol";
 import {StackDeployer} from "./StackDeployer.sol";
+import {ProceedsLockDeployer} from "./ProceedsLockDeployer.sol";
 import {MembershipToken} from "./MembershipToken.sol";
 import {RedeemManager} from "./RedeemManager.sol";
 import {MapaeVesting} from "./MapaeVesting.sol";
@@ -45,6 +46,8 @@ contract MapaeFactory is Ownable, IBurnerRegistry {
     error ZeroCurveVirtualQuote();
     error QuoteAlreadyRegistered(address quote);
     error QuoteNotRegistered(address quote);
+    error InvalidProceedsBand();
+    error ProceedsLockOutOfBand();
 
     /// @notice Platform-side allocation recipients wired into every offering.
     struct FeeRecipients {
@@ -59,6 +62,15 @@ contract MapaeFactory is Ownable, IBurnerRegistry {
         uint256 maxRaise;
         uint16 minWalletLimitBps;
         uint16 maxWalletLimitBps;
+    }
+
+    /// @notice Decision 56: allowed range of the issuer-proceeds lock, fixed at deployment (no
+    ///         setter: the owner can never loosen it). L1/L2 offerings must pick values inside it.
+    struct ProceedsBand {
+        uint16 maxUpfrontBps;
+        uint64 minLockDuration;
+        uint64 maxLockDuration;
+        uint64 maxLockCliff;
     }
 
     /// @notice Creator-facing parameters for createOffering. The creator, the
@@ -83,6 +95,10 @@ contract MapaeFactory is Ownable, IBurnerRegistry {
         uint16 sponsorBurnBps; // sponsorship burn share X (0–2000, 기본 1000)
         uint64 vestingDuration; // tier-dependent band
         uint64 vestingCliff; // tier-dependent band
+        bool withSponsorship; // decision 56: deploy a Sponsorship only when the issuer wants one
+        uint16 proceedsUpfrontBps; // decision 56: issuer proceeds paid at settle (L1/L2; L0 must be 0)
+        uint64 proceedsLockDuration; // decision 56: lock length from the deadline (L1/L2; L0 must be 0)
+        uint64 proceedsLockCliff; // decision 56: nothing releases before deadline + cliff (L0 must be 0)
     }
 
     /// @notice Quote asset entry for CurveSale (C1). `curveVirtualQuote` (raw units of the quote)
@@ -104,7 +120,8 @@ contract MapaeFactory is Ownable, IBurnerRegistry {
         address indexed token,
         address redeemManager,
         address vesting,
-        address sponsorship
+        address sponsorship,
+        address proceedsLock
     );
     event GuideUpdated(
         uint256 minPrice,
@@ -123,6 +140,9 @@ contract MapaeFactory is Ownable, IBurnerRegistry {
     OfferingDeployer public immutable offeringDeployer;
     /// @notice Holds the RedeemManager/Vesting/Sponsorship creation bytecode.
     StackDeployer public immutable stackDeployer;
+    /// @notice Decision 56: creates each L1/L2 offering's ProceedsLock (deployed separately to keep
+    ///         this contract's initcode headroom).
+    ProceedsLockDeployer public immutable proceedsLockDeployer;
     /// @notice Global AMM pool factory (one pool per token, D7/D8).
     PoolFactory public immutable poolFactory;
     /// @notice Tiered fee source shared by every offering/pool/redeem.
@@ -131,6 +151,12 @@ contract MapaeFactory is Ownable, IBurnerRegistry {
     BuybackVault public immutable buybackVault;
     /// @notice Hard raise floor forwarded to every offering (invariant 5).
     uint256 public immutable minRaise;
+
+    /// @notice Decision 56 ProceedsBand, immutable (see proceedsBand()).
+    uint16 internal immutable _maxUpfrontBps;
+    uint64 internal immutable _minLockDuration;
+    uint64 internal immutable _maxLockDuration;
+    uint64 internal immutable _maxLockCliff;
 
     /// @notice Sponsorship burn-buy slippage tolerance vs spot (§8-B ②).
     uint16 public constant SPONSOR_MAX_SLIPPAGE_BPS = 500;
@@ -143,6 +169,8 @@ contract MapaeFactory is Ownable, IBurnerRegistry {
     mapping(address offering => address redeemManager) public redeemManagerOf;
     mapping(address offering => address vesting) public vestingOf;
     mapping(address offering => address sponsorship) public sponsorshipOf;
+    /// @notice Decision 56: the offering's ProceedsLock (address(0) for L0).
+    mapping(address offering => address proceedsLock) public proceedsLockOf;
     /// @notice Utility grade of a deployed membership token — the gate reference
     ///         for every module (invariant 8 etc.). Set once at creation.
     mapping(address token => IFeeRouter.UtilityTier) public tokenTier;
@@ -162,14 +190,25 @@ contract MapaeFactory is Ownable, IBurnerRegistry {
         BuybackVault buybackVault_,
         uint256 minRaise_,
         FeeRecipients memory feeRecipients_,
-        Guide memory guide_
+        Guide memory guide_,
+        ProceedsBand memory proceedsBand_,
+        ProceedsLockDeployer proceedsLockDeployer_
     ) Ownable(platformOwner_) {
         if (
             address(dojang_) == address(0) || address(paymentToken_) == address(0)
                 || address(poolFactory_) == address(0) || address(feeRouter_) == address(0)
                 || address(buybackVault_) == address(0) || feeRecipients_.platform == address(0)
+                || address(proceedsLockDeployer_) == address(0)
         ) revert ZeroAddress();
         if (minRaise_ == 0) revert InvalidGuide();
+        if (
+            proceedsBand_.maxUpfrontBps > 10_000 || proceedsBand_.minLockDuration == 0
+                || proceedsBand_.minLockDuration > proceedsBand_.maxLockDuration
+        ) revert InvalidProceedsBand();
+        _maxUpfrontBps = proceedsBand_.maxUpfrontBps;
+        _minLockDuration = proceedsBand_.minLockDuration;
+        _maxLockDuration = proceedsBand_.maxLockDuration;
+        _maxLockCliff = proceedsBand_.maxLockCliff;
         dojang = dojang_;
         paymentToken = paymentToken_;
         platformOwner = platformOwner_;
@@ -179,10 +218,16 @@ contract MapaeFactory is Ownable, IBurnerRegistry {
         minRaise = minRaise_;
         offeringDeployer = new OfferingDeployer();
         stackDeployer = new StackDeployer();
+        proceedsLockDeployer = proceedsLockDeployer_;
         feeRecipients = feeRecipients_;
         // The global vault is a permanent burner (swapForBurn allow-list).
         isBurner[address(buybackVault_)] = true;
         _setGuide(guide_);
+    }
+
+    /// @notice Decision 56: the immutable proceeds-lock band.
+    function proceedsBand() external view returns (ProceedsBand memory) {
+        return ProceedsBand(_maxUpfrontBps, _minLockDuration, _maxLockDuration, _maxLockCliff);
     }
 
     /// @notice Update the platform guide bands (simple config — the deployed
@@ -211,12 +256,37 @@ contract MapaeFactory is Ownable, IBurnerRegistry {
         // supply) does not count — retrying a failed raise is intended.
         _enforceLiveCap(_offeringsByCreator[msg.sender], cp.tier);
         _checkGuide(cp);
+        _checkProceeds(cp);
 
         MapaeVesting vesting =
             stackDeployer.deployVesting(msg.sender, uint64(cp.deadline), cp.vestingDuration, cp.vestingCliff, cp.tier);
-        Offering o = offeringDeployer.deploy(_buildParams(cp, address(vesting)));
-        redeemManager = _wire(o, cp, address(vesting));
+        // decision 56: L1/L2 lock the issuer's proceeds from the deadline; L0 has no lock
+        address lock = cp.tier == IFeeRouter.UtilityTier.L0
+            ? address(0)
+            : address(
+                proceedsLockDeployer.deploy(
+                    msg.sender, uint64(cp.deadline), cp.proceedsLockDuration, cp.proceedsLockCliff
+                )
+            );
+        Offering o = offeringDeployer.deploy(_buildParams(cp, address(vesting), lock));
+        redeemManager = _wire(o, cp, address(vesting), lock);
         return (address(o), address(o.token()), redeemManager);
+    }
+
+    /// @dev Decision 56: L1/L2 must choose an upfront share and a lock inside the immutable band
+    ///      (cliff never longer than the lock); L0 has no lock and must pass 0, 0, 0 (never ignored).
+    function _checkProceeds(CreateParams calldata cp) internal view {
+        if (cp.tier == IFeeRouter.UtilityTier.L0) {
+            if (cp.proceedsUpfrontBps != 0 || cp.proceedsLockDuration != 0 || cp.proceedsLockCliff != 0) {
+                revert ProceedsLockOutOfBand();
+            }
+            return;
+        }
+        if (
+            cp.proceedsUpfrontBps > _maxUpfrontBps || cp.proceedsLockDuration < _minLockDuration
+                || cp.proceedsLockDuration > _maxLockDuration || cp.proceedsLockCliff > _maxLockCliff
+                || cp.proceedsLockCliff > cp.proceedsLockDuration
+        ) revert ProceedsLockOutOfBand();
     }
 
     /// @dev L1/L2 keep the guide bands; L0 skips them (lightweight curation).
@@ -232,10 +302,18 @@ contract MapaeFactory is Ownable, IBurnerRegistry {
 
     /// @dev Deploy peripherals, record bookkeeping, register the tier + burner,
     ///      and emit. Split out of createOffering to stay under the stack limit.
-    function _wire(Offering o, CreateParams calldata cp, address vesting) internal returns (address) {
+    function _wire(Offering o, CreateParams calldata cp, address vesting, address lock) internal returns (address) {
         MembershipToken t = o.token();
         (RedeemManager rm, Sponsorship sp) = stackDeployer.deployPeripherals(
-            t, paymentToken, msg.sender, cp.sponsorBurnBps, SPONSOR_MAX_SLIPPAGE_BPS, feeRouter, cp.tier, buybackVault
+            t,
+            paymentToken,
+            msg.sender,
+            cp.withSponsorship,
+            cp.sponsorBurnBps,
+            SPONSOR_MAX_SLIPPAGE_BPS,
+            feeRouter,
+            cp.tier,
+            buybackVault
         );
 
         _allOfferings.push(address(o));
@@ -243,11 +321,12 @@ contract MapaeFactory is Ownable, IBurnerRegistry {
         redeemManagerOf[address(o)] = address(rm);
         vestingOf[address(o)] = vesting;
         sponsorshipOf[address(o)] = address(sp);
+        proceedsLockOf[address(o)] = lock;
         tokenTier[address(t)] = cp.tier;
-        // Each Sponsorship is a burner (swapForBurn allow-list).
-        isBurner[address(sp)] = true;
+        // Each Sponsorship is a burner (swapForBurn allow-list); none without a sponsorship.
+        if (address(sp) != address(0)) isBurner[address(sp)] = true;
 
-        emit OfferingCreated(msg.sender, address(o), address(t), address(rm), vesting, address(sp));
+        emit OfferingCreated(msg.sender, address(o), address(t), address(rm), vesting, address(sp), lock);
         return address(rm);
     }
 
@@ -273,7 +352,7 @@ contract MapaeFactory is Ownable, IBurnerRegistry {
 
     /// @dev Assemble OfferingParams. Split out to keep createOffering under the
     ///      stack-depth limit. No platform token share is passed (decision 21).
-    function _buildParams(CreateParams calldata cp, address vesting)
+    function _buildParams(CreateParams calldata cp, address vesting, address lock)
         internal
         view
         returns (IOffering.OfferingParams memory p)
@@ -303,6 +382,8 @@ contract MapaeFactory is Ownable, IBurnerRegistry {
         p.tier = cp.tier;
         p.mapaeFactory = address(this);
         p.recipients = IOffering.AllocationRecipients({creatorVesting: vesting, platform: feeRecipients.platform});
+        p.proceedsLock = lock;
+        p.proceedsUpfrontBps = cp.proceedsUpfrontBps;
     }
 
     function allOfferings() external view returns (address[] memory) {

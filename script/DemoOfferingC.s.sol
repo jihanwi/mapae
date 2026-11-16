@@ -82,6 +82,10 @@ contract DemoOfferingC is Script {
         cp.sponsorBurnBps = 1000;
         cp.vestingDuration = 1080 days;
         cp.vestingCliff = 180 days;
+        cp.withSponsorship = true;
+        cp.proceedsUpfrontBps = 3000; // decision 56: 30% at settle, the rest locked
+        cp.proceedsLockDuration = 365 days;
+        cp.proceedsLockCliff = 30 days;
         (address offC, address tokenC,) = factory.createOffering(cp);
         vm.stopBroadcast();
 

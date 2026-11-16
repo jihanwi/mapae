@@ -35,6 +35,7 @@ import {IWETH} from "../src/interfaces/IWETH.sol";
 import {GiwaSepolia} from "../src/Constants.sol";
 import {CurvePresets} from "../src/CurvePresets.sol";
 import {MapaeFactory} from "../src/MapaeFactory.sol";
+import {ProceedsLockDeployer} from "../src/ProceedsLockDeployer.sol";
 import {CurveFactory} from "../src/CurveFactory.sol";
 import {CurveSale} from "../src/CurveSale.sol";
 import {PoolFactory} from "../src/PoolFactory.sol";
@@ -158,7 +159,11 @@ contract DeployV3 is Script {
             d.buybackVault,
             MIN_RAISE,
             MapaeFactory.FeeRecipients({platform: d.treasury}),
-            guide
+            guide,
+            MapaeFactory.ProceedsBand({
+                maxUpfrontBps: 3000, minLockDuration: 1 hours, maxLockDuration: 1095 days, maxLockCliff: 180 days
+            }),
+            new ProceedsLockDeployer()
         );
     }
 

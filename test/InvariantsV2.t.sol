@@ -9,6 +9,8 @@ import {IFeeRouter} from "../src/interfaces/IFeeRouter.sol";
 import {IRedeemManager} from "../src/interfaces/IRedeemManager.sol";
 import {FeeRouter} from "../src/FeeRouter.sol";
 import {MapaeFactory} from "../src/MapaeFactory.sol";
+import {ProceedsLockDeployer} from "../src/ProceedsLockDeployer.sol";
+import {TEST_PROCEEDS_BAND} from "./utils/ProceedsDefaults.sol";
 import {Offering} from "../src/Offering.sol";
 import {OfferingDeployer} from "../src/OfferingDeployer.sol";
 import {MembershipToken} from "../src/MembershipToken.sol";
@@ -68,7 +70,9 @@ contract InvariantsV2Test is Test {
                 maxRaise: 500_000_000e18,
                 minWalletLimitBps: 10,
                 maxWalletLimitBps: 3000
-            })
+            }),
+            TEST_PROCEEDS_BAND(),
+            new ProceedsLockDeployer()
         );
         dojang.setVerified(creator, true);
         dojang.setVerified(fan, true);
@@ -101,6 +105,10 @@ contract InvariantsV2Test is Test {
         cp.sponsorBurnBps = 1000;
         cp.vestingDuration = l0 ? 120 days : 1080 days;
         cp.vestingCliff = l0 ? 0 : 180 days;
+        cp.withSponsorship = true;
+        cp.proceedsUpfrontBps = l0 ? 0 : 10_000; // decision 56 (L0: 0, 0, 0)
+        cp.proceedsLockDuration = l0 ? 0 : 1 hours;
+        cp.proceedsLockCliff = 0;
     }
 
     function _create(IFeeRouter.UtilityTier tier) internal returns (Offering o, MembershipToken t) {
@@ -389,6 +397,43 @@ contract InvariantsV2Test is Test {
         // Platform proceeds used the 7.5% snapshot, not the new 10%.
         assertEq(krw.balanceOf(platform), WALLET_LIMIT * 750 / 10_000);
         t; // silence unused
+    }
+
+    // ==================================================================
+    // decision 56: the raise is fully accounted for at settle, with the issuer-proceeds lock
+    // ==================================================================
+
+    function testFuzz_Inv56_ProceedsConservedWithLock(uint16 upfrontBps, bool l0) public {
+        upfrontBps = uint16(bound(upfrontBps, 0, 10_000));
+        IFeeRouter.UtilityTier tier = l0 ? IFeeRouter.UtilityTier.L0 : IFeeRouter.UtilityTier.L1;
+        MapaeFactory.CreateParams memory cp = _cp(tier);
+        if (!l0) {
+            cp.proceedsUpfrontBps = upfrontBps;
+            cp.proceedsLockDuration = 180 days;
+            cp.proceedsLockCliff = 30 days;
+        }
+        vm.prank(creator);
+        (address oa,,) = factory.createOffering(cp);
+        Offering o = Offering(oa);
+        address lock = o.proceedsLock();
+        assertEq(lock == address(0), l0, "lock only for L1/L2");
+        uint256 creBefore = krw.balanceOf(creator);
+        uint256 platBefore = krw.balanceOf(platform);
+        vm.startPrank(fan);
+        krw.faucet(WALLET_LIMIT);
+        krw.approve(address(o), WALLET_LIMIT);
+        o.commit(WALLET_LIMIT);
+        vm.stopPrank();
+        vm.warp(o.deadline());
+        o.settle(_leaf(fan, 15e18, 0), 15e18, WALLET_LIMIT, bytes32(uint256(1)));
+        uint256 seed = krw.balanceOf(address(o.pool()));
+        uint256 platformGot = krw.balanceOf(platform) - platBefore;
+        uint256 upfront = krw.balanceOf(creator) - creBefore;
+        uint256 locked = lock == address(0) ? 0 : krw.balanceOf(lock);
+        assertEq(platformGot + seed + upfront + locked, WALLET_LIMIT, "platform + seed + upfront + locked == raised");
+        assertLe(platformGot, WALLET_LIMIT * o.offeringFeeBps() / 10_000, "platform cut only");
+        if (l0) assertEq(locked, 0, "L0: everything upfront");
+        else assertEq(upfront, (upfront + locked) * upfrontBps / 10_000, "upfront rounds down, dust locked");
     }
 
     // ==================================================================

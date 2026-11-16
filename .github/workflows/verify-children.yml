@@ -89,3 +89,19 @@ jobs:
             --curve-factory "$(jq -r .curveFactory "$DEPLOYMENT")" \
             --from-block "${{ steps.window.outputs.from }}" \
             --allow-empty 1
+
+      # C-T2: once deployments/giwa-sepolia-v3_2_l1.json exists (the v3.2-L1 MapaeFactory is
+      # deployed), also verify its deployers and every offering's children (Offering, token,
+      # RedeemManager, MapaeVesting, optional Sponsorship, ProceedsLock, pool after settle).
+      - name: Verify v3.2-L1 offering children
+        if: ${{ hashFiles('deployments/giwa-sepolia-v3_2_l1.json') != '' }}
+        env:
+          L1_DEPLOYMENT: deployments/giwa-sepolia-v3_2_l1.json
+        run: |
+          node script/verify-children.js \
+            --rpc "$RPC_URL" \
+            --verifier-url "$VERIFIER_URL" \
+            --deployment "$L1_DEPLOYMENT" \
+            --factory "$(jq -r .mapaeFactory "$L1_DEPLOYMENT")" \
+            --from-block "${{ steps.window.outputs.from }}" \
+            --allow-empty 1
