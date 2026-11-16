@@ -199,6 +199,7 @@ describe("follow (decision 53)", () => {
                 followState: async () => (calls.push("state"), {exists: o.exists ?? false, count: o.count ?? 0}),
                 insertFollow: async (_f, _t, verified) => void (calls.push("insert"), stored.push({verified})),
                 deleteFollow: async () => void calls.push("delete"),
+                afterFollow: async () => (calls.push("after"), {isFollowing: !calls.includes("delete"), targetFollowers: 3, myFollowing: 7}),
             },
             chain: {
                 isVerified: async () => {
@@ -217,7 +218,7 @@ describe("follow (decision 53)", () => {
     }
     it("follows and stores the follower's real-name status (unverified wallets may follow too)", async () => {
         const a = followDeps({verified: true});
-        expect(await handleFollow(await body("follow"), a.deps)).toEqual({status: 200, body: {following: true}});
+        expect(await handleFollow(await body("follow"), a.deps)).toEqual({status: 200, body: {following: true, isFollowing: true, targetFollowers: 3, myFollowing: 7}});
         expect(a.stored).toEqual([{verified: true}]);
         const b = followDeps({verified: false});
         expect((await handleFollow(await body("follow"), b.deps)).status).toBe(200);
@@ -236,13 +237,13 @@ describe("follow (decision 53)", () => {
     });
     it("is idempotent: an existing follow answers 200 and writes nothing", async () => {
         const a = followDeps({exists: true, count: FOLLOW_LIMIT});
-        expect(await handleFollow(await body("follow"), a.deps)).toEqual({status: 200, body: {following: true}});
-        expect(a.calls).toEqual(["state"]);
+        expect(await handleFollow(await body("follow"), a.deps)).toEqual({status: 200, body: {following: true, isFollowing: true, targetFollowers: 3, myFollowing: 7}});
+        expect(a.calls).toEqual(["state", "after"]);
     });
     it("unfollow answers 200 even without a relation", async () => {
         const a = followDeps();
-        expect(await handleFollow(await body("unfollow"), a.deps)).toEqual({status: 200, body: {following: false}});
-        expect(a.calls).toEqual(["delete"]);
+        expect(await handleFollow(await body("unfollow"), a.deps)).toEqual({status: 200, body: {following: false, isFollowing: false, targetFollowers: 3, myFollowing: 7}});
+        expect(a.calls).toEqual(["delete", "after"]);
     });
     it("rejects a signature over another target or another action, and a missing proof", async () => {
         const a = followDeps();
