@@ -1,4 +1,4 @@
-import {formatUnits} from "viem";
+import {formatUnits, getAddress} from "viem";
 
 /** 18-decimals → "1,234,567" (소수점은 유효할 때만, 최대 dp자리). locale: BCP 47 (v3 passes the UI language). */
 export function fmt(wei: bigint, dp = 2, locale = "en-US"): string {
@@ -41,6 +41,16 @@ export function fmtSig(wei: bigint, sig = 4, locale = "en-US"): string {
 }
 
 export const shortAddr = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
+
+/** W-T46: one spelling per wallet in lists that mix chain logs and indexer rows (checksummed, then
+ *  shortened). A value that is not an address is only shortened. */
+export function displayAddr(a: string): string {
+    try {
+        return shortAddr(getAddress(a));
+    } catch {
+        return shortAddr(a);
+    }
+}
 
 /** Max fraction digits of an amount input: every quote asset and token here has 18 decimals. */
 export const AMOUNT_DECIMALS = 18;
