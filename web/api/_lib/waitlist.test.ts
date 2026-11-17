@@ -15,6 +15,9 @@ import {
     WaitlistEnv,
     WaitlistRow,
     waitlistShareHtml,
+    shareImage,
+    SHARE_TITLE,
+    SHARE_DESCRIPTION,
     X_AUTHORIZE,
     X_ME,
     X_SCOPE,
@@ -130,6 +133,22 @@ describe("pure rules", () => {
         expect(h).toContain("/#/waitlist?ref=ABCDEFGH");
         expect(h).not.toContain("vercel.app");
         expect(waitlistShareHtml("https://mapae.fun", null)).toContain('url=/#/waitlist"');
+    });
+    it("W-T49: the large share card, its image only on the origin given (WAITLIST_ORIGIN)", () => {
+        const h = waitlistShareHtml("https://mapae.fun", "ABCDEFGH");
+        expect(h).toContain('<meta name="twitter:card" content="summary_large_image" />');
+        expect(h).toContain('<meta property="og:image" content="https://mapae.fun/og-waitlist.png" />');
+        expect(h).toContain('<meta name="twitter:image" content="https://mapae.fun/og-waitlist.png" />');
+        expect(h).toContain('<meta property="og:image:width" content="1200" />');
+        expect(h).toContain('<meta property="og:image:height" content="630" />');
+        expect(h).toContain('<meta name="twitter:image:alt" content="MAPAE Waitlist" />');
+        expect(h).not.toContain("logo.png");
+        expect(SHARE_TITLE).toBe("MAPAE Waitlist");
+        expect(SHARE_DESCRIPTION).toBe("Everyone starts from the same line.");
+        const other = waitlistShareHtml("https://example.test", "ABCDEFGH");
+        const imgs = [...other.matchAll(/(?:og:image|twitter:image)" content="([^"]+)"/g)].map((m) => m[1]);
+        expect(imgs).toEqual(["https://example.test/og-waitlist.png", "https://example.test/og-waitlist.png"]);
+        expect(shareImage("https://mapae.fun")).toBe("https://mapae.fun/og-waitlist.png");
     });
 });
 
