@@ -39,9 +39,11 @@ export function WaitlistLabel() {
 }
 
 /** The vertically centered column under the bar (the pre-join screen and the notes). */
-export function TeaserStage({children}: {children: React.ReactNode}) {
+/** `hero` (the pre-join screen): sizes and gaps from the .wl-hero rules in index.css (W-T51). */
+export function TeaserStage({children, hero}: {children: React.ReactNode; hero?: boolean}) {
+    const gap = hero ? "wl-hero" : "gap-[26px] sm:gap-[30px]";
     return (
-        <div className="flex-1 flex flex-col items-center justify-center gap-[26px] sm:gap-[30px] px-5 sm:px-6 py-6 sm:pb-10 text-center">
+        <div className={`flex-1 flex flex-col items-center justify-center ${gap} px-5 sm:px-6 py-6 sm:pb-10 text-center`}>
             {children}
         </div>
     );
