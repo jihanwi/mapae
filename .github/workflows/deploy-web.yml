@@ -3,7 +3,8 @@ name: Deploy Web
 on:
   push:
     branches: [main]
-    paths: ["web/**", "deployments/**", ".github/workflows/deploy-web.yml"]
+    # W-T48: GitHub Pages serves only a notice (pages-stub/); the testnet app is not published here.
+    paths: ["pages-stub/**", ".github/workflows/deploy-web.yml"]
   workflow_dispatch:
 
 permissions:
@@ -24,24 +25,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Build
-        working-directory: web
-        env:
-          # GitHub Pages has no functions; metadata is served by the Vercel deployment.
-          VITE_API_BASE: https://mapae-snowy.vercel.app
-        run: |
-          npm ci
-          npm run build
-
       - uses: actions/configure-pages@v5
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: web/dist
+          path: pages-stub
 
       - id: deployment
         uses: actions/deploy-pages@v4
