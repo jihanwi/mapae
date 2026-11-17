@@ -1,4 +1,5 @@
 import {useEffect, useMemo, useState} from "react";
+import {allocationUrl} from "../lib/allocationUrl";
 import {Link, useParams} from "react-router-dom";
 import {useQuery} from "@tanstack/react-query";
 import {useAccount, useReadContracts, useWriteContract} from "wagmi";
@@ -28,7 +29,7 @@ function useAllocation(offering: string | undefined, account: string | undefined
         queryKey: ["alloc", offering, account],
         enabled: !!offering && !!account && !!settled, // 9-e: 정산 전 404 방지
         queryFn: async () => {
-            const res = await fetch(`${import.meta.env.BASE_URL}allocations/${offering}.json`);
+            const res = await fetch(allocationUrl(offering!));
             if (!res.ok) return null;
             const data = (await res.json()) as Alloc;
             const i = data.participants.findIndex((p) => p.toLowerCase() === account!.toLowerCase());

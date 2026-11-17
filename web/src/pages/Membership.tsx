@@ -1,4 +1,5 @@
 import {Link} from "react-router-dom";
+import {allocationUrl} from "../lib/allocationUrl";
 import {useAccount, useReadContracts} from "wagmi";
 import {Abi} from "viem";
 import {useCopy} from "../copy";
@@ -51,7 +52,7 @@ export default function Membership() {
             queryKey: ["allocListed", m.o.address.toLowerCase(), address?.toLowerCase()],
             enabled: !!address,
             queryFn: async (): Promise<boolean | null> => {
-                const r = await fetch(`${import.meta.env.BASE_URL}allocations/${m.o.address}.json`);
+                const r = await fetch(allocationUrl(m.o.address));
                 if (!r.ok) return null; // not published yet: unknown, the row is left out
                 const d = (await r.json()) as {participants?: string[]};
                 return Array.isArray(d.participants) ? d.participants.some((p) => p.toLowerCase() === address!.toLowerCase()) : null;

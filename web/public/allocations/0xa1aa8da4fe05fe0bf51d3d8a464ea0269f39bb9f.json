@@ -1,0 +1,21 @@
+{
+  "price": "10000000000000000000000",
+  "qSale": "500000000000000000000",
+  "seed": "0x5613c3d8dfaefc3bb61102fe339e2c38bc033855231a9ece26bd7bbfcdea1556",
+  "root": "0xca09688a95296fc0c1491c44e9ebed1138ca432adc4dee6f6b548e063792634c",
+  "totalSold": "30000000000000000000",
+  "totalRaised": "300000000000000000000000",
+  "participants": [
+    "0x2d6e234037da0180be8e4b905f3baa6c544b391d"
+  ],
+  "commits": [
+    "300000000000000000000000"
+  ],
+  "allocations": [
+    "30000000000000000000"
+  ],
+  "refunds": [
+    "0"
+  ],
+  "proofs_0": []
+}
