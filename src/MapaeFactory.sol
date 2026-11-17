@@ -9,6 +9,7 @@ import {IOffering} from "./interfaces/IOffering.sol";
 import {IPrimaryMarket} from "./interfaces/IPrimaryMarket.sol";
 import {IFeeRouter} from "./interfaces/IFeeRouter.sol";
 import {IBurnerRegistry} from "./interfaces/IBurnerRegistry.sol";
+import {ISettlerRegistry} from "./interfaces/ISettlerRegistry.sol";
 import {Offering} from "./Offering.sol";
 import {OfferingDeployer} from "./OfferingDeployer.sol";
 import {StackDeployer} from "./StackDeployer.sol";
@@ -35,7 +36,7 @@ import {BuybackVault} from "./BuybackVault.sol";
 ///           (lightweight curation — Dojang + tokenomics bands + raise floor).
 ///         Duration, tokenomics bands and share feasibility are enforced by the
 ///         Offering constructor per tier and propagate from here.
-contract MapaeFactory is Ownable, IBurnerRegistry {
+contract MapaeFactory is Ownable, IBurnerRegistry, ISettlerRegistry {
     error NotVerifiedCreator(address account);
     error ActiveOfferingExists(address creator, address offering);
     error PriceOutOfBand(uint256 price);
@@ -123,6 +124,8 @@ contract MapaeFactory is Ownable, IBurnerRegistry {
         address sponsorship,
         address proceedsLock
     );
+    /// @notice Decision 62: the settle-only address changed (address(0): only the owner settles).
+    event SettlerUpdated(address oldSettler, address newSettler);
     event GuideUpdated(
         uint256 minPrice,
         uint256 maxPrice,
@@ -162,6 +165,10 @@ contract MapaeFactory is Ownable, IBurnerRegistry {
     uint16 public constant SPONSOR_MAX_SLIPPAGE_BPS = 500;
 
     FeeRecipients public feeRecipients;
+    /// @inheritdoc ISettlerRegistry
+    /// @dev Decision 62: may call Offering.settle and nothing else; every offering of this factory
+    ///      reads it at settle time, so setSettler applies to open offerings too.
+    address public settler;
     Guide public guide;
 
     address[] internal _allOfferings;
@@ -192,7 +199,8 @@ contract MapaeFactory is Ownable, IBurnerRegistry {
         FeeRecipients memory feeRecipients_,
         Guide memory guide_,
         ProceedsBand memory proceedsBand_,
-        ProceedsLockDeployer proceedsLockDeployer_
+        ProceedsLockDeployer proceedsLockDeployer_,
+        address settler_
     ) Ownable(platformOwner_) {
         if (
             address(dojang_) == address(0) || address(paymentToken_) == address(0)
@@ -209,6 +217,8 @@ contract MapaeFactory is Ownable, IBurnerRegistry {
         _minLockDuration = proceedsBand_.minLockDuration;
         _maxLockDuration = proceedsBand_.maxLockDuration;
         _maxLockCliff = proceedsBand_.maxLockCliff;
+        settler = settler_;
+        emit SettlerUpdated(address(0), settler_);
         dojang = dojang_;
         paymentToken = paymentToken_;
         platformOwner = platformOwner_;
@@ -230,8 +240,15 @@ contract MapaeFactory is Ownable, IBurnerRegistry {
         return ProceedsBand(_maxUpfrontBps, _minLockDuration, _maxLockDuration, _maxLockCliff);
     }
 
+    /// @notice Decision 62: set or clear (address(0)) the settle-only address.
+    function setSettler(address newSettler) external onlyOwner {
+        emit SettlerUpdated(settler, newSettler);
+        settler = newSettler;
+    }
+
     /// @notice Update the platform guide bands (simple config — the deployed
     ///         contracts themselves remain non-upgradeable).
+
     function setGuide(Guide calldata guide_) external onlyOwner {
         _setGuide(guide_);
     }
@@ -335,14 +352,18 @@ contract MapaeFactory is Ownable, IBurnerRegistry {
     ///      L1 raise (L0→L1 upsell funnel). L0 create needs liveL0 < 3; L1/L2
     ///      create needs liveMembership == 0. Failed offerings (refunding + zero
     ///      supply) don't count in either bucket. Cross-holding is allowed.
+    ///      Decision 63 (v3.4-L1): the membership bucket counts only offerings still Open or
+    ///      Frozen, so a settled (or refunding) L1/L2 offering no longer blocks the next one.
+    ///      The L0 bucket is unchanged (every non-failed L0 counts).
     function _enforceLiveCap(address[] storage prior, IFeeRouter.UtilityTier tier) internal view {
         uint256 liveL0;
         uint256 liveMembership;
         for (uint256 i = 0; i < prior.length; i++) {
             IPrimaryMarket o = IPrimaryMarket(prior[i]);
-            if (o.phase() == IPrimaryMarket.Phase.Refunding && o.token().totalSupply() == 0) continue; // failed
+            IPrimaryMarket.Phase ph = o.phase();
+            if (ph == IPrimaryMarket.Phase.Refunding && o.token().totalSupply() == 0) continue; // failed
             if (tokenTier[address(o.token())] == IFeeRouter.UtilityTier.L0) liveL0++;
-            else liveMembership++;
+            else if (ph == IPrimaryMarket.Phase.Open || ph == IPrimaryMarket.Phase.Frozen) liveMembership++;
         }
         bool overCap = tier == IFeeRouter.UtilityTier.L0 ? liveL0 >= 3 : liveMembership >= 1;
         if (overCap) {
@@ -384,6 +405,7 @@ contract MapaeFactory is Ownable, IBurnerRegistry {
         p.recipients = IOffering.AllocationRecipients({creatorVesting: vesting, platform: feeRecipients.platform});
         p.proceedsLock = lock;
         p.proceedsUpfrontBps = cp.proceedsUpfrontBps;
+        p.settlerRegistry = address(this);
     }
 
     function allOfferings() external view returns (address[] memory) {

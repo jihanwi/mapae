@@ -42,7 +42,8 @@ contract FeeBandL1Test is MapaeFactoryTestBase {
                 maxWalletLimitBps: 3000
             }),
             TESTNET_PROCEEDS_BAND(),
-            new ProceedsLockDeployer()
+            new ProceedsLockDeployer(),
+            address(0) // decision 62: no settler
         );
     }
 

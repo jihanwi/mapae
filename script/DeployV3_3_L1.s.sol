@@ -149,7 +149,8 @@ contract DeployV3_3_L1 is Script {
             MapaeFactory.FeeRecipients({platform: old.feeRecipients()}),
             _guideOf(old),
             old.proceedsBand(),
-            ProceedsLockDeployer(r.proceedsLockDeployer)
+            ProceedsLockDeployer(r.proceedsLockDeployer),
+            address(0) // decision 62: no settler
         );
         vm.stopBroadcast();
         _check(d, old, oldRouter);

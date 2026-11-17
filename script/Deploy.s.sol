@@ -75,7 +75,8 @@ contract Deploy is Script {
             MapaeFactory.ProceedsBand({
                 maxUpfrontBps: 3000, minLockDuration: 1 hours, maxLockDuration: 1095 days, maxLockCliff: 180 days
             }),
-            new ProceedsLockDeployer()
+            new ProceedsLockDeployer(),
+            address(0) // decision 62: no settler
         );
 
         // Stack 3: GIWA-native showcase (live Dojang attestation stack)
@@ -98,7 +99,8 @@ contract Deploy is Script {
             MapaeFactory.ProceedsBand({
                 maxUpfrontBps: 3000, minLockDuration: 1 hours, maxLockDuration: 1095 days, maxLockCliff: 180 days
             }),
-            new ProceedsLockDeployer()
+            new ProceedsLockDeployer(),
+            address(0) // decision 62: no settler
         );
 
         vm.stopBroadcast();

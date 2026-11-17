@@ -59,10 +59,9 @@ contract MapaeFactoryE2ETest is MapaeFactoryTestBase {
         (,,, uint256 claimCount,) = rm.redeemables(1);
         assertEq(claimCount, 1);
 
-        // ---- one live token: creator1 cannot issue again ----
+        // ---- decision 63 (v3.4-L1): a settled L1 offering no longer blocks the next one ----
         vm.warp(1_750_000_000);
         vm.prank(creator);
-        vm.expectRevert(abi.encodeWithSelector(MapaeFactory.ActiveOfferingExists.selector, creator, address(offering)));
         factory.createOffering(defaultCreateParams());
 
         // ---- creator2: mode A failure → slot freed → re-issue succeeds ----

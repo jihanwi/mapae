@@ -77,7 +77,8 @@ contract PeripheralsV2Test is Test {
                 maxWalletLimitBps: 3000
             }),
             TEST_PROCEEDS_BAND(),
-            new ProceedsLockDeployer()
+            new ProceedsLockDeployer(),
+            address(0) // decision 62: no settler
         );
         dojang.setVerified(creator, true);
         dojang.setVerified(fan, true);

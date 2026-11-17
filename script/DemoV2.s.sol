@@ -93,7 +93,8 @@ contract DemoV2 is Script {
             MapaeFactory.ProceedsBand({
                 maxUpfrontBps: 3000, minLockDuration: 1 hours, maxLockDuration: 1095 days, maxLockCliff: 180 days
             }),
-            new ProceedsLockDeployer()
+            new ProceedsLockDeployer(),
+            address(0) // decision 62: no settler
         );
         address[] memory who = new address[](5);
         who[0] = creator1;

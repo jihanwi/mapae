@@ -21,7 +21,7 @@ contract DeployV3_3_L1Test is Test {
     address internal deployer = makeAddr("deployer");
     address internal treasury = makeAddr("treasury");
 
-    function setUp() public {
+    function setUp() public virtual {
         vm.etch(GiwaSepolia.WETH, address(new TestWETH9()).code);
         v31 = new DeployV3().deploy(deployer, treasury);
         v32 = new DeployV3_2()
