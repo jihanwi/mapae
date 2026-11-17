@@ -1,0 +1,5 @@
+body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #1A1510; color: #F2EAD9; font-family: sans-serif; text-align: center; }
+main { padding: 24px 16px; }
+.mark { font-family: serif; font-size: 22px; font-weight: 700; letter-spacing: 0.16em; margin-bottom: 24px; }
+p { margin: 8px 0; font-size: 15px; }
+a { color: #C39A3B; }
