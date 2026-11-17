@@ -164,8 +164,13 @@ const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ESC[c]);
 /** The app address the share page and /waitlist forward to (ref only when it is a valid code). */
 export const appPath = (ref: string | null) => (isRefCode(ref) ? `/#/waitlist?ref=${ref}` : "/#/waitlist");
 
+/** W-T49: the large share card (web/public/og-waitlist.png, 1200x630), always on the given origin
+ *  (WAITLIST_ORIGIN). */
+export const shareImage = (origin: string) => `${origin}/og-waitlist.png`;
+
 export function waitlistShareHtml(origin: string, code: string | null): string {
     const app = appPath(code);
+    const img = shareImage(origin);
     const page = isRefCode(code) ? shareUrl(origin, code) : `${origin}/waitlist`;
     return `<!doctype html>
 <html lang="en">
@@ -179,11 +184,14 @@ export function waitlistShareHtml(origin: string, code: string | null): string {
 <meta property="og:title" content="${esc(SHARE_TITLE)}" />
 <meta property="og:description" content="${esc(SHARE_DESCRIPTION)}" />
 <meta property="og:url" content="${esc(page)}" />
-<meta property="og:image" content="${esc(`${origin}/logo.png`)}" />
-<meta name="twitter:card" content="summary" />
+<meta property="og:image" content="${esc(img)}" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="${esc(SHARE_TITLE)}" />
 <meta name="twitter:description" content="${esc(SHARE_DESCRIPTION)}" />
-<meta name="twitter:image" content="${esc(`${origin}/logo.png`)}" />
+<meta name="twitter:image" content="${esc(img)}" />
+<meta name="twitter:image:alt" content="${esc(SHARE_TITLE)}" />
 <meta http-equiv="refresh" content="0;url=${esc(app)}" />
 </head>
 <body>

@@ -1021,19 +1021,16 @@ export const ko = {
     },
     // W-T43: waitlist (/waitlist) and its privacy notice (/privacy)
     waitlist: {
-        eyebrow: "웨이트리스트",
-        title: "모두가 같은 출발선에서 시작하는 런치패드",
-        sub: "메인넷이 열리면 줄 선 순서대로 먼저 알려 드려요",
-        point1: "첫 10분은 실명 지갑만 사요",
-        point2: "Dev도 같은 커브에서 사요. 공짜 물량은 없어요",
-        point3: "정가 공모는 먼저 똑같이 나누고 나머지는 추첨해요",
+        /** W-T49: an English label on both languages */
+        eyebrow: "WAITLIST",
         cta: "X로 줄 서기",
         position: (n: string) => `${n}번째로 줄 섰어요`,
         referrals: (k: number) => `내 링크로 줄 선 사람 ${k}명`,
         referralHint: "내 링크로 한 명이 줄 설 때마다 순번이 올라가요",
         copyLink: "링크 복사",
         shareX: "X에 공유",
-        shareText: "@MapaeGiwa 웨이트리스트에 줄 섰어요. 모두가 같은 출발선에서 시작하는 런치패드.",
+        /** W-T49: one English post whatever the screen language */
+        shareText: "Everyone starts from the same line. I'm in. @MapaeGiwa",
         walletTitle: "지갑 연결하기 (선택)",
         walletHint: "서명만 해요. 트랜잭션은 보내지 않아요",
         walletTaken: "이미 다른 계정에 연결된 지갑이에요",
@@ -1056,7 +1053,7 @@ export const ko = {
         soon: "곧 열려요",
         // not in the ticket's table (screen states)
         readError: "잠시 뒤 다시 시도해 주세요",
-        myLink: "내 링크",
+        emailAdd: "이메일 추가",
         walletConnect: "지갑 연결",
         walletSign: "서명하고 연결",
         walletLinked: (w: string) => `연결된 지갑 ${w}`,

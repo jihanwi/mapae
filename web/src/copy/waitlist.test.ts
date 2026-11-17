@@ -2,14 +2,22 @@
 import {describe, expect, it} from "vitest";
 import {ko} from "./ko";
 import {en} from "./en";
+import {waitlistShareHtml} from "../../api/_lib/waitlist";
+import indexHtml from "../../index.html?raw";
 
 const texts = (o: Record<string, unknown>): string[] =>
     Object.entries(o).flatMap(([, v]) => (typeof v === "string" ? [v] : typeof v === "function" ? [String((v as (a: unknown) => unknown)("3"))] : []));
 
 describe("waitlist copy (W-T43)", () => {
+    it("W-T49: the teaser keys are gone", () => {
+        for (const k of ["title", "sub", "point1", "point2", "point3", "myLink"]) {
+            expect(k in ko.waitlist, k).toBe(false);
+            expect(k in en.waitlist, k).toBe(false);
+        }
+    });
     it("the ticket's sentences", () => {
-        expect(ko.waitlist.title).toBe("모두가 같은 출발선에서 시작하는 런치패드");
-        expect(en.waitlist.title).toBe("Everyone starts from the same line.");
+        expect(ko.waitlist.eyebrow).toBe("WAITLIST");
+        expect(en.waitlist.eyebrow).toBe("WAITLIST");
         expect(ko.waitlist.cta).toBe("X로 줄 서기");
         expect(en.waitlist.cta).toBe("Join with X");
         expect(ko.waitlist.position("12")).toBe("12번째로 줄 섰어요");
@@ -18,7 +26,10 @@ describe("waitlist copy (W-T43)", () => {
         expect(en.waitlist.referrals(2)).toBe("2 joined through your link");
         expect(ko.waitlist.emailSaved("j***@gmail.com")).toBe("j***@gmail.com 로 알려 드릴게요");
         expect(en.waitlist.emailSaved("j***@gmail.com")).toBe("We'll notify j***@gmail.com");
-        expect(en.waitlist.shareText).toBe("I'm in line for @MapaeGiwa, the launchpad where everyone starts from the same line.");
+        // W-T49: one English post whatever the screen language
+        expect(ko.waitlist.shareText).toBe("Everyone starts from the same line. I'm in. @MapaeGiwa");
+        expect(en.waitlist.shareText).toBe(ko.waitlist.shareText);
+        expect(ko.waitlist.shareText).not.toMatch(/[\u3131-\u318E\uAC00-\uD7A3]/);
         expect(ko.privacy.contact("a@b.co")).toBe("문의: a@b.co");
         expect(en.privacy.contact("a@b.co")).toBe("Contact: a@b.co");
     });
@@ -30,5 +41,35 @@ describe("waitlist copy (W-T43)", () => {
         expect(ko.waitlist.note1).toContain("약속하지 않아요");
         expect(en.waitlist.note1).toContain("not a promise");
         for (const s of [...koAll, ...enAll, ko.waitlist.note1, en.waitlist.note1]) expect(s).not.toMatch(/vercel\.app/);
+    });
+});
+
+describe("W-T49: nothing on the waitlist host describes the product", () => {
+    const FORBIDDEN = [/런치패드/, /launchpad/i, /실명/, /bonding/i, /공모/];
+    const check = (label: string, s: string) => {
+        for (const w of FORBIDDEN) expect(s, `${w} in ${label}`).not.toMatch(w);
+    };
+    it("waitlist, privacy and not-found copy in both languages", () => {
+        for (const c of [ko, en]) {
+            for (const s of [...texts(c.waitlist), ...texts(c.privacy), ...texts(c.route404)]) check("copy", s);
+        }
+    });
+    it("the share page HTML", () => {
+        check("share html", waitlistShareHtml("https://mapae.fun", "ABCDEFGH"));
+        check("share html", waitlistShareHtml("https://mapae.fun", null));
+    });
+    it("index.html", () => {
+        check("index.html", indexHtml);
+        expect(indexHtml).not.toContain("mapae-snowy");
+        expect(indexHtml).toContain('<meta property="og:image" content="https://mapae.fun/og-waitlist.png" />');
+        expect(indexHtml).toContain('<meta name="twitter:image" content="https://mapae.fun/og-waitlist.png" />');
+        expect(indexHtml).toContain('<meta name="twitter:card" content="summary_large_image" />');
+        expect(indexHtml).toContain('<meta property="og:url" content="https://mapae.fun/" />');
+        expect(indexHtml).toContain('<meta property="og:image:width" content="1200" />');
+        expect(indexHtml).toContain('<meta property="og:image:height" content="630" />');
+        expect(indexHtml).toContain("<title>MAPAE</title>");
+        expect(indexHtml).toContain('<meta name="description" content="Waitlist" />');
+        expect(indexHtml).toContain('<meta property="og:title" content="MAPAE Waitlist" />');
+        expect(indexHtml).not.toContain("og:locale");
     });
 });

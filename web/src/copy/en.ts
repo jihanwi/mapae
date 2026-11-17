@@ -1002,19 +1002,16 @@ export const en = {
     },
     // W-T43: waitlist (/waitlist) and its privacy notice (/privacy)
     waitlist: {
-        eyebrow: "Waitlist",
-        title: "Everyone starts from the same line.",
-        sub: "Join the line. We'll tell you first when mainnet opens.",
-        point1: "First 10 minutes: verified people only",
-        point2: "The dev buys on the same curve. No free supply.",
-        point3: "Fixed-price offerings: equal allocation first, then a lottery",
+        /** W-T49: an English label on both languages */
+        eyebrow: "WAITLIST",
         cta: "Join with X",
         position: (n: string) => `You're #${n} in line`,
         referrals: (k: number) => `${k} joined through your link`,
         referralHint: "You move up each time someone joins through your link.",
         copyLink: "Copy link",
         shareX: "Share on X",
-        shareText: "I'm in line for @MapaeGiwa, the launchpad where everyone starts from the same line.",
+        /** W-T49: one English post whatever the screen language */
+        shareText: "Everyone starts from the same line. I'm in. @MapaeGiwa",
         walletTitle: "Link a wallet (optional)",
         walletHint: "Sign a message to link it. No transaction is sent.",
         walletTaken: "This wallet is already linked to another account.",
@@ -1035,7 +1032,7 @@ export const en = {
         logout: "Sign out",
         soon: "Opening soon",
         readError: "Please try again shortly.",
-        myLink: "Your link",
+        emailAdd: "Add email",
         walletConnect: "Connect wallet",
         walletSign: "Sign and link",
         walletLinked: (w: string) => `Linked wallet ${w}`,

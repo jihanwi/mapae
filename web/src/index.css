@@ -37,3 +37,11 @@ button, a, [role="button"] { -webkit-tap-highlight-color: transparent; }
 @media (prefers-reduced-motion: reduce) {
     .shimmer::after { animation: none; }
 }
+
+/* W-T49: waitlist logo rings. --r is the outer ring's diameter: 494px from sm, 322px on a phone but
+   never wider than the screen (minus 16px), so nothing overflows horizontally. The inner ring and the
+   logo keep the design ratios (356/494, 294/494). */
+.wl-rings { --r: min(322px, calc(100vw - 16px)); width: var(--r); height: var(--r); }
+@media (min-width: 640px) { .wl-rings { --r: 494px; } }
+.wl-rings-inner { width: calc(var(--r) * 356 / 494); height: calc(var(--r) * 356 / 494); }
+.wl-rings-logo { height: calc(var(--r) * 294 / 494); }

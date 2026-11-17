@@ -1,42 +1,69 @@
-// W-T45: the shell of /waitlist and /privacy. Logo and wordmark (to /waitlist) and KO / EN only: no
-// app menu, no wallet button, no faucet, no network switch. Wallet linking happens inside the
+// W-T45: the shell of /waitlist and /privacy. The "MAPAE" wordmark (to /waitlist) and KO / EN only:
+// no app menu, no wallet button, no faucet, no network switch. Wallet linking happens inside the
 // waitlist page (a signature needs no particular chain). No link here leads to the testnet app.
+// W-T49: one flat ink-950 background, no border under the bar, text wordmark only.
 import {Link, Navigate, Outlet, useLocation} from "react-router-dom";
 import {useCopy} from "./copy";
 import {LangToggle} from "./components/LangToggle";
-import {Medallion} from "./components/ui";
 import {waitlistTarget} from "./lib/waitlistOnly";
 
+export const LOGO_SRC = `${import.meta.env.BASE_URL}logo.png`;
+
 export function WaitlistShell({children}: {children?: React.ReactNode}) {
-    const tr = useCopy();
     return (
-        <div className="min-h-[100dvh] bg-ink-950 text-hanji-100">
-            <div className="border-b border-ink-700">
-                <div className="max-w-page mx-auto px-4 sm:px-8 min-h-[60px] sm:min-h-[64px] py-2 flex items-center gap-x-3">
-                    <Link to="/waitlist" className="flex items-center gap-2.5 flex-none">
-                        <img src={`${import.meta.env.BASE_URL}logo.png`} alt={tr.nav.logoAlt} className="h-9 w-auto block" />
-                        <span className="font-serif text-[17px] font-bold text-hanji-100" style={{letterSpacing: "0.16em"}}>MAPAE</span>
-                    </Link>
-                    <div className="flex-1" />
-                    <LangToggle />
-                </div>
+        <div className="min-h-[100dvh] bg-ink-950 text-hanji-100 flex flex-col">
+            <div className="px-5 sm:px-10 py-2 flex items-center gap-x-3">
+                <Link
+                    to="/waitlist"
+                    className="min-h-[44px] flex items-center font-serif text-[14px] font-bold text-hanji-400 hover:text-hanji-100"
+                    style={{letterSpacing: "0.32em"}}
+                >
+                    MAPAE
+                </Link>
+                <div className="flex-1" />
+                <LangToggle />
             </div>
-            {children ?? <Outlet />}
+            <main className="flex-1 flex flex-col">{children ?? <Outlet />}</main>
         </div>
     );
 }
 
-/** A centered note under the logo medallion: "Opening soon" (waitlist off on a waitlist-only host)
- *  or "page not found". `toWaitlist` adds a link back to /waitlist, never to the app. */
-export function WaitlistNote({title, note, toWaitlist}: {title: string; note?: string; toWaitlist?: boolean}) {
-    const tr = useCopy();
+/** "WAITLIST": an English label in every language. */
+export function WaitlistLabel() {
+    const t = useCopy().waitlist;
     return (
-        <div className="max-w-[560px] mx-auto px-4 sm:px-8 pt-16 pb-20 text-center">
-            <div className="flex justify-center mb-5"><Medallion char="馬" size={88} dashed /></div>
-            <h1 className="m-0 mb-2 text-[22px] font-bold">{title}</h1>
-            {note && <p className="m-0 mb-6 text-[14px] text-hanji-400">{note}</p>}
-            {toWaitlist && <Link to="/waitlist" className="text-[14px]">{tr.waitlist.eyebrow}</Link>}
+        <p className="m-0 text-[12px] sm:text-[13px] font-semibold text-brass-400" style={{letterSpacing: "0.42em", paddingLeft: "0.42em"}}>
+            {t.eyebrow}
+        </p>
+    );
+}
+
+/** The vertically centered column under the bar (the pre-join screen and the notes). */
+export function TeaserStage({children}: {children: React.ReactNode}) {
+    return (
+        <div className="flex-1 flex flex-col items-center justify-center gap-[26px] sm:gap-[30px] px-5 sm:px-6 py-6 sm:pb-10 text-center">
+            {children}
         </div>
+    );
+}
+
+/** A centered note under the logo: "Opening soon" (waitlist off on a waitlist-only host), a read
+ *  error, or "page not found". `toWaitlist` adds a link back to /waitlist, never to the app. */
+export function WaitlistNote({title, note, toWaitlist, children}: {title: string; note?: string; toWaitlist?: boolean; children?: React.ReactNode}) {
+    return (
+        <TeaserStage>
+            <img src={LOGO_SRC} alt="" aria-hidden="true" className="h-[120px] w-auto block" />
+            <div>
+                <h1 className="m-0 text-[22px] font-bold">{title}</h1>
+                {note && <p className="m-0 mt-2 text-[14px] text-hanji-400">{note}</p>}
+            </div>
+            {toWaitlist && (
+                <Link to="/waitlist" className="min-h-[44px] flex items-center">
+                    <WaitlistLabel />
+                </Link>
+            )}
+            {children}
+        </TeaserStage>
     );
 }
 
