@@ -1048,6 +1048,8 @@ export const ko = {
         denied: "X 로그인이 취소됐어요",
         xError: "X에서 응답을 받지 못했어요. 잠시 뒤 다시 시도해 주세요",
         logout: "로그아웃",
+        /** W-T45: a waitlist-only host while FEATURE_WAITLIST is off */
+        soon: "곧 열려요",
         // not in the ticket's table (screen states)
         readError: "잠시 뒤 다시 시도해 주세요",
         myLink: "내 링크",
