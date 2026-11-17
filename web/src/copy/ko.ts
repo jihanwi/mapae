@@ -56,6 +56,9 @@ export const ko = {
         price: "정가",
         perUnit: "/개",
         participants: (n: number) => `참여 ${n}명`,
+        // W-T47 (결정 61): 환불 상태의 공모
+        atClose: "마감 시점 ",
+        participantsAtClose: (n: number) => `마감 시점 참여 ${n}명`,
         offerPrice: "공모가",
         spotPrice: "현재가",
         burned: (n: string) => `지금까지 ${n}개 소각됨`,
@@ -405,6 +408,7 @@ export const ko = {
         howToVerify: "검증 방법 보기",
         untilDeadline: (left: string) => `마감까지 ${left}`,
         totalPrefix: "총 응모 ",
+        totalPrefixAtClose: "마감 시점 응모 ", // W-T47: 환불 상태
         targetPart: (target: string) => ` / 목표 ${target} KRWs`,
         amountLabel: "응모 금액",
         myStatus: "내 응모 현황",

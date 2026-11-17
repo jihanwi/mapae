@@ -1,4 +1,5 @@
 import {useEffect, useMemo, useState} from "react";
+import {isRefundState} from "../lib/offeringPhase";
 import {allocationUrl} from "../lib/allocationUrl";
 import {Link, useParams} from "react-router-dom";
 import {useQuery} from "@tanstack/react-query";
@@ -124,6 +125,7 @@ function OfferingView() {
     const live = !o.settled && !o.refunding && Number(o.deadline) * 1000 > now;
     const frozen = live && Number(o.deadline) * 1000 - now < 2 * 3600 * 1000;
     const ended = !o.settled && !o.refunding && !live; // P0 2: 마감 후 정산 전
+    const atClose = isRefundState(o); // W-T47: refunds do not lower totalCommitted
     const pctNum = o.raiseTarget > 0n ? Number((o.totalCommitted * 1000n) / o.raiseTarget) / 10 : 0;
     const myCommitted = (myCommit.data as bigint) ?? 0n;
     const wl = (walletLimit.data as bigint) ?? 0n;
@@ -207,8 +209,8 @@ function OfferingView() {
                             <>
                                 <div className="mb-2"><Gauge committed={o.totalCommitted} target={o.raiseTarget} height={10} /></div>
                                 <div className="text-[13px] text-hanji-400 mb-5 tabular-nums">
-                                    {copy.offering.totalPrefix}<span className="text-hanji-100 font-semibold">{fmt(o.totalCommitted, 0)}</span>{copy.offering.targetPart(fmt(o.raiseTarget, 0))}
-                                    {participants !== undefined && <> · {copy.home.participants(participants)}</>}
+                                    {atClose ? copy.offering.totalPrefixAtClose : copy.offering.totalPrefix}<span className="text-hanji-100 font-semibold">{fmt(o.totalCommitted, 0)}</span>{copy.offering.targetPart(fmt(o.raiseTarget, 0))}
+                                    {participants !== undefined && <> · {atClose ? copy.home.participantsAtClose(participants) : copy.home.participants(participants)}</>}
                                     {" · "}<span className={pctNum > 100 ? "text-brass-400 font-semibold" : ""}>{pctNum.toFixed(0)}%</span>
                                 </div>
                             </>

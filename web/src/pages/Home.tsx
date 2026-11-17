@@ -1,4 +1,5 @@
 import {useEffect, useState} from "react";
+import {isRefundState} from "../lib/offeringPhase";
 import {Link} from "react-router-dom";
 import {useReadContracts} from "wagmi";
 import {Abi} from "viem";
@@ -35,6 +36,7 @@ function OfferingCard({o, participants, lockDuration}: {o: OfferingInfo; partici
     const live = !o.settled && !o.refunding && Number(o.deadline) * 1000 > now;
     const frozen = live && Number(o.deadline) * 1000 - now < 2 * 3600 * 1000;
     const ended = !o.settled && !o.refunding && !live; // P0 2-a: 마감 후 정산 전
+    const atClose = isRefundState(o); // W-T47: refunds do not lower totalCommitted
     const pctNum = o.raiseTarget > 0n ? Number((o.totalCommitted * 1000n) / o.raiseTarget) / 10 : 0;
 
     const header = (
@@ -87,7 +89,7 @@ function OfferingCard({o, participants, lockDuration}: {o: OfferingInfo; partici
                 {header}
                 <div className="mb-2"><Gauge committed={o.totalCommitted} target={o.raiseTarget} /></div>
                 <div className="flex justify-between text-[13px] mb-2">
-                    <span className="text-hanji-400 tabular-nums">{fmt(o.totalCommitted, 0)} / {fmt(o.raiseTarget, 0)} KRWs</span>
+                    <span className="text-hanji-400 tabular-nums">{atClose ? copy.home.atClose : ""}{fmt(o.totalCommitted, 0)} / {fmt(o.raiseTarget, 0)} KRWs</span>
                     <span className={`font-semibold ${pctNum > 100 ? "text-brass-400" : "text-hanji-400"}`}>
                         {pctNum.toFixed(0)}%{pctNum > 100 ? ` · ${copy.home.over}` : ""}
                     </span>
@@ -96,7 +98,7 @@ function OfferingCard({o, participants, lockDuration}: {o: OfferingInfo; partici
                 <div className="flex justify-between items-center pt-4 border-t border-ink-700 text-[13px] flex-wrap gap-2">
                     <span className="text-hanji-400">
                         {copy.home.price} <span className="text-hanji-100 font-semibold">{fmt(o.price, 0)} KRWs</span>{copy.home.perUnit}
-                        {participants !== undefined && <> · <span className="whitespace-nowrap">{copy.home.participants(participants)}</span></>}
+                        {participants !== undefined && <> · <span className="whitespace-nowrap">{atClose ? copy.home.participantsAtClose(participants) : copy.home.participants(participants)}</span></>}
                     </span>
                     <span className={`font-semibold tabular-nums ${frozen || countdown(o.deadline, now, copy.offering.deadline).startsWith("D-0") ? "text-brass-400" : "text-hanji-400"}`}>
                         {countdown(o.deadline, now, copy.offering.deadline)}
