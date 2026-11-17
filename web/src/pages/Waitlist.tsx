@@ -134,6 +134,7 @@ function Joined({s, notice}: {s: Extract<WaitlistState, {joined: true}>; notice:
                     <div className="text-[13px] text-hanji-400 mt-1">@{s.username}</div>
                 </div>
             </div>
+            <MyCard code={s.refCode} position={s.position} />
             <section className="bg-ink-900 border border-ink-700 rounded-card p-5 sm:p-7">
                 <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
                     <div className="text-[15px] font-semibold tabular-nums">{t.referrals(s.referrals)}</div>
@@ -156,6 +157,30 @@ function Joined({s, notice}: {s: Extract<WaitlistState, {joined: true}>; notice:
             <div className="flex justify-center">
                 <button className="text-[13px] text-hanji-400 hover:text-hanji-100 min-h-[44px] px-3" onClick={() => void post({action: "logout"})}>{t.logout}</button>
             </div>
+        </div>
+    );
+}
+
+/** W-T52: my line-number card (the image link previews show) and a save link. Not drawn at all
+ *  when the image does not load (no broken-image icon). */
+function MyCard({code, position}: {code: string; position: number}) {
+    const t = useCopy().waitlist;
+    const [failed, setFailed] = useState(false);
+    if (failed) return null;
+    const src = `${API_BASE}/api/waitlist?card=${encodeURIComponent(code)}`;
+    return (
+        <div className="flex flex-col items-center gap-3">
+            <img
+                src={src}
+                alt={`MAPAE Waitlist #${position}`}
+                width={1200}
+                height={630}
+                onError={() => setFailed(true)}
+                className="block w-full h-auto aspect-[1200/630] rounded-card border border-ink-700 bg-ink-950"
+            />
+            <a href={src} download={`mapae-waitlist-${position}.png`} className="text-[13px] min-h-[44px] inline-flex items-center">
+                {t.cardSave}
+            </a>
         </div>
     );
 }

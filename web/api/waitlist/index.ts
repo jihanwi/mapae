@@ -1,7 +1,8 @@
 // /api/waitlist (W-T43): the waitlist with X sign-in. Off unless FEATURE_WAITLIST = "1" (404
 // {"error":"disabled"}). Logic in _lib/waitlistApi.ts; also serves the /waitlist, /waitlist/callback
-// and /w/:code rewrites (vercel.json).
-import {ensureSchema, getSql, joinWaitlist, removeWaitlistEmail, setWaitlistEmail, setWaitlistWallet, waitlistMe, withSchemaRetry} from "../_lib/db.js";
+// and /w/:code rewrites (vercel.json). W-T52: ?card=<code> returns the line-number card PNG.
+import {ensureSchema, getSql, joinWaitlist, removeWaitlistEmail, setWaitlistEmail, setWaitlistWallet, waitlistMe, waitlistPositionByCode, withSchemaRetry} from "../_lib/db.js";
+import {renderCard} from "../_lib/waitlistCard.js";
 import {preflight} from "../_lib/http.js";
 import {handleWaitlist, WaitlistStore} from "../_lib/waitlistApi.js";
 
@@ -14,10 +15,11 @@ function store(): WaitlistStore {
         setWallet: (xid, wallet) => retry("wallet", () => setWaitlistWallet(sql, xid, wallet)),
         setEmail: (xid, email) => retry("email", () => setWaitlistEmail(sql, xid, email)),
         removeEmail: (xid) => retry("email-remove", () => removeWaitlistEmail(sql, xid)),
+        positionByCode: (code) => retry("card", () => waitlistPositionByCode(sql, code)),
     };
 }
 
-const deps = () => ({env: process.env, store, fetch, nowSec: () => Math.floor(Date.now() / 1000)});
+const deps = () => ({env: process.env, store, fetch, nowSec: () => Math.floor(Date.now() / 1000), renderCard});
 
 export const GET = (request: Request) => handleWaitlist(request, deps());
 export const POST = (request: Request) => handleWaitlist(request, deps());
