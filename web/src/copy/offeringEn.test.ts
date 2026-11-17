@@ -182,3 +182,27 @@ describe("pure modules in both languages (W-T41)", () => {
         expect(checkCreate({...f, durationHours: "12", name: ""}, B, en).errors.name).toBe("Required.");
     });
 });
+
+describe("W-T46: Korean offering copy uses 해요체 and the unit 개", () => {
+    const all = OFFERING_KEYS.flatMap((k) => texts((ko as Record<string, unknown>)[k]));
+    it("no unit 장 / 장수", () => {
+        for (const s of all) {
+            expect(s, s).not.toMatch(/ 장(?![가-힣])/);
+            expect(s, s).not.toMatch(/장수/);
+        }
+        expect(ko.offering.allocUnit).toBe(" 개");
+        expect(ko.offering.totalSupplyLine("46")).toBe("총공급 46개, 정산 때 확정, 추가 발행 불가");
+    });
+    it("no 합쇼체 endings", () => {
+        for (const s of all) expect(s, s).not.toMatch(/(습니다|합니다|됩니다)/);
+    });
+});
+
+describe("W-T46: one spelling per wallet in mixed lists", () => {
+    it("displayAddr gives the same text for lowercase and checksummed input", async () => {
+        const {displayAddr} = await import("../lib/format");
+        expect(displayAddr("0x45d52d167d22970f69dcd127dfc38d875a29efb0")).toBe("0x45D5…EFb0");
+        expect(displayAddr("0x45D52d167d22970f69dCd127dFc38D875A29EFb0")).toBe("0x45D5…EFb0");
+        expect(displayAddr("nope")).toBe("nope…nope");
+    });
+});

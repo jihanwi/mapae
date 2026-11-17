@@ -12,7 +12,7 @@ import {bpsPct} from "../lib/proceedsText";
 import {NetError, Skeleton, Stat, TextSkeleton} from "../components/ui";
 import {PriceChart, PricePoint} from "../components/PriceChart";
 import {RunFn, TxButton} from "../components/tx";
-import {fmt, sanitizeAmountInput, shortAddr} from "../lib/format";
+import {displayAddr, fmt, sanitizeAmountInput} from "../lib/format";
 import {computeBurned} from "./Home";
 import {explorerAddr, giwaSepolia} from "../config/chain";
 import {DEFAULT_TITLE, useTitle} from "../lib/title";
@@ -289,14 +289,14 @@ function TradePanel({o}: {o: OfferingInfo}) {
                                             {copy.trade.meBadge}
                                         </span>
                                     )}
-                                    <span className="text-hanji-400 tabular-nums sm:hidden">{shortAddr(a.sender)}</span>
+                                    <span className="text-hanji-400 tabular-nums sm:hidden">{displayAddr(a.sender)}</span>
                                 </span>
                                 <span className="text-hanji-100 tabular-nums text-right">
                                     {a.quoteIn
                                         ? `${fmt(a.amountIn, 0)} KRWs → ${fmt(a.amountOut, 3)}${copy.trade.unit}`
                                         : `${fmt(a.amountIn, 3)}${copy.trade.unit} → ${fmt(a.amountOut, 0)} KRWs`}
                                 </span>
-                                <span className="text-hanji-400 tabular-nums hidden sm:inline">{shortAddr(a.sender)}</span>
+                                <span className="text-hanji-400 tabular-nums hidden sm:inline">{displayAddr(a.sender)}</span>
                             </div>
                         );
                     })}

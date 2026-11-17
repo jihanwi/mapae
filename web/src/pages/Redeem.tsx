@@ -12,7 +12,7 @@ import {LogStateNote} from "../components/LogStateNote";
 import {redeemSections} from "../lib/redeemTab";
 import {Medallion, NetError, Skeleton, TextSkeleton} from "../components/ui";
 import {RunFn, TxButton} from "../components/tx";
-import {fmt, sanitizeAmountInput, shortAddr} from "../lib/format";
+import {displayAddr, fmt, sanitizeAmountInput} from "../lib/format";
 import {giwaSepolia} from "../config/chain";
 import {DEFAULT_TITLE, useTitle} from "../lib/title";
 
@@ -218,7 +218,7 @@ function SponsorPanel({o, sponsorship}: {o: OfferingInfo; sponsorship: `0x${stri
                     return (
                         <div key={i} className="bg-ink-900 rounded-stat px-4 py-3.5 mb-2.5">
                             <div className="flex justify-between text-[13px] mb-1">
-                                <span className="text-hanji-100 tabular-nums">{shortAddr(a.sponsor)}</span>
+                                <span className="text-hanji-100 tabular-nums">{displayAddr(a.sponsor)}</span>
                                 <span className="text-brass-400 font-semibold tabular-nums">{fmt(a.krwValue, 0)} KRWs</span>
                             </div>
                             {a.message && <div className="text-[14px] text-hanji-100 mb-1">“{a.message}”</div>}

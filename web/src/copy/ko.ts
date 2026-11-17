@@ -60,7 +60,7 @@ export const ko = {
         spotPrice: "현재가",
         burned: (n: string) => `지금까지 ${n}개 소각됨`,
         goTrade: "거래하기 →",
-        footnote: "초과 응모 시 전원에게 최소 수량을 먼저 배정하고, 나머지는 추첨으로 보충합니다 · 배정 계산은 누구나 재검증할 수 있습니다",
+        footnote: "초과 응모 시 전원에게 최소 수량을 먼저 배정하고, 나머지는 추첨으로 채워요 · 배정 계산은 누구나 다시 확인할 수 있어요",
         // W-T32: 새 팩토리에 공모가 0건일 때
         emptyTitle: "아직 열린 공모가 없어요",
         emptyNote: "공모가 열리면 여기에 표시돼요",
@@ -339,7 +339,7 @@ export const ko = {
     },
     offering: {
         saleQty: "공모 수량", // C1: 총공급과 분리 표기
-        totalSupplyLine: (s: string) => `총공급 ${s}개, 개설 시점 확정, 추가 발행 불가`,
+        totalSupplyLine: (s: string) => `총공급 ${s}개, 정산 때 확정, 추가 발행 불가`,
         target: "모금 목표",
         committedTotal: "현재 모금액",
         myCommit: "내 응모액",
@@ -412,12 +412,12 @@ export const ko = {
         cancelAll: "전액 취소하기",
         ifMissed: "미달 시",
         myAllocResult: "내 배정 결과",
-        allocUnit: " 장",
+        allocUnit: " 개",
         myCommitShort: "내 응모",
         allocMethod: "배정 방식",
         allocMethodValue: "균등 + 추첨",
         claimWith: (n: string, unit: string, withRefund: boolean) => `배정 받기 — ${n}${unit}${withRefund ? " + 환불" : ""}`,
-        recheckNote: "배정 계산은 Settled 이벤트의 시드로 누구나 재검증할 수 있습니다",
+        recheckNote: "배정 계산은 Settled 이벤트의 시드로 누구나 다시 확인할 수 있어요",
     },
     membership: {
         title: "내 보유",
@@ -458,7 +458,7 @@ export const ko = {
         burnUnit: "개 소각",
         sponsorNote: (pct: string) =>
             `후원액의 ${pct}%로 시장에서 토큰을 매수해 소각하고, 나머지는 발행자에게 전달돼요`,
-        msgPlaceholder: "응원 메시지를 남겨 주세요 (온체인에 기록됩니다)",
+        msgPlaceholder: "응원 메시지를 남겨 주세요 (온체인에 기록돼요)",
         sponsorCta: "후원 보내기",
         approveSponsorCta: "승인 후 후원", // W-T37
         approveRedeemCta: "승인 후 리딤",
@@ -488,7 +488,7 @@ export const ko = {
         feeNote: (total: string, royalty: string, burn: string, lp: string, platform: string) =>
             `수수료 ${total}% = 발행자 ${royalty}% + 소각 ${burn}% + 유동성 ${lp}% + 플랫폼 ${platform}%`,
         history: "거래 히스토리",
-        lpTrust: "유동성은 영구 잠금. LP 지분 전량이 0xdEaD 주소에 있어 누구도 회수할 수 없습니다", // C5
+        lpTrust: "유동성은 영구히 잠겨요. LP 지분 전량이 0xdEaD 주소에 있어 누구도 꺼낼 수 없어요", // C5
         swapCta: "스왑",
         approveLabel: "사용 승인", // W-T37: approval toast label
         amountIn: "수량",
@@ -644,9 +644,9 @@ export const ko = {
         belowMinCommit: (n: string) => `최소 응모 금액은 ${n} KRWs예요`,
         overWalletLimit: "1인당 한도를 초과해요",
         overKrwBalance: "KRWs 잔액보다 많아요. 상단 ‘KRWs 받기’로 더 받을 수 있어요",
-        overTokenBalance: "보유 장수보다 많아요",
+        overTokenBalance: "보유 수량보다 많아요",
         quoteUnavailable: "견적을 불러오지 못했어요",
-        needTokenToRedeem: "보유 장수가 부족해요",
+        needTokenToRedeem: "보유 수량이 부족해요",
     },
     route404: {
         title: "페이지를 찾을 수 없어요",
