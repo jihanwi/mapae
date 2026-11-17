@@ -38,10 +38,22 @@ button, a, [role="button"] { -webkit-tap-highlight-color: transparent; }
     .shimmer::after { animation: none; }
 }
 
-/* W-T49: waitlist logo rings. --r is the outer ring's diameter: 494px from sm, 322px on a phone but
-   never wider than the screen (minus 16px), so nothing overflows horizontally. The inner ring and the
-   logo keep the design ratios (356/494, 294/494). */
-.wl-rings { --r: min(322px, calc(100vw - 16px)); width: var(--r); height: var(--r); }
-@media (min-width: 640px) { .wl-rings { --r: 494px; } }
-.wl-rings-inner { width: calc(var(--r) * 356 / 494); height: calc(var(--r) * 356 / 494); }
-.wl-rings-logo { height: calc(var(--r) * 294 / 494); }
+/* W-T49 / W-T51: the pre-join waitlist hero. Every size comes from here (CSS only, no script).
+   --r  outer ring diameter. Phone: min(322px, 34% of the height, width - 40px). From sm:
+        min(494px, max(38% of the height, height - 400px)), so a 900px window keeps 494px and a short
+        laptop window shrinks until the Join button fits.
+   --g  gap between the hero items: clamp(16px, 3.5% of the height, 30px).
+   The inner ring is 72% of --r and the logo 59.5% of it. Below 560px of height the rings are not
+   drawn and the logo is 120px high. */
+.wl-hero { --r: min(322px, 34dvh, calc(100vw - 40px)); --g: clamp(16px, 3.5dvh, 30px); gap: var(--g); }
+@media (min-width: 640px) { .wl-hero { --r: min(494px, max(38dvh, calc(100dvh - 400px))); } }
+.wl-rings { width: var(--r); height: var(--r); }
+.wl-rings-inner { width: calc(var(--r) * 0.72); height: calc(var(--r) * 0.72); }
+.wl-rings-logo { height: calc(var(--r) * 0.595); }
+@media (max-height: 559.98px) {
+    .wl-hero { padding-top: 8px; }
+    .wl-hero h1 { line-height: 1; }
+    .wl-rings { width: auto; height: auto; }
+    .wl-ring { display: none; }
+    .wl-rings-logo { height: 120px; }
+}

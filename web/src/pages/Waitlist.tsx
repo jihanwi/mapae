@@ -76,11 +76,11 @@ function Join({notice}: {notice: string | null}) {
     const q = new URLSearchParams({action: "start", lang});
     if (isRefCode(ref)) q.set("ref", ref);
     return (
-        <TeaserStage>
+        <TeaserStage hero>
             {notice && <Notice text={notice} />}
             <div className="wl-rings relative flex items-center justify-center flex-none">
-                <div aria-hidden="true" className="absolute inset-0 rounded-full" style={{border: "1px solid rgba(195,154,59,.08)"}} />
-                <div aria-hidden="true" className="wl-rings-inner absolute rounded-full" style={{border: "1px solid rgba(195,154,59,.16)"}} />
+                <div aria-hidden="true" className="wl-ring absolute inset-0 rounded-full" style={{border: "1px solid rgba(195,154,59,.08)"}} />
+                <div aria-hidden="true" className="wl-ring wl-rings-inner absolute rounded-full" style={{border: "1px solid rgba(195,154,59,.16)"}} />
                 <img src={LOGO_SRC} alt="" aria-hidden="true" className="wl-rings-logo relative w-auto block" />
             </div>
             <h1 className="m-0 font-serif text-[36px] sm:text-[52px] font-bold text-hanji-100 leading-tight" style={{letterSpacing: "0.34em", paddingLeft: "0.34em"}}>
