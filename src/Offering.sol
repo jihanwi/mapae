@@ -2,6 +2,7 @@
 pragma solidity ^0.8.26;
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {ISettlerRegistry} from "./interfaces/ISettlerRegistry.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -111,6 +112,9 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
     uint256 public immutable minRaise;
     /// @notice MapaeFactory address, forwarded to the pool as its burner registry.
     address public immutable mapaeFactory;
+    /// @notice Decision 62: asked at settle time for the settle-only address (the factory, so a
+    ///         settler change there reaches this offering). address(0): only the owner settles.
+    ISettlerRegistry public immutable settlerRegistry;
     /// @notice Per-pool creator swap royalty, snapshotted (tier band). The pool's
     ///         platform/LP shares still come from the FeeRouter live.
     uint16 public immutable swapRoyaltyBps;
@@ -236,6 +240,7 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
         // Snapshot the platform proceeds cut — invariant 11 (never re-read).
         offeringFeeBps = p.feeRouter.getFees(p.tier).offeringFeeBps;
         mapaeFactory = p.mapaeFactory;
+        settlerRegistry = ISettlerRegistry(p.settlerRegistry);
         // Snapshot creator swap royalty/burn (same principle as the offering fee).
         swapRoyaltyBps = p.swapRoyaltyBps;
         swapBurnBps = p.swapBurnBps;
@@ -304,9 +309,9 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
     /// @inheritdoc IOffering
     function settle(bytes32 allocationRoot_, uint256 totalSold_, uint256 totalRaised_, bytes32 seed_)
         external
-        onlyOwner
         nonReentrant
     {
+        _checkSettleAuthority();
         if (settled || refunding) revert InvalidPhase(phase());
         if (block.timestamp < deadline) revert DeadlineNotReached();
         // Mode A must go down the refund path when under target.
@@ -439,10 +444,25 @@ contract Offering is IOffering, Ownable, ReentrancyGuard {
     // Refund paths (D3)
     // ---------------------------------------------------------------------
 
+    /// @dev Decision 62: the owner, or the registry's settler at this moment (read live, so a
+    ///      settler change on the factory applies to every open offering). Nothing else is opened
+    ///      to the settler: settle is the only function it may call.
+    function _checkSettleAuthority() internal view {
+        if (msg.sender == owner()) return;
+        if (address(settlerRegistry) != address(0)) {
+            address s = settlerRegistry.settler();
+            if (s != address(0) && msg.sender == s) return;
+        }
+        revert NotSettleAuthority(msg.sender);
+    }
+
     /// @inheritdoc IOffering
+    /// @dev v3.4-L1: an offering nobody committed to (totalCommitted == 0) may start refunds after
+    ///      its deadline in either refund mode, so a partial-mode offering with no commitment ends
+    ///      at once instead of waiting SETTLE_TIMEOUT for emergencyRefund. Otherwise unchanged.
     function enableRefunds() external {
         if (settled || refunding) revert InvalidPhase(phase());
-        if (refundMode != RefundMode.AllOrNothing) revert RefundNotAvailable();
+        if (totalCommitted != 0 && refundMode != RefundMode.AllOrNothing) revert RefundNotAvailable();
         if (block.timestamp < deadline) revert DeadlineNotReached();
         if (totalCommitted >= raiseTarget) revert TargetReached();
         refunding = true;

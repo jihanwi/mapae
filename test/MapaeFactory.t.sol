@@ -44,7 +44,8 @@ abstract contract MapaeFactoryTestBase is OfferingTestBase {
                 maxWalletLimitBps: 3000
             }),
             TEST_PROCEEDS_BAND(),
-            new ProceedsLockDeployer()
+            new ProceedsLockDeployer(),
+            address(0) // decision 62: no settler
         );
         dojang.setVerified(creator, true);
         dojang.setVerified(creator2, true);
@@ -222,7 +223,7 @@ contract MapaeFactoryTest is MapaeFactoryTestBase {
         factory.createOffering(defaultCreateParams());
     }
 
-    function test_OneLive_BlocksAfterSuccessfulSettle() public {
+    function test_OneLive_AllowsAfterSuccessfulSettle() public {
         (Offering first,,) = createAs(creator);
         commitAs(first, fan1, WALLET_LIMIT);
         address fan2 = makeAddr("fan2");
@@ -234,9 +235,9 @@ contract MapaeFactoryTest is MapaeFactoryTestBase {
         vm.warp(block.timestamp + 24 hours);
         first.settle(leafFor(fan1, 30e18, 0), 100e18, 1_000_000e18, bytes32(0));
 
-        // live token now exists → blocked forever (M2 scope: no sunset rule)
+        // decision 63 (v3.4-L1): only Open/Frozen membership offerings count, so a settled one
+        // no longer blocks the next L1 offering (before v3.4-L1 this reverted ActiveOfferingExists).
         vm.prank(creator);
-        vm.expectRevert(abi.encodeWithSelector(MapaeFactory.ActiveOfferingExists.selector, creator, address(first)));
         factory.createOffering(defaultCreateParams());
     }
 

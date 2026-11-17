@@ -77,6 +77,7 @@ Dojang 조회가 revert하면 해당 호출도 revert한다(fail-closed, try/cat
 | MapaeFactory | `allowQuote` | 호가 자산을 한 번만 등록. 등록한 가상 준비금과 decimals는 이후 바꿀 수 없다 |
 | MapaeFactory | `setQuoteEnabled` | 새 커브 개설 허용 여부만. 이미 열린 커브와 풀은 영향 없음 |
 | MapaeFactory | `setGuide` | L1/L2 정가 공모 가이드 밴드 |
+| MapaeFactory | `setSettler` | v3.4-L1: 정산 전용 주소 지정 또는 비우기(`address(0)`). settler 는 `settle` 외 권한 없음 |
 | CurveFactory | `setCurveEnabled` | 새 커브 개설만 막는다. 기존 커브의 거래와 졸업은 영향 없음 |
 | BuybackVault / BuybackExecutor | `setExecutor`, `setParams`, `run` | 바이백 실행. 볼트 자금은 소각 매수 외 경로로 나갈 수 없다 |
 | Offering | `settle` | 정가 공모 정산(아래 "정가 공모 정산" 절의 온체인 방어선 적용) |
@@ -120,6 +121,11 @@ Dojang 조회가 revert하면 해당 호출도 revert한다(fail-closed, try/cat
 
 - `settle()`은 플랫폼 오너 전용(`Ownable`)이다. **챌린지 기간은 M1 범위에서 제외**
   (로드맵 항목) — 즉 오너가 잘못된 루트를 커밋하는 것 자체는 온체인에서 막지 않는다.
+- v3.4-L1(결정 62)부터는 정산 전용 주소(settler)도 `settle()`을 호출할 수 있다. settler 는 공모마다 박히지 않고
+  정산 시점에 팩토리의 `settler()`를 읽으므로, 팩토리 owner 가 `setSettler`로 바꾸면 이미 열린 공모에도 바로
+  적용되고 `address(0)`으로 비우면 다시 owner 만 정산한다(바꿀 때마다 `SettlerUpdated` 이벤트). settler 는 정산 말고는
+  아무 권한이 없고(수수료, 가이드, 소유권, settler 교체 모두 불가), 정산에는 아래 방어선이 owner 와 똑같이 적용된다.
+  그 밖의 호출자는 `NotSettleAuthority`로 되돌려진다. v3.3-L1 까지의 공모는 전처럼 owner 만 정산한다.
 - 대신 조작된 루트가 있어도 **초과 인출은 온체인에서 불가능**하다:
   - settle sanity check: `totalSold ≤ qSale`, `totalRaised ≤ totalCommitted`,
     `totalRaised ≤ totalSold × P`, deadline 이후 · 1회만, 모드 A는 목표 달성 시에만
@@ -132,6 +138,8 @@ Dojang 조회가 revert하면 해당 호출도 revert한다(fail-closed, try/cat
 
 - 모드 A 목표 미달: deadline 이후 `totalCommitted < R`은 온체인에서 판정 가능한
   사실이므로 **누구나** `enableRefunds()` 호출 → 전원 `refund()`로 전액 회수.
+- 응모 0건(v3.4-L1): 부분 환불 모드여도 deadline 이후 **누구나** `enableRefunds()`로 바로 Refunding 으로 끝낼 수
+  있다(돌려줄 예치금이 없으므로 7일을 기다릴 이유가 없다).
 - settle 지연: deadline + **7일**까지 정산이 없으면 **누구나** `emergencyRefund()`
   호출 → Refunding 전환. 오너가 사라져도 예치금은 잠기지 않는다.
 

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IOffering} from "../src/interfaces/IOffering.sol";
 import {IPrimaryMarket} from "../src/interfaces/IPrimaryMarket.sol";
 import {Offering} from "../src/Offering.sol";
@@ -363,7 +362,7 @@ contract OfferingUnitTest is OfferingTestBase {
         commitAs(offering, fan1, 100_000e18);
         _warpPastDeadline();
         vm.prank(fan1);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, fan1));
+        vm.expectRevert(abi.encodeWithSelector(IOffering.NotSettleAuthority.selector, fan1));
         offering.settle(bytes32(0), 1e18, 0, bytes32(0));
     }
 

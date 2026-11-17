@@ -78,6 +78,9 @@ interface IOffering is IPrimaryMarket {
         // proceedsLock pays the whole issuer share at settle (L0; the factory gives L1/L2 a lock).
         address proceedsLock;
         uint16 proceedsUpfrontBps;
+        // decision 62 (v3.4-L1): asked at settle time for the settle-only address (the factory).
+        // address(0): only the owner settles.
+        address settlerRegistry;
     }
 
     // ---------------------------------------------------------------------
@@ -191,6 +194,8 @@ interface IOffering is IPrimaryMarket {
     error AccountingCapExceeded();
     /// @notice Caller has no deposit to refund.
     error NothingToRefund();
+    /// @notice Decision 62: settle called by neither the owner nor the registry's settler.
+    error NotSettleAuthority(address caller);
 
     // ---------------------------------------------------------------------
     // Mutating functions
@@ -215,6 +220,8 @@ interface IOffering is IPrimaryMarket {
     /// @param totalSold Token amount actually sold (Σ allocation_i).
     /// @param totalRaised Payment tokens kept for the raise (Σ cost_i).
     /// @param seed Randomness seed used by the allocator, recorded for public verification.
+    /// @dev Decision 62: callable by the owner or by the settler that `settlerRegistry` names at
+    ///      call time; anyone else reverts NotSettleAuthority.
     function settle(bytes32 allocationRoot, uint256 totalSold, uint256 totalRaised, bytes32 seed) external;
 
     /// @notice Claim allocated tokens plus any refund, pull-style, with a Merkle proof.
@@ -228,6 +235,7 @@ interface IOffering is IPrimaryMarket {
     /// @notice Mode A only: after the deadline, if totalCommitted < R, anyone can
     ///         switch the offering to Refunding (the fact is on-chain verifiable,
     ///         so no owner involvement is needed — D3).
+    ///         v3.4-L1: an offering with no commitment at all may also do so in Partial mode.
     function enableRefunds() external;
 
     /// @notice Escape hatch (D3): if the owner has not settled within

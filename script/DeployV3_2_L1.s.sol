@@ -143,7 +143,8 @@ contract DeployV3_2_L1 is Script {
             MapaeFactory.FeeRecipients({platform: platform}),
             g,
             testnetBand(),
-            d.proceedsLockDeployer
+            d.proceedsLockDeployer,
+            address(0) // decision 62: no settler
         );
         vm.stopBroadcast();
         _check(d, old);
