@@ -16,6 +16,7 @@ import {
     WaitlistRow,
     waitlistShareHtml,
     shareImage,
+    cardImage,
     SHARE_TITLE,
     SHARE_DESCRIPTION,
     X_AUTHORIZE,
@@ -137,17 +138,23 @@ describe("pure rules", () => {
     it("W-T49: the large share card, its image only on the origin given (WAITLIST_ORIGIN)", () => {
         const h = waitlistShareHtml("https://mapae.fun", "ABCDEFGH");
         expect(h).toContain('<meta name="twitter:card" content="summary_large_image" />');
-        expect(h).toContain('<meta property="og:image" content="https://mapae.fun/og-waitlist.png" />');
-        expect(h).toContain('<meta name="twitter:image" content="https://mapae.fun/og-waitlist.png" />');
+        // W-T52: a valid code shows its own card
+        expect(h).toContain('<meta property="og:image" content="https://mapae.fun/api/waitlist?card=ABCDEFGH" />');
+        expect(h).toContain('<meta name="twitter:image" content="https://mapae.fun/api/waitlist?card=ABCDEFGH" />');
         expect(h).toContain('<meta property="og:image:width" content="1200" />');
         expect(h).toContain('<meta property="og:image:height" content="630" />');
         expect(h).toContain('<meta name="twitter:image:alt" content="MAPAE Waitlist" />');
         expect(h).not.toContain("logo.png");
         expect(SHARE_TITLE).toBe("MAPAE Waitlist");
         expect(SHARE_DESCRIPTION).toBe("Everyone starts from the same line.");
-        const other = waitlistShareHtml("https://example.test", "ABCDEFGH");
-        const imgs = [...other.matchAll(/(?:og:image|twitter:image)" content="([^"]+)"/g)].map((m) => m[1]);
-        expect(imgs).toEqual(["https://example.test/og-waitlist.png", "https://example.test/og-waitlist.png"]);
+        const imgsOf = (html: string) => [...html.matchAll(/(?:og:image|twitter:image)" content="([^"]+)"/g)].map((m) => m[1]);
+        expect(imgsOf(waitlistShareHtml("https://example.test", "ABCDEFGH"))).toEqual([
+            "https://example.test/api/waitlist?card=ABCDEFGH",
+            "https://example.test/api/waitlist?card=ABCDEFGH",
+        ]);
+        // no valid code: the fixed card, still on the origin given
+        expect(imgsOf(waitlistShareHtml("https://example.test", null))).toEqual(["https://example.test/og-waitlist.png", "https://example.test/og-waitlist.png"]);
+        expect(cardImage("https://mapae.fun", "ABCDEFGH")).toBe("https://mapae.fun/api/waitlist?card=ABCDEFGH");
         expect(shareImage("https://mapae.fun")).toBe("https://mapae.fun/og-waitlist.png");
     });
 });
@@ -204,8 +211,16 @@ function memStore() {
             const r = rows.find((x) => x.xid === xid);
             if (r) r.email = null;
         },
+        async positionByCode(code) {
+            positionCalls++;
+            if (failPosition) throw new Error("db down");
+            const r = rows.find((x) => x.refCode === code);
+            return r ? positionOf(rows, r.xid)! : null;
+        },
     };
-    return {store, rows: () => rows};
+    let positionCalls = 0;
+    let failPosition = false;
+    return {store, rows: () => rows, positionCalls: () => positionCalls, failPosition: (v: boolean) => (failPosition = v)};
 }
 
 type XMode = "ok" | "token500" | "me500" | "meMissing";
@@ -237,7 +252,14 @@ function harness(env: WaitlistEnv = ENV) {
     let mode: XMode = "ok";
     const x = fakeX({codeA: {id: "100", username: "alice"}, codeB: {id: "200", username: "bob"}}, () => mode);
     let n = 0;
-    const deps: WaitlistDeps = {env, store: () => db.store, fetch: x.f, nowSec: () => NOW, random: (k) => new Uint8Array(k).map((_, i) => (i + 7 * ++n) % 248)};
+    const rendered: number[] = [];
+    let failRender = false;
+    const renderCard = async (position: number) => {
+        rendered.push(position);
+        if (failRender) throw new Error("render");
+        return new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+    };
+    const deps: WaitlistDeps = {env, store: () => db.store, fetch: x.f, nowSec: () => NOW, random: (k) => new Uint8Array(k).map((_, i) => (i + 7 * ++n) % 248), renderCard};
     const call = (path: string, init: RequestInit = {}) => handleWaitlist(new Request(`${ORIGIN}${path}`, init), deps);
     const cookies = (r: Response) => r.headers.getSetCookie();
     const cookieValue = (r: Response, name: string) => cookies(r).find((c) => c.startsWith(`${name}=`))!.split(";")[0].slice(name.length + 1);
@@ -252,7 +274,7 @@ function harness(env: WaitlistEnv = ENV) {
     const me = async (session: string | null) => (await call("/api/waitlist", {headers: session ? {cookie: `mapae_wl=${session}`} : {}})).json();
     const post = (session: string | null, body: unknown) =>
         call("/api/waitlist", {method: "POST", headers: {"content-type": "application/json", ...(session ? {cookie: `mapae_wl=${session}`} : {})}, body: JSON.stringify(body)});
-    return {db, x, call, cookies, signIn, me, post, setMode: (m: XMode) => (mode = m)};
+    return {db, x, call, cookies, signIn, me, post, setMode: (m: XMode) => (mode = m), rendered, failRender: (v: boolean) => (failRender = v)};
 }
 
 describe("handler: flags and parameters", () => {
@@ -426,5 +448,58 @@ describe("handler: wallet, email, logout", () => {
         expect(r.headers.getSetCookie()[0]).toMatch(/^mapae_wl=; Path=\/; Max-Age=0/);
         const x = await h.call("/api/waitlist", {method: "POST", headers: {origin: "https://evil.example", host: "mapae-snowy.vercel.app"}, body: JSON.stringify({action: "logout"})});
         expect(x.status).toBe(403);
+    });
+});
+
+describe("W-T52: card image (?card=<code>)", () => {
+    const FALLBACK = `${ORIGIN}/og-waitlist.png`;
+    it("a joined code: 200 PNG with the position, cached 5 minutes, one query", async () => {
+        const h = harness();
+        await h.signIn("codeA");
+        const code = h.db.rows()[0].refCode;
+        const r = await h.call(`/api/waitlist?card=${code}`);
+        expect(r.status).toBe(200);
+        expect(r.headers.get("content-type")).toBe("image/png");
+        expect(r.headers.get("cache-control")).toBe("public, s-maxage=300, stale-while-revalidate=600");
+        expect(h.rendered).toEqual([1]);
+        expect(h.db.positionCalls()).toBe(1);
+        expect(new Uint8Array(await r.arrayBuffer()).slice(0, 4)).toEqual(new Uint8Array([0x89, 0x50, 0x4e, 0x47]));
+    });
+    it("bad format, unknown code, database error, render error: 302 to the fixed card", async () => {
+        const h = harness();
+        await h.signIn("codeA");
+        const code = h.db.rows()[0].refCode;
+        for (const q of ["card=abc", "card=", "card=ZZZZZZZZ"]) {
+            const r = await h.call(`/api/waitlist?${q}`);
+            expect(r.status, q).toBe(302);
+            expect(r.headers.get("location")).toBe(FALLBACK);
+        }
+        const err = vi.spyOn(console, "error").mockImplementation(() => {});
+        h.db.failPosition(true);
+        const d = await h.call(`/api/waitlist?card=${code}`);
+        expect(d.status).toBe(302);
+        expect(d.headers.get("location")).toBe(FALLBACK);
+        expect(JSON.stringify(err.mock.calls)).toContain("position query failed");
+        h.db.failPosition(false);
+        h.failRender(true);
+        const f = await h.call(`/api/waitlist?card=${code}`);
+        expect(f.status).toBe(302);
+        expect(JSON.stringify(err.mock.calls)).toContain("render failed");
+        err.mockRestore();
+    });
+    it("card with another parameter: 400; waitlist off: 404", async () => {
+        const h = harness();
+        expect((await h.call("/api/waitlist?card=ABCDEFGH&x=1")).status).toBe(400);
+        expect((await h.call("/api/waitlist?card=ABCDEFGH&share=ABCDEFGH")).status).toBe(400);
+        const off = await harness({}).call("/api/waitlist?card=ABCDEFGH");
+        expect(off.status).toBe(404);
+        expect(await off.json()).toEqual({error: "disabled"});
+    });
+    it("the share page itself still reads no database", async () => {
+        const h = harness();
+        const r = await h.call("/api/waitlist?share=ABCDEFGH");
+        expect(r.status).toBe(200);
+        expect(await r.text()).toContain(`${ORIGIN}/api/waitlist?card=ABCDEFGH`);
+        expect(h.db.positionCalls()).toBe(0);
     });
 });

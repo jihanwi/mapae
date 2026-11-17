@@ -32,6 +32,7 @@ import {
     WaitlistConfig,
     WaitlistEnv,
     waitlistShareHtml,
+    shareImage,
     X_ME,
     X_TOKEN,
 } from "./waitlist.js";
@@ -42,6 +43,8 @@ export type WaitlistStore = {
     setWallet(xid: string, wallet: string): Promise<"ok" | "taken" | "no_account">;
     setEmail(xid: string, email: string): Promise<boolean>;
     removeEmail(xid: string): Promise<void>;
+    /** W-T52: the line number of the account with this referral code, null when none. */
+    positionByCode(code: string): Promise<number | null>;
 };
 
 export type WaitlistDeps = {
@@ -51,12 +54,16 @@ export type WaitlistDeps = {
     fetch: typeof fetch;
     nowSec: () => number;
     random?: (n: number) => Uint8Array;
+    /** W-T52: the card PNG for a line number (waitlistCard.ts in production). */
+    renderCard?: (position: number) => Promise<Uint8Array>;
 };
 
 export const MAX_REF_DRAWS = 5;
 const MAX_POST = 4 * 1024;
 const NO_STORE = {"Cache-Control": "private, no-store"};
 const SHARE_CACHE = "s-maxage=300, stale-while-revalidate=3600";
+/** W-T52: a card shows the number at render time; a new number appears within about 5 minutes. */
+export const CARD_CACHE = "public, s-maxage=300, stale-while-revalidate=600";
 
 // ---------------------------------------------------------------------------------------------
 // Signed cookies: base64url(JSON payload) "." base64url(HMAC-SHA256(secret, payload part))
@@ -202,6 +209,31 @@ const redirect = (location: string, cookies: string[] = []) => {
     return new Response(null, {status: 302, headers: h});
 };
 
+async function card(code: string | null, origin: string, deps: WaitlistDeps): Promise<Response> {
+    const fallback = () => redirect(shareImage(origin));
+    if (!isRefCode(code)) return fallback();
+    let position: number | null;
+    try {
+        position = await deps.store().positionByCode(code);
+    } catch (e) {
+        console.error("waitlist card: position query failed", e);
+        return fallback();
+    }
+    if (position === null) return fallback();
+    if (!deps.renderCard) {
+        console.error("waitlist card: no renderer configured");
+        return fallback();
+    }
+    let png: Uint8Array;
+    try {
+        png = await deps.renderCard(position);
+    } catch (e) {
+        console.error("waitlist card: render failed", e);
+        return fallback();
+    }
+    return new Response(png as BodyInit, {status: 200, headers: {"content-type": "image/png", "Cache-Control": CARD_CACHE}});
+}
+
 /** The app with the chosen language (?lang= before the hash, as the app reads it) and the ref. */
 const landing = (ref: string | null, lang: string | null) => (isWaitlistLang(lang) ? `/?lang=${lang}${appPath(ref).slice(1)}` : appPath(ref));
 
@@ -221,6 +253,12 @@ export async function handleWaitlist(request: Request, deps: WaitlistDeps): Prom
     const p = url.searchParams;
 
     if (request.method === "GET" || request.method === "HEAD") {
+        // W-T52: the card image of one referral code. A bad or unknown code, a database error or a
+        // render error all redirect to the fixed card (errors are logged).
+        if (p.has("card")) {
+            if (!paramsAllowed(p, ["card"])) return json(400, {error: "bad_request"});
+            return card(p.get("card"), cfg.origin, deps);
+        }
         // navigations (link previews, the /waitlist address): extra parameters are ignored
         if (p.has("share")) {
             const code = p.get("share");

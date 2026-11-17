@@ -1054,6 +1054,8 @@ export const ko = {
         // not in the ticket's table (screen states)
         readError: "잠시 뒤 다시 시도해 주세요",
         emailAdd: "이메일 추가",
+        /** W-T52 */
+        cardSave: "이미지 저장",
         walletConnect: "지갑 연결",
         walletSign: "서명하고 연결",
         walletLinked: (w: string) => `연결된 지갑 ${w}`,

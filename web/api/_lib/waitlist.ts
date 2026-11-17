@@ -167,10 +167,13 @@ export const appPath = (ref: string | null) => (isRefCode(ref) ? `/#/waitlist?re
 /** W-T49: the large share card (web/public/og-waitlist.png, 1200x630), always on the given origin
  *  (WAITLIST_ORIGIN). */
 export const shareImage = (origin: string) => `${origin}/og-waitlist.png`;
+/** W-T52: the card of one referral code, on the same origin. */
+export const cardImage = (origin: string, code: string) => `${origin}/api/waitlist?card=${code}`;
 
 export function waitlistShareHtml(origin: string, code: string | null): string {
     const app = appPath(code);
-    const img = shareImage(origin);
+    // W-T52: a valid code gets its own card; the page itself still reads no database
+    const img = isRefCode(code) ? cardImage(origin, code) : shareImage(origin);
     const page = isRefCode(code) ? shareUrl(origin, code) : `${origin}/waitlist`;
     return `<!doctype html>
 <html lang="en">

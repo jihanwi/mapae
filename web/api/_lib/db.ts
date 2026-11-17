@@ -1082,6 +1082,18 @@ export async function waitlistMe(sql: Sql, xid: string): Promise<WaitlistMe | nu
     return rows[0] ?? null;
 }
 
+/** W-T52: the position of the account with this referral code (the share card), same rule as
+ *  WAITLIST_ME_SQL, in one statement. */
+export const WAITLIST_POSITION_BY_CODE_SQL = `
+    SELECT (1 + (SELECT count(*) FROM mapae_waitlist o
+                 WHERE o.referrals > m.referrals OR (o.referrals = m.referrals AND o.seq < m.seq)))::int AS position
+    FROM mapae_waitlist m WHERE m.ref_code = $1::text`;
+
+export async function waitlistPositionByCode(sql: Sql, code: string): Promise<number | null> {
+    const rows = (await sql.query(WAITLIST_POSITION_BY_CODE_SQL, [code])) as {position: number}[];
+    return rows[0]?.position ?? null;
+}
+
 /** Links a wallet: "taken" when another account already has it, "no_account" when the row is gone. */
 export async function setWaitlistWallet(sql: Sql, xid: string, wallet: string): Promise<"ok" | "taken" | "no_account"> {
     try {

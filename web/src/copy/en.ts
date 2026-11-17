@@ -1033,6 +1033,8 @@ export const en = {
         soon: "Opening soon",
         readError: "Please try again shortly.",
         emailAdd: "Add email",
+        /** W-T52 */
+        cardSave: "Save image",
         walletConnect: "Connect wallet",
         walletSign: "Sign and link",
         walletLinked: (w: string) => `Linked wallet ${w}`,
