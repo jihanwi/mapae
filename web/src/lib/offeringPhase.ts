@@ -49,3 +49,10 @@ export function afterDeadline(p: PhaseInput): AfterDeadline {
     if (p.chainTs >= p.deadline + timeout) return {kind: "canEmergencyRefund"};
     return {kind: "awaitSettle", emergencyAt: p.deadline + timeout};
 }
+
+/** W-T47 (decision 61): an offering in refunds. Its totalCommitted is a record that refunds do not
+ *  lower, so screens label it "at close". From the values already read (refunding flag, phase 4 =
+ *  Refunding); no extra chain read. */
+export function isRefundState(o: {refunding: boolean; phase?: number}): boolean {
+    return o.refunding || o.phase === 4;
+}

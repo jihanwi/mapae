@@ -206,3 +206,26 @@ describe("W-T46: one spelling per wallet in mixed lists", () => {
         expect(displayAddr("nope")).toBe("nope…nope");
     });
 });
+
+describe("W-T47 (decision 61): refund-state offerings label commitments 'at close'", () => {
+    it("isRefundState: refunding flag or phase 4 only", async () => {
+        const {isRefundState} = await import("../lib/offeringPhase");
+        expect(isRefundState({refunding: true, phase: 4})).toBe(true);
+        expect(isRefundState({refunding: false, phase: 4})).toBe(true);
+        expect(isRefundState({refunding: true})).toBe(true);
+        for (const phase of [0, 1, 2, 3]) expect(isRefundState({refunding: false, phase}), String(phase)).toBe(false);
+    });
+    it("new keys in both languages; existing keys unchanged", () => {
+        expect(ko.offering.totalPrefixAtClose + "15,000" + ko.offering.targetPart("5,000,000")).toBe("마감 시점 응모 15,000 / 목표 5,000,000 KRWs");
+        expect(en.offering.totalPrefixAtClose + "15,000" + en.offering.targetPart("5,000,000")).toBe("Committed at close 15,000 / target 5,000,000 KRWs");
+        expect(ko.home.participantsAtClose(1)).toBe("마감 시점 참여 1명");
+        expect(en.home.participantsAtClose(1)).toBe("1 participant at close");
+        expect(en.home.participantsAtClose(2)).toBe("2 participants at close");
+        expect(`${ko.home.atClose}15,000 / 5,000,000 KRWs`).toBe("마감 시점 15,000 / 5,000,000 KRWs");
+        expect(`${en.home.atClose}15,000 / 5,000,000 KRWs`).toBe("At close 15,000 / 5,000,000 KRWs");
+        expect(ko.offering.totalPrefix).toBe("총 응모 ");
+        expect(en.offering.totalPrefix).toBe("Committed ");
+        expect(ko.home.participants(1)).toBe("참여 1명");
+        expect(en.home.participants(1)).toBe("1 participant");
+    });
+});
