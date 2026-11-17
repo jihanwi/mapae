@@ -1,6 +1,7 @@
 // /waitlist (W-T43): join the line with X, see the position and the referral link, optionally link a
 // wallet (one signature, no transaction) and an email (only with consent, removable at any time).
-// Not in the top menu. No X profile picture (CSP), no total signup count.
+// Not in the top menu; rendered in WaitlistShell (W-T45). No X profile picture (CSP), no total
+// signup count.
 import {useState} from "react";
 import {Link, useSearchParams} from "react-router-dom";
 import {useAccount, useSignMessage} from "wagmi";
@@ -14,7 +15,8 @@ import {X_INTENT} from "../lib/share";
 import {fmtCount} from "../lib/format";
 import {isRefCode, walletMessage} from "../../api/_lib/waitlist";
 import {DEFAULT_TITLE, useTitle} from "../lib/title";
-import NotFound from "./NotFound";
+import {WaitlistNote} from "../WaitlistShell";
+import {WAITLIST_ONLY} from "../lib/waitlistOnly";
 
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
@@ -26,7 +28,8 @@ export default function Waitlist() {
     const [params] = useSearchParams();
     const error = params.get("error");
     if (q.isLoading) return <Shell><Skeleton h={320} /></Shell>;
-    if (q.data === "disabled") return <NotFound />;
+    // off: "opening soon" on a waitlist-only host; elsewhere "not found" without a link into the app
+    if (q.data === "disabled") return WAITLIST_ONLY ? <WaitlistNote title={t.soon} /> : <WaitlistNote title={tr.route404.title} note={tr.route404.note} />;
     if (q.isError || !q.data) {
         return (
             <Shell>

@@ -1030,6 +1030,7 @@ export const en = {
         denied: "X sign-in was cancelled.",
         xError: "X didn't respond. Please try again shortly.",
         logout: "Sign out",
+        soon: "Opening soon",
         readError: "Please try again shortly.",
         myLink: "Your link",
         walletConnect: "Connect wallet",

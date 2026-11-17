@@ -4,7 +4,8 @@ import {useWalletConnect} from "./hooks/useWalletConnect";
 import {useSwitchToGiwa} from "./hooks/useSwitchToGiwa";
 import {OpenInWalletApp, WalletPicker} from "./components/WalletPicker";
 import {giwaSepolia} from "./config/chain";
-import {useCopy, useLang} from "./copy";
+import {useCopy} from "./copy";
+import {LangToggle} from "./components/LangToggle";
 import {ADDR_V3} from "./contracts/addressesV3";
 import {ADDR_L1} from "./contracts/addressesV3L1";
 import {MockDojangV3Abi, MockKRWV3Abi} from "./contracts/abisV3";
@@ -21,28 +22,6 @@ import {PokeWatcher} from "./hooks/poke";
 /** Fixed-price offering section (every L1 MapaeFactory, W-T32 / W-T40): /offerings and the pages under it. */
 export function isOfferingSection(pathname: string): boolean {
     return ["/offerings", "/offering/", "/membership", "/redeem", "/trade"].some((p) => pathname === p || pathname.startsWith(p.endsWith("/") ? p : `${p}/`));
-}
-
-/** KO / EN text toggle: current language in brass-400, the other in hanji-400, no solid background. */
-function LangToggle() {
-    const tr = useCopy();
-    const {lang, setLang} = useLang();
-    const item = (l: "ko" | "en") => (
-        <button
-            onClick={() => setLang(l)}
-            aria-pressed={lang === l}
-            className={`min-h-[44px] px-1 text-[13px] ${lang === l ? "text-brass-400 font-semibold" : "text-hanji-400 hover:text-hanji-100"}`}
-        >
-            {l === "ko" ? tr.lang.ko : tr.lang.en}
-        </button>
-    );
-    return (
-        <div className="flex items-center flex-none" role="group" aria-label={tr.lang.label}>
-            {item("ko")}
-            <span className="text-ink-700 text-[13px] px-0.5">/</span>
-            {item("en")}
-        </div>
-    );
 }
 
 /** Header entry to view or change my nickname. */
