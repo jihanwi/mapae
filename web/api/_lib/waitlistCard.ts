@@ -71,6 +71,14 @@ const HANJI_400 = "#A89880";
 const BRASS_400 = "#C39A3B";
 const LOGO_H = 380;
 const LOGO_W = Math.round((LOGO_H * 896) / 1200);
+const BRAND_TRACKING = 20;
+/** W-T53: the text column's inked area sits lower than its box (the serif's line gap above MAPAE,
+ *  no descender under the last line); this lifts it so the drawn content is centred vertically.
+ *  Measured with the pixel test in waitlistCard.test.ts. */
+const TEXT_NUDGE_Y = -6;
+/** logo.png has transparent margins: 88px of 896 on each side (measured from its alpha). The left
+ *  one would count as empty space at the row's left edge, so a negative margin takes it out. */
+const LOGO_INSET_X = Math.round((88 * LOGO_W) / 896);
 
 /** The card element tree (satori takes plain {type, props} objects). */
 export function cardElement(position: number, logo: string): El {
@@ -78,12 +86,15 @@ export function cardElement(position: number, logo: string): El {
     const px = cardNumberPx(num);
     return h(
         "div",
-        {width: CARD_W, height: CARD_H, display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 88, background: INK_950, padding: "0 100px"},
-        {type: "img", props: {src: logo, width: LOGO_W, height: LOGO_H, style: {width: LOGO_W, height: LOGO_H}}},
+        // W-T53: logo + text are one row centred on the card; the text column is as wide as its
+        // widest line (so the row's width, and its centre, follow the number's length)
+        {width: CARD_W, height: CARD_H, display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 88, background: INK_950},
+        {type: "img", props: {src: logo, width: LOGO_W, height: LOGO_H, style: {width: LOGO_W, height: LOGO_H, marginLeft: -LOGO_INSET_X}}},
         h(
             "div",
-            {display: "flex", flexDirection: "column", alignItems: "flex-start", width: CARD_NUMBER_MAX_W},
-            h("div", {fontFamily: "Noto Serif KR", fontWeight: 700, fontSize: 60, letterSpacing: 20, color: HANJI_100, lineHeight: 1.1}, CARD_TEXT.brand),
+            {display: "flex", flexDirection: "column", alignItems: "flex-start", maxWidth: CARD_NUMBER_MAX_W, position: "relative", top: TEXT_NUDGE_Y},
+            // the letter spacing also follows the last letter; a negative margin takes it out of the width
+            h("div", {fontFamily: "Noto Serif KR", fontWeight: 700, fontSize: 60, letterSpacing: BRAND_TRACKING, marginRight: -BRAND_TRACKING, color: HANJI_100, lineHeight: 1.1}, CARD_TEXT.brand),
             h("div", {width: 56, height: 1, background: "rgba(195,154,59,.45)", marginTop: 24, marginBottom: 22}),
             h("div", {fontFamily: "Pretendard", fontWeight: 600, fontSize: 22, letterSpacing: 9.24, color: BRASS_400}, CARD_TEXT.label),
             h(

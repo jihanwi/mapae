@@ -39,6 +39,62 @@ describe("card words", () => {
     });
 });
 
+/** Decodes an 8-bit RGB/RGBA non-interlaced PNG (what resvg writes) with the web-standard
+ *  DecompressionStream, so the test needs no image library. */
+async function decodePng(png: Uint8Array): Promise<{w: number; h: number; bpp: number; px: Uint8Array}> {
+    const v = new DataView(png.buffer, png.byteOffset, png.byteLength);
+    const w = v.getUint32(16), h = v.getUint32(20), depth = png[24], color = png[25], interlace = png[28];
+    if (depth !== 8 || interlace !== 0 || (color !== 2 && color !== 6)) throw new Error(`unsupported png ${depth}/${color}/${interlace}`);
+    const bpp = color === 6 ? 4 : 3;
+    const parts: Uint8Array[] = [];
+    for (let o = 8; o < png.length; ) {
+        const len = v.getUint32(o);
+        const type = String.fromCharCode(...png.subarray(o + 4, o + 8));
+        if (type === "IDAT") parts.push(png.subarray(o + 8, o + 8 + len));
+        o += 12 + len;
+    }
+    const stream = new Blob(parts as BlobPart[]).stream().pipeThrough(new DecompressionStream("deflate"));
+    const raw = new Uint8Array(await new Response(stream).arrayBuffer());
+    const stride = w * bpp;
+    const px = new Uint8Array(h * stride);
+    for (let y = 0; y < h; y++) {
+        const f = raw[y * (stride + 1)];
+        const src = raw.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1));
+        const cur = px.subarray(y * stride, (y + 1) * stride);
+        const prev = y > 0 ? px.subarray((y - 1) * stride, y * stride) : new Uint8Array(stride);
+        for (let i = 0; i < stride; i++) {
+            const a = i >= bpp ? cur[i - bpp] : 0, b = prev[i], c = i >= bpp ? prev[i - bpp] : 0;
+            let p = 0;
+            if (f === 1) p = a;
+            else if (f === 2) p = b;
+            else if (f === 3) p = (a + b) >> 1;
+            else if (f === 4) {
+                const q = a + b - c, pa = Math.abs(q - a), pb = Math.abs(q - b), pc = Math.abs(q - c);
+                p = pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
+            }
+            cur[i] = (src[i] + p) & 0xff;
+        }
+    }
+    return {w, h, bpp, px};
+}
+
+/** The box of pixels that differ from the ink-950 background (#1A1510). */
+export async function contentBox(png: Uint8Array) {
+    const {w, h, bpp, px} = await decodePng(png);
+    let x0 = w, x1 = -1, y0 = h, y1 = -1;
+    for (let y = 0; y < h; y++)
+        for (let x = 0; x < w; x++) {
+            const i = (y * w + x) * bpp;
+            if (Math.abs(px[i] - 0x1a) + Math.abs(px[i + 1] - 0x15) + Math.abs(px[i + 2] - 0x10) > 24) {
+                if (x < x0) x0 = x;
+                if (x > x1) x1 = x;
+                if (y < y0) y0 = y;
+                if (y > y1) y1 = y;
+            }
+        }
+    return {x0, x1, y0, y1, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2};
+}
+
 describe("render", () => {
     it("a 1200x630 PNG with the repo fonts and logo", async () => {
         const png = await renderCard(42);
@@ -46,4 +102,15 @@ describe("render", () => {
         const v = new DataView(png.buffer, png.byteOffset);
         expect([v.getUint32(16), v.getUint32(20)]).toEqual([CARD_W, CARD_H]);
     }, 30_000);
+});
+
+describe("W-T53: the content sits in the middle of the card", () => {
+    for (const n of [1, 42, 1234, 12345]) {
+        it(`#${n}: content centre within 8px of (600, 315)`, async () => {
+            const b = await contentBox(await renderCard(n));
+            console.log(`card #${n}: x ${b.x0}-${b.x1} (centre ${b.cx}), y ${b.y0}-${b.y1} (centre ${b.cy})`);
+            expect(Math.abs(b.cx - CARD_W / 2), `x centre ${b.cx}`).toBeLessThanOrEqual(8);
+            expect(Math.abs(b.cy - CARD_H / 2), `y centre ${b.cy}`).toBeLessThanOrEqual(8);
+        }, 30_000);
+    }
 });
