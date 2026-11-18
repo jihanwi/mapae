@@ -17,7 +17,8 @@ import {MapaeFactoryTestBase} from "./MapaeFactory.t.sol";
 import {TestWETH9} from "./CurveFactoryETH.t.sol";
 
 /// @notice v3.1 real-name priority window on CurveSale / CurveFactory.
-contract CurvePriorityTest is MapaeFactoryTestBase {
+/// @dev Shared setup: a KRWs curve on a CurveFactory with the default 600 s window and 2% cap.
+abstract contract CurvePriorityBase is MapaeFactoryTestBase {
     uint16 internal constant BPS = 10_000;
     bytes32 internal constant BUY_SIG =
         keccak256("Buy(address,bool,bool,uint256,uint256,uint256,uint256,uint256,uint256,uint256)");
@@ -39,7 +40,7 @@ contract CurvePriorityTest is MapaeFactoryTestBase {
         factory.allowQuote(IERC20(address(krw)), P.krwsVirtualQuote(krw.decimals()));
         factory.allowQuote(IERC20(address(weth)), P.VIRTUAL_QUOTE_RESERVE_WETH);
         cf = new CurveFactory(
-            IDojang(address(dojang)), feeRouter, poolFactory, factory, IWETH(address(weth)), address(this)
+            IDojang(address(dojang)), feeRouter, poolFactory, factory, IWETH(address(weth)), address(this), 200
         );
         dojang.setVerified(dev, true);
         dojang.setVerified(verified1, true);
@@ -89,6 +90,31 @@ contract CurvePriorityTest is MapaeFactoryTestBase {
         return Math.mulDiv(cost, BPS, BPS - c.totalFeeBps(), Math.Rounding.Ceil) + 1;
     }
 
+    /// @dev v3.5: the largest quote budget whose buy keeps `who` at or under the holding cap.
+    function _maxUnderCap(CurveSale c, address who) internal view returns (uint256 lo) {
+        uint256 room = c.priorityMaxHolding() - c.token().balanceOf(who);
+        uint256 hi = _sellOutBudget(c);
+        while (lo < hi) {
+            uint256 mid = (lo + hi + 1) / 2;
+            if (c.quoteBuy(mid).tokensOut <= room) lo = mid;
+            else hi = mid - 1;
+        }
+    }
+
+    /// @dev v3.5: `n` fresh verified wallets each buy the most they can under the cap.
+    function _fillWithWallets(CurveSale c, uint256 n, string memory tag) internal {
+        for (uint256 i; i < n; ++i) {
+            address w = makeAddr(string.concat(tag, vm.toString(i)));
+            dojang.setVerified(w, true);
+            uint256 q = _maxUnderCap(c, w);
+            _fund(c, w, q);
+            vm.prank(w);
+            c.buy(q, 0);
+        }
+    }
+}
+
+contract CurvePriorityTest is CurvePriorityBase {
     // ------------------------------------------------------------------ window
 
     function test_priority_InWindow_VerifiedBuysUnverifiedReverts() public {
@@ -186,7 +212,7 @@ contract CurvePriorityTest is MapaeFactoryTestBase {
 
         vm.deal(dev, 1 ether);
         vm.prank(dev);
-        (address ce,) = cf.createCurveWithETH{value: 0.01 ether}("Dev Eth", "DE", 1); // v3.2: under the 5% first-buy cap
+        (address ce,) = cf.createCurveWithETH{value: 0.01 ether}("Dev Eth", "DE", 1); // v3.5: under the 2% first-buy cap
         assertGt(CurveSale(ce).s(), 0, "dev ETH buy inside the window");
         assertEq(CurveSale(ce).verifiedBuyerCount(), 0);
         assertFalse(CurveSale(ce).countedVerifiedBuyer(dev));
@@ -252,6 +278,9 @@ contract CurvePriorityTest is MapaeFactoryTestBase {
     }
 
     function test_priority_GraduateInWindowPoolOpenToAnyone() public {
+        // v3.5: no single wallet can sell out the curve inside the window; 40 wallets at the 2%
+        // cap fill it to within rounding dust and a 41st buys the dust (CurveHoldingCap.t.sol)
+        _fillWithWallets(curve, 40, "g");
         uint256 closing = _sellOutBudget(curve);
         _fund(curve, verified1, closing);
         vm.prank(verified1);
@@ -275,7 +304,7 @@ contract CurvePriorityTest is MapaeFactoryTestBase {
     /// @dev buy succeeds <=> (after the window) or (verified).
     function testFuzz_priority_BuyIffOpenOrVerified(uint32 dt, bool isVerified, uint96 amount) public {
         dt = uint32(bound(dt, 0, 7200));
-        amount = uint96(bound(amount, 1e18, 100_000e18));
+        amount = uint96(bound(amount, 1e18, 30_000e18)); // v3.5: stays under the 2% holding cap
         address who = makeAddr("fuzzer");
         dojang.setVerified(who, isVerified);
         _fund(curve, who, amount);

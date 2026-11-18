@@ -6,12 +6,17 @@ pragma solidity ^0.8.26;
 //
 //   forge script script/DemoCurve.s.sol --account deployer --sender <deployer-addr> --rpc-url $GIWA_SEPOLIA_RPC_URL --broadcast --slow
 //
-// Scenario A (KRWs curve): dev opens a MockKRW curve with a dev first buy (under the v3.2 5% cap)
+// Scenario A (KRWs curve): dev opens a MockKRW curve with a dev first buy (under the v3.5 2% cap)
 //   and then buys more in a separate tx → 12 distinct real-name
 //   wallets split the rest and graduate it → one swapQuoteForToken + one swapTokenForQuote on the
 //   graduated pool → dev claimDevFees → sweepPlatformFees.
 // Scenario B (ETH curve): one wallet opens a WETH curve with createCurveWithETH and self-graduates
 //   it with buyWithETH (≈ 0.006 ETH + 1% fee at the testnet 0.002 ETH virtual quote).
+// v3.5: each scenario is split into an open step (scenarioAOpen / scenarioBOpen) and a trade step
+//   (scenarioATrade / scenarioBTrade). run() still does both back to back, which is valid on the v3.1
+//   mock stack this demo targets (no holding cap). On a v3.5 CurveFactory the trade step buys far past
+//   2% of supply per wallet, so it must run after the curve's priority window (priorityUntil); the
+//   simulation test (test/DemoCurveSim.t.sol) moves time between the two steps.
 // Every step is self-checked with require (graduated, pool totalFeeBps == 100, pool price ≥ curve
 // close within 0.2%, treasury holds no issued token, dev fees > 0, 12 counted buyers in A).
 //
@@ -83,9 +88,20 @@ contract DemoCurve is Script {
     // ---------------------------------------------------------------------
 
     function scenarioA(Ctx memory c) public returns (Result memory res) {
-        uint256 devKey = _key(c.baseIdx);
+        return scenarioATrade(c, scenarioAOpen(c));
+    }
+
+    /// @notice Scenario A, open step: the dev opens the KRWs curve with a small first buy.
+    function scenarioAOpen(Ctx memory c) public returns (CurveSale curve) {
         uint256 vq = c.curveFactory.mapaeFactory().quoteConfig(address(c.krw)).curveVirtualQuote;
-        CurveSale curve = _openKrwCurve(c, devKey, vq);
+        curve = _openKrwCurve(c, _key(c.baseIdx), vq);
+    }
+
+    /// @notice Scenario A, trade step: the dev buys more, 12 buyers graduate the curve, pool swaps, fees.
+    function scenarioATrade(Ctx memory c, CurveSale curve) public returns (Result memory res) {
+        uint256 devKey = _key(c.baseIdx);
+        uint256 vq = curve.virtualQuote();
+        _devBuysMore(c, devKey, curve, vq);
         _twelveBuyers(c, curve, vq);
         res = _checkGraduated(c, curve, vq);
         require(curve.verifiedBuyerCount() == BUYERS, "A: 12 VerifiedBuyerCounted");
@@ -97,23 +113,29 @@ contract DemoCurve is Script {
     }
 
     /// @dev dev: self-verify, faucet, open with a small dev first buy (1/200 of the sell-out budget,
-    ///      under the v3.2 cap of 5% of supply), then buy more in a separate tx (≈ 1/13 in total).
+    ///      under the v3.5 cap of 2% of supply).
     function _openKrwCurve(Ctx memory c, uint256 devKey, uint256 vq) internal returns (CurveSale curve) {
         address dev = vm.addr(devKey);
         _topUp(c, dev, 0);
-        uint256 total = _budget(vq, 0, 0, _curveFeeBps()) / 13;
         uint256 firstBuy = _budget(vq, 0, 0, _curveFeeBps()) / 200;
-        uint256 more = total - firstBuy;
         vm.startBroadcast(devKey);
         c.dojang.selfVerify();
-        c.krw.faucet(total);
+        c.krw.faucet(firstBuy);
         c.krw.approve(address(c.curveFactory), firstBuy);
         (address ca,) = c.curveFactory.createCurve(IERC20(address(c.krw)), "MAPAE Demo Curve KRW", "DCK", firstBuy, 1);
         curve = CurveSale(ca);
+        vm.stopBroadcast();
+        require(curve.token().balanceOf(dev) > 0 && curve.verifiedBuyerCount() == 0, "A: dev first buy");
+    }
+
+    /// @dev The dev buys more in a separate tx (≈ 1/13 of the sell-out budget in total).
+    function _devBuysMore(Ctx memory c, uint256 devKey, CurveSale curve, uint256 vq) internal {
+        uint256 more = _budget(vq, 0, 0, _curveFeeBps()) / 13 - _budget(vq, 0, 0, _curveFeeBps()) / 200;
+        vm.startBroadcast(devKey);
+        c.krw.faucet(more);
         c.krw.approve(address(curve), more);
         curve.buy(more, 1);
         vm.stopBroadcast();
-        require(curve.token().balanceOf(dev) > 0 && curve.verifiedBuyerCount() == 0, "A: dev first buy");
     }
 
     /// @dev 12 distinct real-name buyers split the remaining budget; the last one closes the curve.
@@ -158,19 +180,34 @@ contract DemoCurve is Script {
     // ---------------------------------------------------------------------
 
     function scenarioB(Ctx memory c) public returns (Result memory res) {
+        return scenarioBTrade(c, scenarioBOpen(c));
+    }
+
+    /// @notice Scenario B, open step: the wallet opens a WETH curve (no first buy).
+    function scenarioBOpen(Ctx memory c) public returns (CurveSale curve) {
         uint256 key = _key(c.baseIdx + uint32(BUYERS) + 1);
         address wallet = vm.addr(key);
         address weth = address(c.curveFactory.weth());
         uint256 vq = c.curveFactory.mapaeFactory().quoteConfig(weth).curveVirtualQuote;
-        uint256 budget = _budget(vq, 0, 0, _curveFeeBps());
-        _topUp(c, wallet, budget);
-
+        _topUp(c, wallet, _budget(vq, 0, 0, _curveFeeBps()));
         vm.startBroadcast(key);
         c.dojang.selfVerify();
-        (address ca, address ta) = c.curveFactory.createCurveWithETH("MAPAE Demo Curve ETH", "DCE", 0);
-        CurveSale curve = CurveSale(ca);
+        (address ca,) = c.curveFactory.createCurveWithETH("MAPAE Demo Curve ETH", "DCE", 0);
+        vm.stopBroadcast();
+        curve = CurveSale(ca);
+    }
+
+    /// @notice Scenario B, trade step: the same wallet self-graduates the curve with buyWithETH.
+    function scenarioBTrade(Ctx memory c, CurveSale curve) public returns (Result memory res) {
+        uint256 key = _key(c.baseIdx + uint32(BUYERS) + 1);
+        address wallet = vm.addr(key);
+        uint256 vq = curve.virtualQuote();
+        uint256 budget = _budget(vq, 0, 0, _curveFeeBps());
+        address ta = address(curve.token());
+        vm.startBroadcast(key);
         c.curveFactory.buyWithETH{value: budget}(curve, 1);
         vm.stopBroadcast();
+        address ca = address(curve);
 
         res = _checkGraduated(c, curve, vq);
         require(MembershipToken(ta).balanceOf(wallet) == CurvePresets.CURVE_SUPPLY, "B: self-graduation");

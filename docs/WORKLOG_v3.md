@@ -736,3 +736,67 @@ immutable). FeeRouter 합계 밴드는 라우터 구조체 4필드 합만 검사
 - 합계 373 → **397 그린 + 포크 스위트 건너뜀(RPC 없음, setUp에서 skip되어 1건으로 집계)**. BytecodeSize 통과, CurveFactory 런타임 19,131 바이트(여유 5,445).
 - 포크 테스트와 `cast call`은 작업 세션에서 GIWA RPC에 연결할 수 없어 실행하지 못했다. 오너가 `docs/DEPLOY_V3_2.md` 6단계에서
   확인한다.
+
+## v3.5 (C-T5, 2026-11-18): 우선 구간 지갑당 보유 한도 2%
+
+오너 결정(11-18): 우선 구간(개설 후 10분) 동안 발행자를 포함해 어떤 지갑도 총공급의 2%를 넘게 보유할 수 없다.
+Dev 첫 매수 상한도 5%에서 2%로 맞춘다. 우선 구간이 끝나면 한도는 없다(결정 19 유지). 졸업 조건, 수수료, 커브 기하는 그대로.
+
+### 바뀐 규칙
+
+- `CurveFactory.priorityMaxHoldingBps`: 50~500(0.5%~5%), 기본 200. 생성자 인자(마지막)이고 범위 밖이면
+  `PriorityMaxHoldingOutOfBand`. 우선 구간 길이와 같은 방식으로 owner 전용 setter(`setPriorityMaxHoldingBps`, 같은 범위)가 있고,
+  바꾸면 그 뒤에 열리는 커브에만 적용된다(`PriorityMaxHoldingBpsSet`).
+- 커브가 열릴 때 `TOTAL_SUPPLY × bps / 10000`을 `CurveSale.InitParams.priorityMaxHolding`으로 넘기고, 커브는 immutable
+  `priorityMaxHolding()`(토큰 수량)으로 고정한다.
+- 검사 위치: `CurveSale._buy`. 우선 구간 판정은 실명 게이트와 같은 `_inPriority()`(block.timestamp < priorityUntil) 하나를 쓴다.
+  토큰을 보낸 뒤 받는 주소의 잔액이 한도를 넘으면 `PriorityHoldingExceeded(balanceAfter, maxHolding)`로 매수 전체를 되돌린다.
+  `buy`, `buyFor`(받는 주소 기준), `buyWithETH`(팩토리의 buyFor 경유), 발행 tx 안의 Dev 첫 매수가 모두 이 경로다. 매도에는 검사가 없다.
+- Dev 첫 매수: `CurvePresets.DEV_FIRST_BUY_MAX_TOKENS`를 없앴다. 팩토리가 매수 전에 견적(`quoteBuy`)으로
+  `tokensOut > priorityMaxHolding`이면 `DevFirstBuyTooLarge(tokensOut, maxTokens)`로 발행 전체를 되돌린다(웹이 이 오류 이름에
+  문구를 매핑하고 있어 이름 유지). 발행 직후 Dev의 추가 매수는 합산 보유량으로 `PriorityHoldingExceeded`.
+- 2%를 사는 데 드는 금액(이분 탐색, 한도 이하가 나오는 최대 금액):
+
+  | 프리셋 | 매수 금액(수수료 포함) | 커브에 들어가는 순금액 |
+  |---|---|---|
+  | KRWs (Vq 200만) | 38,602.586373287 KRWs | 38,216.560509554 KRWs |
+  | 메인넷 ETH (Vq 0.6) | 0.011580775911986103 ETH | 0.011464968152866242 ETH |
+  | 테스트넷 ETH (Vq 0.002) | 0.000038602586373286 ETH | 0.000038216560509554 ETH |
+
+  웹의 현재 Dev 첫 매수 기본값 0.00005 ETH(테스트넷)는 약 2.58%라 이제 막힌다(W-T54에서 바꾼다).
+- 반올림: 매수는 견적 금액 기준이고 토큰은 내림이라, 한 지갑이 한도 이하로 살 수 있는 최대치는 2천만 개보다 수백 wei 적다.
+  그래서 지갑 40개가 각자 최대로 사면 곡선 물량 8억 개에서 약 4,300 wei가 남고, 41번째 지갑의 먼지 매수가 우선 구간 안에서
+  졸업시킨다. 39개로는 2천만 개 넘게 남아 우선 구간 안에 졸업할 수 없다(PM 확인 11-18).
+
+### 배포 준비
+
+- `script/DeployV3_5.s.sol`: v3.2 json에서 DojangAnyOf, FeeRouter, PoolFactory, MapaeFactory(mock), MockKRW,
+  MembershipTokenDeployer를 읽어 재사용하고 CurveFactory 하나만 새로 배포한다(priorityWindow 600, bps 200, owner = 배포자).
+  결과는 `deployments/giwa-sepolia-v3_5.json`. 절차: `docs/DEPLOY_V3_5.md`.
+- 재사용 컨트랙트(MockKRW, DojangAnyOf, PoolFactory, FeeRouter, MapaeFactory, MembershipTokenDeployer, DojangEASAdapter,
+  MockDojang)의 런타임 바이트코드는 이번 변경 전후가 같다(빌드 산출물 해시 비교).
+- `script/DemoCurve.s.sol`: 두 시나리오를 개설 단계(`scenarioAOpen`, `scenarioBOpen`)와 거래 단계(`scenarioATrade`,
+  `scenarioBTrade`)로 나눴다. 규모와 금액은 그대로다. v3.5 팩토리에서는 거래 단계를 우선 구간 뒤에 실행해야 한다.
+
+### 테스트
+
+- 신규 `CurveHoldingCap.t.sol` (13): 기본값 2%, 팩토리 범위(49·501 revert, 50·500 통과), setter 권한·범위·기존 커브 불변,
+  한도 바로 아래 성공·한 단계 위 revert, 두 번에 나눠 합이 넘으면 두 번째 revert, 사고 팔고 다시 사기(보유량 기준), buyFor는
+  받는 주소 기준, buyWithETH revert 시 ETH 전액 반환, 우선 구간 마지막 초 revert·다음 초 통과, Dev 첫 매수 경계와 미등록,
+  Dev 추가 매수 합산, 오류 인자가 커브 한도, 40개 지갑 + 먼지 매수 졸업, 39개 미졸업.
+- 신규 `DeployV3_5.t.sol` (2): 로컬 v3.1 + v3.2 스택 위 배포, 새 팩토리 bps 200, 새 커브 한도 2천만 개, 라이브러리 확인.
+- 바꾼 기존 테스트(한 지갑이 우선 구간 안에 2% 넘게 사던 것):
+  - 우선 구간 뒤로 옮김: `CurveSale.t.sol` setUp(커브 메커니즘 테스트 전체, 우선 구간 안이어야 하는
+    `testFuzz_C1_priority_UnverifiedCannotBuyInWindow`만 구간 안으로 되돌림), `test_C8_ZeroLpSeedPriceContinuity`,
+    `CurveFactory.t.sol`의 `test_K2_QuoteWhitelist`, `test_K3_CurveEnabled`, `test_K5_DevBuysPastCapAfterCreation`,
+    `test_K9_FullLifecycle`, `CurveFactoryETH.t.sol`의 `test_W1_BuyWithETH`, `test_W2_ClosingBuyRefundsAndGraduates`,
+    `test_W6_ReentrancyOnRefundReverts`, `test_W7_RefundRejectedReverts`, `test_W_DevBuysPastCapAfterCreation`,
+    `DemoCurveSim.t.sol`의 세 시나리오(개설과 거래 사이).
+  - 금액을 줄임: `CurvePriority.testFuzz_priority_BuyIffOpenOrVerified`(상한 100,000 → 30,000 KRWs),
+    `DeployV3_2.t.sol`의 `test_MockVerifiedWalletOpensAndFirstBuyIsCapped`(0.00005 → 0.00003 ETH),
+    `CurveFactoryETH.test_W_DevFirstBuyCap_TestnetPreset`(통과 금액을 2% 최대치로, 0.00005 ETH는 이제 revert 확인).
+  - 5% → 2%: `test_K5_DevFirstBuyCapBoundary`, `test_K5_DevFirstBuyCannotGraduateInCreateTx`, `DevFirstBuyCapExactTest`,
+    `test_W_DevFirstBuyCap_MainnetPreset`.
+  - 다시 씀: `CurvePriority.test_priority_GraduateInWindowPoolOpenToAnyone`(한 지갑 졸업 → 40개 지갑 + 먼지 매수 졸업).
+- 합계 461 → **476 그린 + 포크 스위트 1건 건너뜀**. CurveFactory 런타임 20,327 바이트(여유 4,249), CurveSale 8,980 바이트(여유 15,596).
+

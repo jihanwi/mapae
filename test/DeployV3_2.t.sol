@@ -54,7 +54,7 @@ contract DeployV3_2Test is Test {
         assertTrue(d.dojang.isVerified(dev));
         vm.deal(dev, 1 ether);
         vm.prank(dev);
-        (address ca,) = d.curveFactory.createCurveWithETH{value: 0.000_05 ether}("Ok", "OK", 0);
+        (address ca,) = d.curveFactory.createCurveWithETH{value: 0.000_03 ether}("Ok", "OK", 0); // v3.5: under the 2% cap (0.00005 is ~2.58%)
         assertEq(address(CurveSale(ca).quote()), GiwaSepolia.WETH);
         vm.prank(dev);
         vm.expectPartialRevert(CurveFactory.DevFirstBuyTooLarge.selector);

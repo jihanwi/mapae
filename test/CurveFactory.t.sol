@@ -36,7 +36,7 @@ abstract contract CurveFactoryTestBase is MapaeFactoryTestBase {
     function setUp() public virtual override {
         super.setUp();
         cf = new CurveFactory(
-            IDojang(address(dojang)), feeRouter, poolFactory, factory, IWETH(address(0xEeeE)), address(this)
+            IDojang(address(dojang)), feeRouter, poolFactory, factory, IWETH(address(0xEeeE)), address(this), 200
         );
         (IERC20 q, uint256 vq) = _quote();
         quote = q;
@@ -86,7 +86,8 @@ abstract contract CurveFactoryTestBase is MapaeFactoryTestBase {
             poolFactory,
             factory,
             IWETH(address(0xEeeE)),
-            address(this)
+            address(this),
+            200
         );
         vm.prank(dev);
         vm.expectRevert(bytes("dojang down"));
@@ -112,6 +113,7 @@ abstract contract CurveFactoryTestBase is MapaeFactoryTestBase {
         cf.createCurve(quote, "Curve Coin", "CC", 0, 0);
 
         // disabled quote: existing curve still trades and graduates
+        vm.warp(c.priorityUntil()); // v3.5: single-wallet buys past 2% of supply run after the priority window
         address buyer = makeAddr("k2buyer");
         dojang.setVerified(buyer, true);
         uint256 b = _sellOutBudget(c);
@@ -144,6 +146,7 @@ abstract contract CurveFactoryTestBase is MapaeFactoryTestBase {
         cf.createCurve(quote, "Curve Coin", "CC", 0, 0);
 
         // existing curve unaffected
+        vm.warp(c.priorityUntil()); // v3.5: single-wallet buys past 2% of supply run after the priority window
         uint256 budget = _sellOutBudget(c);
         _fund(dev, address(c), budget);
         vm.prank(dev);
@@ -208,7 +211,7 @@ abstract contract CurveFactoryTestBase is MapaeFactoryTestBase {
         keccak256("Buy(address,bool,bool,uint256,uint256,uint256,uint256,uint256,uint256,uint256)");
 
     function test_K5_DevFirstBuy() public {
-        uint256 amount = _vq() / 100; // v3.2: well under the 5% first-buy cap for every preset
+        uint256 amount = _vq() / 100; // v3.5: well under the 2% first-buy cap for every preset
         _fund(dev, address(cf), amount);
         uint256 before = quote.balanceOf(dev);
         vm.recordLogs();
@@ -241,21 +244,22 @@ abstract contract CurveFactoryTestBase is MapaeFactoryTestBase {
         uint256 hi = _vq() * 10;
         while (lo < hi) {
             uint256 mid = (lo + hi + 1) / 2;
-            if (ref.quoteBuy(mid).tokensOut <= P.DEV_FIRST_BUY_MAX_TOKENS) lo = mid;
+            if (ref.quoteBuy(mid).tokensOut <= ref.priorityMaxHolding()) lo = mid;
             else hi = mid - 1;
         }
     }
 
-    /// v3.2: the creation-tx first buy is capped at 5% of supply; just under passes, 1 wei more
+    /// v3.5 (was 5% in v3.2): the creation-tx first buy is capped at the 2% holding cap; just under passes, 1 wei more
     /// of quote (the first amount that yields more than the cap) reverts the whole creation.
     function test_K5_DevFirstBuyCapBoundary() public {
         (CurveSale ref,) = _create(dev);
         uint256 maxIn = _maxFirstBuy(ref);
         uint256 atMax = ref.quoteBuy(maxIn).tokensOut;
-        emit log_named_uint("5% first buy, quoteIn (fee incl, raw)", maxIn);
-        emit log_named_uint("5% first buy, net to curve (raw)", maxIn - maxIn * ref.totalFeeBps() / BPS);
-        assertLe(atMax, P.DEV_FIRST_BUY_MAX_TOKENS);
-        assertGt(ref.quoteBuy(maxIn + 1).tokensOut, P.DEV_FIRST_BUY_MAX_TOKENS);
+        emit log_named_uint("2% first buy, quoteIn (fee incl, raw)", maxIn);
+        emit log_named_uint("2% first buy, net to curve (raw)", maxIn - maxIn * ref.totalFeeBps() / BPS);
+        assertEq(ref.priorityMaxHolding(), 20_000_000e18);
+        assertLe(atMax, ref.priorityMaxHolding());
+        assertGt(ref.quoteBuy(maxIn + 1).tokensOut, ref.priorityMaxHolding());
 
         _fund(dev, address(cf), maxIn * 3);
         vm.prank(dev);
@@ -282,7 +286,7 @@ abstract contract CurveFactoryTestBase is MapaeFactoryTestBase {
         vm.prank(dev);
         vm.expectRevert(
             abi.encodeWithSelector(
-                CurveFactory.DevFirstBuyTooLarge.selector, P.CURVE_SUPPLY, P.DEV_FIRST_BUY_MAX_TOKENS
+                CurveFactory.DevFirstBuyTooLarge.selector, P.CURVE_SUPPLY, P.TOTAL_SUPPLY * 200 / 10_000
             )
         );
         cf.createCurve(quote, "Curve Coin", "CC", cost * 2, 0);
@@ -293,6 +297,7 @@ abstract contract CurveFactoryTestBase is MapaeFactoryTestBase {
     /// v3.2: after creation the Dev buys like anyone, with no per-wallet limit (결정 19)
     function test_K5_DevBuysPastCapAfterCreation() public {
         (CurveSale c, MembershipToken t) = _create(dev);
+        vm.warp(c.priorityUntil()); // v3.5: no cap for anyone, the Dev included, after the priority window
         uint256 budget = _sellOutBudget(c);
         _fund(dev, address(c), budget);
         vm.prank(dev);
@@ -416,6 +421,7 @@ contract CurveFactoryKrws18Test is CurveFactoryTestBase {
         emit log_named_uint("gas createCurve", g - gasleft());
         CurveSale c = CurveSale(ca);
         MembershipToken t = MembershipToken(ta);
+        vm.warp(c.priorityUntil()); // v3.5: single-wallet buys past 2% of supply run after the priority window
 
         uint256 slice = _sellOutBudget(c) / 13;
         uint256 regularGas;
@@ -483,24 +489,21 @@ contract CurveFactoryWethTest is CurveFactoryTestBase {
 ///      that lands exactly on 50M tokens may not exist because tokensOut moves in steps).
 contract CapHarness is CurveFactory {
     constructor(IDojang d, IFeeRouter f, PoolFactory p, MapaeFactory m)
-        CurveFactory(d, f, p, m, IWETH(address(0xEeeE)), msg.sender)
+        CurveFactory(d, f, p, m, IWETH(address(0xEeeE)), msg.sender, 200)
     {}
 
-    function check(uint256 tokensOut) external pure {
-        _checkDevFirstBuy(tokensOut);
+    function check(uint256 tokensOut, uint256 maxTokens) external pure {
+        _requireDevFirstBuyWithin(tokensOut, maxTokens);
     }
 }
 
 contract DevFirstBuyCapExactTest is MapaeFactoryTestBase {
     function test_ExactCapPasses_OneWeiOverReverts() public {
         CapHarness h = new CapHarness(IDojang(address(dojang)), feeRouter, poolFactory, factory);
-        h.check(P.DEV_FIRST_BUY_MAX_TOKENS);
-        assertEq(P.DEV_FIRST_BUY_MAX_TOKENS, 50_000_000e18);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                CurveFactory.DevFirstBuyTooLarge.selector, P.DEV_FIRST_BUY_MAX_TOKENS + 1, P.DEV_FIRST_BUY_MAX_TOKENS
-            )
-        );
-        h.check(P.DEV_FIRST_BUY_MAX_TOKENS + 1);
+        uint256 cap = P.TOTAL_SUPPLY * h.priorityMaxHoldingBps() / 10_000;
+        assertEq(cap, 20_000_000e18);
+        h.check(cap, cap);
+        vm.expectRevert(abi.encodeWithSelector(CurveFactory.DevFirstBuyTooLarge.selector, cap + 1, cap));
+        h.check(cap + 1, cap);
     }
 }
