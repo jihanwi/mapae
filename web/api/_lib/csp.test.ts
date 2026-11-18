@@ -48,3 +48,14 @@ describe("inline-code guard (postbuild)", () => {
         expect(inlineViolations(shareHtml("https://m.example", {curve: "0x" + "c1".repeat(20), name: `<style>"x"</style>`, symbol: "S", meta: undefined}))).toEqual([]);
     });
 });
+
+describe("W-T54: the review host is kept out of search engines", () => {
+    it("X-Robots-Tag noindex only when the host is mapae-gasok-7k2.vercel.app; the CSP block is unchanged", () => {
+        expect(VERCEL.headers).toHaveLength(2);
+        const robots = VERCEL.headers[1] as {source: string; has?: {type: string; value: string}[]; headers: {key: string; value: string}[]};
+        expect(robots.source).toBe("/(.*)");
+        expect(robots.has).toEqual([{type: "host", value: "mapae-gasok-7k2.vercel.app"}]);
+        expect(robots.headers).toEqual([{key: "X-Robots-Tag", value: "noindex, nofollow"}]);
+        expect(JSON.stringify(VERCEL.headers[0])).not.toContain("X-Robots-Tag");
+    });
+});

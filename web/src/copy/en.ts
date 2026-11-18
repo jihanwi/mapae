@@ -1,6 +1,14 @@
 // English dictionary. `satisfies Copy` makes tsc fail if any key of ko.ts is missing.
 // Style: plain, short sentences in sentence case; no exclamation marks; no return/profit language.
-import {Copy, PRIORITY_MINUTES} from "./ko";
+import {CAP_DEFAULT, capPct, Copy, PRIORITY_MINUTES} from "./ko";
+
+const capWholeEn = (capTokens: bigint) => {
+    const whole = Number(BigInt(capTokens) / 10n ** 18n);
+    return whole % 1_000_000 === 0 ? `${(whole / 1_000_000).toLocaleString("en-US")}M` : whole.toLocaleString("en-US");
+};
+const devBuyCapEn = (cap: bigint) =>
+    `You can buy up to ${capPct(cap)}% of supply (${capWholeEn(cap)} tokens) with the launch. Everyone has the same limit for the first ${PRIORITY_MINUTES} minutes.`;
+const capOverEn = (cap: bigint) => `For the first ${PRIORITY_MINUTES} minutes a wallet can hold up to ${capPct(cap)}% of supply.`;
 
 const verifiedTraders = (n: number) => `${n} verified trader${n === 1 ? "" : "s"}`;
 
@@ -464,6 +472,11 @@ export const en = {
         ctaWithCost: (cta: string, cost: string) => `${cta} · ${cost}`,
     },
     trade: {
+        priorityCapLeft: (n: string) => `First ${PRIORITY_MINUTES} minutes: you can buy ${n} more`,
+        priorityCapFull: (t: string) => `You've reached the limit for this window. No limit in ${t}.`,
+        priorityCapOver: capOverEn,
+        priorityCapMax: "Up to limit",
+        capTime: (m: number, s: number) => `${m}m ${s}s`,
         title: "Trade",
         spot: "Price",
         offer: "Offering price",
@@ -581,8 +594,8 @@ export const en = {
         startPrice: "Starting price (per token)",
         sellOut: "Cost to sell out (fees included)",
         devBuy: (unit: string) => `Dev first buy (optional, ${unit})`,
-        devBuyNote: "Buy as you launch the token. You can buy up to 5% of supply, and nothing is allocated in advance.",
-        devBuyCap: "The buy at launch is capped at 5% of supply (50M tokens). Buy more after launching.",
+        devBuyNote: (cap: bigint) => `Bought in the same transaction as the launch. Up to ${capPct(cap)}% of supply, and nothing is allocated in advance.`,
+        devBuyCap: devBuyCapEn,
         devBuyReceive: "Estimated tokens",
         totalSupply: "Total supply",
         curveSupply: "Sold on the bonding curve",
@@ -683,7 +696,8 @@ export const en = {
         CurvesDisabled: "Launching new tokens is paused right now.",
         QuoteNotAllowed: "This paired asset can't be used.",
         CurveRateLimited: "You've launched all 3 tokens allowed in 7 days.",
-        DevFirstBuyTooLarge: "The buy at launch is capped at 5% of supply (50M tokens). Buy more after launching.",
+        DevFirstBuyTooLarge: devBuyCapEn(CAP_DEFAULT),
+        PriorityHoldingExceeded: capOverEn(CAP_DEFAULT),
         InvalidName: "Check the name length.",
         InvalidSymbol: "Check the ticker length.",
         SellExceedsSold: "You can't sell more than the bonding curve has sold.",
@@ -957,6 +971,7 @@ export const en = {
         poolNote: "After graduation, pool royalties go to your wallet on every swap",
     },
     tokenPage: {
+        priorityCapNote: (cap: bigint) => `First ${PRIORITY_MINUTES} minutes: up to ${capPct(cap)}% of supply per wallet, the dev included.`,
         tabs: {comments: "Comments", trades: "Trades", holders: "Holders", info: "Info"},
         volume: "24h volume",
         holders: "Holders",

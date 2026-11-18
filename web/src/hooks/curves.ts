@@ -46,6 +46,8 @@ export type CurveDetail = CurveInfo & {
     platformBps: number;
     devBps: number;
     lpSeedBps: number;
+    /** v3.5: the curve's priority-window holding cap in tokens (fixed at creation). */
+    priorityMaxHolding: bigint;
 };
 
 const CURVE_FIELDS = [
@@ -61,7 +63,7 @@ const CURVE_FIELDS = [
     "totalFeeBps",
     "priorityUntil",
 ] as const;
-const DETAIL_FIELDS = ["devAccrued", "platformBps", "devBps", "lpSeedBps"] as const;
+const DETAIL_FIELDS = ["devAccrued", "platformBps", "devBps", "lpSeedBps", "priorityMaxHolding"] as const;
 
 const curveAbi = CurveSaleAbi as Abi;
 const tokenAbi = MembershipTokenV3Abi as Abi;
@@ -215,6 +217,7 @@ export function useCurve(address: Address | undefined) {
                   platformBps: Number(r[12] as number),
                   devBps: Number(r[13] as number),
                   lpSeedBps: Number(r[14] as number),
+                  priorityMaxHolding: r[15] as bigint,
               }
             : undefined;
     // The last good read of this address, kept while later reads fail (W-T16 "stale").

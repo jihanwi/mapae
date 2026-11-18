@@ -14,7 +14,7 @@ import {CURVE_SUPPLY, DEX_SUPPLY, TOTAL_SUPPLY, costToSellOut, grossForNet, quot
 import {utf8ByteLength, withinByteLimit} from "../lib/bytes";
 import {displayTicker, isStandardTicker, normalizeTicker, tickerCharsOk} from "../lib/ticker";
 import {useSameTicker} from "../components/TickerBadge";
-import {exceedsDevFirstBuyCap} from "../lib/devFirstBuy";
+import {devFirstBuyCap, exceedsDevFirstBuyCap} from "../lib/devFirstBuy";
 import {fmt, fmtCeil, fmtDateTime, fmtSig, sanitizeAmountInput} from "../lib/format";
 import {NetError, PrimaryBtn, Skeleton} from "../components/ui";
 import {RunFn, TxButton} from "../components/tx";
@@ -41,6 +41,8 @@ function useCreateReads(account: Address | undefined) {
             {address: ADDR_V3.mapaeFactory, abi: MapaeFactoryV3Abi as Abi, functionName: "quoteConfig", args: [ADDR_V3.mockKRW], chainId: giwaSepolia.id},
             {address: ADDR_V3.mapaeFactory, abi: MapaeFactoryV3Abi as Abi, functionName: "quoteConfig", args: [ADDR_V3.weth], chainId: giwaSepolia.id},
             {address: ADDR_V3.curveFactory, abi: CurveFactoryAbi as Abi, functionName: "nextAllowedAt", args: [account ?? ZERO], chainId: giwaSepolia.id},
+            // v3.5: the Dev first-buy cap is the new curve's holding cap (bps of supply)
+            {address: ADDR_V3.curveFactory, abi: CurveFactoryAbi as Abi, functionName: "priorityMaxHoldingBps", chainId: giwaSepolia.id},
         ],
         query: {refetchInterval: 10_000},
     });
@@ -58,6 +60,7 @@ function useCreateReads(account: Address | undefined) {
         krw: ok ? (d![4].result as QuoteConfig) : undefined,
         weth: ok ? (d![5].result as QuoteConfig) : undefined,
         nextAllowedAt: ok && account ? (d![6].result as bigint) : 0n,
+        devBuyCap: ok ? devFirstBuyCap(Number(d![7].result as number)) : undefined,
     };
 }
 
@@ -117,8 +120,9 @@ export default function Create() {
 
     const preview = vq > 0n && devBuy > 0n && r.fees ? quoteBuyWithFees(vq, 0n, 0n, devBuy, feeBps) : undefined;
     const minTokensOut = preview ? (preview.tokensOut * 99n) / 100n : 0n;
-    // v3.2: the buy at launch may deliver at most 5% of supply; more would revert the whole creation
-    const overCap = !!preview && exceedsDevFirstBuyCap(preview.tokensOut, ADDR_V3.devFirstBuyMaxTokens);
+    // v3.5: the buy at launch may deliver at most the factory's holding cap; more reverts the whole creation
+    const capTokens = r.devBuyCap ?? ADDR_V3.priorityMaxHoldingTokens;
+    const overCap = !!preview && exceedsDevFirstBuyCap(preview.tokensOut, capTokens);
 
     // Leading / trailing spaces never reach the chain: validation, byte counts and tx args all use
     // the trimmed values (the inputs keep what was typed).
@@ -323,7 +327,7 @@ export default function Create() {
                         />
                         <span className="text-hanji-400 text-[14px] flex-none">{unit}</span>
                     </div>
-                    <p className="m-0 mt-2 text-[12px] text-hanji-400">{tr.create.devBuyNote}</p>
+                    <p className="m-0 mt-2 text-[12px] text-hanji-400">{tr.create.devBuyNote(capTokens)}</p>
                     {preview && (
                         <div className="mt-2 text-[13px] tabular-nums flex justify-between gap-3 flex-wrap">
                             <span className="text-hanji-400">{tr.create.devBuyReceive}</span>
@@ -332,7 +336,7 @@ export default function Create() {
                             </span>
                         </div>
                     )}
-                    {overCap && <p className="m-0 mt-2 text-[12px] text-error">{tr.create.devBuyCap}</p>}
+                    {overCap && <p className="m-0 mt-2 text-[12px] text-error">{tr.create.devBuyCap(capTokens)}</p>}
                 </Field>
             </div>
 

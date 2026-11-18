@@ -218,11 +218,12 @@ export async function withSchemaRetry<T>(label: string, run: () => Promise<T>, e
     }
 }
 
-/** Indexer cursor row per contract version: id 1 = v3, id 31 = v3.1, id 32 = v3.2 (all left
- *  untouched), id 33 = v3.2 reindex for decision 50 (spot price per curve trade). A new row starts at
- *  ADDR_V3.deployBlock, so every v3.2 event is read again: trades overwrite price_wad, r_after and
- *  s_after on (tx, log_index); curves and transfers keep DO NOTHING, graduations are idempotent. */
-export const INDEXER_STATE_ID = 33;
+/** Indexer cursor row per contract version: id 1 = v3, id 31 = v3.1, id 32 = v3.2, id 33 = v3.2
+ *  reindex for decision 50 (spot price per curve trade) (all left untouched), id 35 = v3.5 (W-T54,
+ *  the CurveFactory with the priority holding cap). A new row starts at ADDR_V3.deployBlock (the
+ *  v3.5 deployment), as the v3.1 -> v3.2 switch did; every query filters by ADDR_V3.curveFactory, so
+ *  v3.2 rows stay in the database but are no longer listed. */
+export const INDEXER_STATE_ID = 35;
 
 /** Cursor row of the L1 offering indexer. Separate from INDEXER_STATE_ID so L0 is never read again;
  *  the catch-up throttle stays on the L0 row. id 132 = W-T33 (v3.2-L1 factory only, left untouched);

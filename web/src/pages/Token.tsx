@@ -691,7 +691,7 @@ export default function Token() {
                 {/* v3.1: verified-only notice while the priority window is open */}
                 {!c.graduated && (
                     <div className="order-6 lg:order-none min-w-0">
-                        <PriorityBanner priorityUntil={c.priorityUntil} />
+                        <PriorityBanner priorityUntil={c.priorityUntil} capTokens={c.priorityMaxHolding} />
                     </div>
                 )}
                 <div ref={panelRef} className="order-7 lg:order-none min-w-0 scroll-mt-4">
