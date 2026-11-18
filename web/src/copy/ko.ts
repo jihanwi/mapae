@@ -6,6 +6,22 @@ import {ADDR_V3} from "../contracts/addressesV3";
 /** v3.1 real-name priority window in whole minutes (from the deployment, never hardcoded). */
 export const PRIORITY_MINUTES = Math.round(ADDR_V3.priorityWindow / 60);
 
+/** v3.5 priority holding cap as shown in copy: a percentage of supply ("2", "0.5") and whole tokens.
+ *  The defaults come from the deployment record; screens pass the value read on chain. */
+export const capPct = (capTokens: bigint): string => {
+    // BigInt(): copy tests call every function with a sample string
+    const bps = Number((BigInt(capTokens) * 10_000n) / 10n ** 27n);
+    return (bps / 100).toString();
+};
+export const CAP_DEFAULT = ADDR_V3.priorityMaxHoldingTokens;
+const capWholeKo = (capTokens: bigint) => {
+    const whole = Number(BigInt(capTokens) / 10n ** 18n);
+    return whole % 10_000 === 0 ? `${(whole / 10_000).toLocaleString("ko-KR")}만` : whole.toLocaleString("ko-KR");
+};
+const devBuyCapKo = (cap: bigint) =>
+    `발행과 함께 살 수 있는 양은 총공급의 ${capPct(cap)}%(${capWholeKo(cap)} 개)까지예요. 첫 ${PRIORITY_MINUTES}분 동안은 누구나 같은 한도예요`;
+const capOverKo = (cap: bigint) => `첫 ${PRIORITY_MINUTES}분 동안은 지갑 하나가 총공급의 ${capPct(cap)}%까지만 가질 수 있어요`;
+
 export const ko = {
     /** BCP 47 locale for numbers and dates */
     locale: "ko-KR",
@@ -475,6 +491,12 @@ export const ko = {
         ctaWithCost: (cta: string, cost: string) => `${cta} — ${cost}`,
     },
     trade: {
+        /** W-T54: the priority-window holding cap on the buy side (v3.5) */
+        priorityCapLeft: (n: string) => `첫 ${PRIORITY_MINUTES}분 한도: ${n}개 더 살 수 있어요`,
+        priorityCapFull: (t: string) => `우선 구간 한도를 다 채웠어요. ${t} 뒤에는 한도 없이 살 수 있어요`,
+        priorityCapOver: capOverKo,
+        priorityCapMax: "한도까지",
+        capTime: (m: number, s: number) => `${m}분 ${s}초`,
         title: "거래",
         spot: "현재가",
         offer: "공모가",
@@ -596,8 +618,8 @@ export const ko = {
         startPrice: "시작가 (1개당)",
         sellOut: "완판까지 필요한 금액 (수수료 포함)",
         devBuy: (unit: string) => `Dev 첫 매수 (선택, ${unit})`,
-        devBuyNote: "발행과 동시에 매수하는 물량이에요. 총공급의 5%까지 살 수 있고, 미리 배정받는 물량은 없어요",
-        devBuyCap: "발행과 함께 살 수 있는 양은 총공급의 5%(5,000만 개)까지예요. 더 사려면 발행한 뒤에 매수해 주세요",
+        devBuyNote: (cap: bigint) => `발행과 동시에 매수하는 물량이에요. 총공급의 ${capPct(cap)}%까지 살 수 있고, 미리 배정받는 물량은 없어요`,
+        devBuyCap: devBuyCapKo,
         devBuyReceive: "예상 수령",
         totalSupply: "총공급",
         curveSupply: "본딩커브 판매 물량",
@@ -698,7 +720,8 @@ export const ko = {
         CurvesDisabled: "지금은 새 토큰을 발행할 수 없어요",
         QuoteNotAllowed: "이 통화는 쓸 수 없어요",
         CurveRateLimited: "7일 동안 발행할 수 있는 토큰 3개를 모두 발행했어요",
-        DevFirstBuyTooLarge: "발행과 함께 살 수 있는 양은 총공급의 5%(5,000만 개)까지예요. 더 사려면 발행한 뒤에 매수해 주세요",
+        DevFirstBuyTooLarge: devBuyCapKo(CAP_DEFAULT),
+        PriorityHoldingExceeded: capOverKo(CAP_DEFAULT),
         InvalidName: "이름 길이를 확인해 주세요",
         InvalidSymbol: "티커 길이를 확인해 주세요",
         SellExceedsSold: "본딩커브에서 팔린 수량보다 많이 매도할 수 없어요",
@@ -976,6 +999,8 @@ export const ko = {
     },
     // 토큰 페이지 (지표, 탭, 주소 복사, 빠른 금액)
     tokenPage: {
+        /** W-T54: second line of the priority banner */
+        priorityCapNote: (cap: bigint) => `첫 ${PRIORITY_MINUTES}분은 지갑당 총공급의 ${capPct(cap)}%까지. 발행자도 같아요`,
         tabs: {comments: "댓글", trades: "거래", holders: "보유자", info: "정보"},
         volume: "24시간 거래대금",
         holders: "보유자",

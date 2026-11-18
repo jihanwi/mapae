@@ -10,6 +10,7 @@ import {
     useQuoteBuy,
     useQuoteSell,
     usePoolQuote,
+    useSecondClock,
     useTradeCta,
     ZERO,
 } from "../hooks/curves";
@@ -23,7 +24,8 @@ import {RunFn, RunOpts, TxButton} from "./tx";
 import {useApprovalStep} from "../hooks/approval";
 import {PrimaryBtn, SecondaryBtn} from "./ui";
 import {opensOnboarding, useOnboardingModal} from "./OnboardingModal";
-import {minSec} from "../lib/priority";
+import {minSec, priorityRemaining} from "../lib/priority";
+import {capLeft, exceedsCap, maxQuoteForCap} from "../lib/priorityCap";
 import {GuardPanel, ImpactRows, SlippagePicker, useGuardedSend, useSlippagePref} from "./TradeGuard";
 import {useNow} from "./feed";
 import {useActivity} from "../hooks/activity";
@@ -35,6 +37,9 @@ import {autoSlippageBps, curveBuyAvg, curveSellAvg, minOut, poolImpactBps, price
 
 type Side = "buy" | "sell";
 const WAD = 10n ** 18n;
+/** ETH buys go through CurveFactory.buyWithETH; the curve's own revert (v3.5 PriorityHoldingExceeded)
+ *  bubbles up from the nested call, so its error item is added for viem to decode the name. */
+const ETH_BUY_ABI = [...CurveFactoryAbi, ...CurveSaleAbi.filter((x) => x.type === "error" && x.name === "PriorityHoldingExceeded")] as unknown as typeof CurveFactoryAbi;
 
 /** Slippage props passed to each trade side. */
 /** `blocked`: the custom slippage field holds an invalid value, or the page is stale (W-T16), so no
@@ -85,6 +90,29 @@ function useAmount(raw: string) {
     }, [raw]);
 }
 
+/** W-T54 (v3.5): the priority-window holding cap for the connected wallet on a curve that has not
+ *  graduated (the curve's priorityMaxHolding, read with the detail fields). null outside the window,
+ *  without a wallet, or until the wallet's token balance is read. */
+type PriorityCap = {cap: bigint; held: bigint; left: bigint; remainingSec: number};
+function usePriorityCap(c: CurveDetail, address: Address | undefined): PriorityCap | null {
+    const openNow = !c.graduated && priorityRemaining(c.priorityUntil, Date.now() / 1000) > 0;
+    const now = useSecondClock(openNow);
+    const remainingSec = c.graduated ? 0 : priorityRemaining(c.priorityUntil, now);
+    const active = remainingSec > 0 && !!address;
+    const bal = useReadContract({
+        address: c.token,
+        abi: MembershipTokenV3Abi,
+        functionName: "balanceOf",
+        args: [address ?? ZERO],
+        chainId: giwaSepolia.id,
+        query: {enabled: active, refetchInterval: 6_000},
+    });
+    if (!active || bal.data === undefined) return null;
+    const cap = c.priorityMaxHolding;
+    const held = bal.data as bigint;
+    return {cap, held, left: capLeft(cap, held), remainingSec};
+}
+
 /** Buy/sell panel: curve trades before graduation, pool swaps after. `side` / `onSideChange` let
  *  the page pick the side (mobile bottom bar); without them the panel keeps its own state.
  *  `paused`: chain reads fail (stale page); the input stays, the trade buttons are disabled. */
@@ -130,6 +158,12 @@ export function CurveTradePanel({c, side: sideProp, onSideChange, paused = false
     const ethBal = useBalance({address, chainId: giwaSepolia.id, query: {enabled: !!address && payNative, refetchInterval: 6_000}});
     const balance: bigint | undefined = payNative ? ethBal.data?.value : (erc20Bal.data as bigint | undefined);
     const clear = () => setRaw("");
+    const cap = usePriorityCap(c, address);
+    const capOn = side === "buy" && !c.graduated && cap !== null;
+    const fillToCap = () => {
+        if (!cap) return;
+        setRaw(formatUnits(maxQuoteForCap(c.virtualQuote, c.r, c.s, BigInt(c.totalFeeBps), cap.left), 18));
+    };
 
     return (
         <div className="bg-ink-800 border border-ink-700 rounded-card p-4 sm:p-7 min-w-0">
@@ -180,11 +214,29 @@ export function CurveTradePanel({c, side: sideProp, onSideChange, paused = false
             {address && balance !== undefined && (
                 <p className="m-0 text-[12px] text-hanji-400 mb-3 tabular-nums">{tr.curve.balance(fmt(balance, 4, tr.locale), balUnit)}</p>
             )}
+            {capOn && cap && (
+                <div className="flex items-center justify-between gap-x-3 gap-y-1 flex-wrap mb-3 text-[12px]">
+                    <span className="text-brass-400 tabular-nums min-w-0">
+                        {cap.left > 0n
+                            ? tr.trade.priorityCapLeft(fmt(cap.left, 2, tr.locale))
+                            : tr.trade.priorityCapFull(tr.trade.capTime(minSec(cap.remainingSec).m, minSec(cap.remainingSec).s))}
+                    </span>
+                    {cap.left > 0n && (
+                        <button
+                            type="button"
+                            onClick={fillToCap}
+                            className="min-h-[36px] px-3 rounded-input border border-ink-700 text-[12px] text-hanji-100 whitespace-nowrap hover:border-brass-600"
+                        >
+                            {tr.trade.priorityCapMax}
+                        </button>
+                    )}
+                </div>
+            )}
             <SlippagePicker pref={pref} setPref={setPref} autoBps={autoBps} onBlockedChange={setSlipBlocked} />
             {c.graduated ? (
                 <PoolSide c={c} side={side} amount={amount} slip={slip} onDone={clear} />
             ) : side === "buy" ? (
-                <CurveBuy c={c} amount={amount} slip={slip} onDone={clear} />
+                <CurveBuy c={c} amount={amount} slip={slip} onDone={clear} capLeft={capOn && cap ? cap.left : undefined} capTokens={cap?.cap} />
             ) : (
                 <CurveSell c={c} amount={amount} slip={slip} onDone={clear} />
             )}
@@ -272,7 +324,9 @@ function Fees({platform, dev, lp, unit}: {platform: bigint; dev: bigint; lp: big
     );
 }
 
-function CurveBuy({c, amount, slip, onDone}: {c: CurveDetail; amount: bigint; slip: Slip; onDone: () => void}) {
+/** `capLeft`: tokens the wallet may still buy inside the priority window (W-T54); undefined when no
+ *  cap applies. A quote above it disables the buy button with the reason. */
+function CurveBuy({c, amount, slip, onDone, capLeft: left, capTokens}: {c: CurveDetail; amount: bigint; slip: Slip; onDone: () => void; capLeft?: bigint; capTokens?: bigint}) {
     const tr = useCopy();
     const {address} = useAccount();
     const client = usePublicClient({chainId: giwaSepolia.id});
@@ -302,7 +356,7 @@ function CurveBuy({c, amount, slip, onDone}: {c: CurveDetail; amount: bigint; sl
         g.reset();
         const call = (min: bigint) =>
             c.isEth
-                ? ({address: ADDR_V3.curveFactory, abi: CurveFactoryAbi, functionName: "buyWithETH", args: [c.address, min], value: amount, chainId: giwaSepolia.id} as const)
+                ? ({address: ADDR_V3.curveFactory, abi: ETH_BUY_ABI, functionName: "buyWithETH", args: [c.address, min], value: amount, chainId: giwaSepolia.id} as const)
                 : ({address: c.address, abi: CurveSaleAbi, functionName: "buy", args: [amount, min], chainId: giwaSepolia.id} as const);
         const ok = await g.send(run, {
             seen: seenOverride ?? quote.tokensOut,
@@ -321,6 +375,7 @@ function CurveBuy({c, amount, slip, onDone}: {c: CurveDetail; amount: bigint; sl
         }
     };
 
+    const overCap = !!quote && left !== undefined && exceedsCap(quote.tokensOut, left);
     const fees = quote ? quote.platformFee + quote.devFee + quote.lpSeedFee : 0n;
     const impact = quote ? priceImpactBps("buy", spotPrice(c.virtualQuote, c.r, c.s), curveBuyAvg(quote.quoteSpent, fees, quote.tokensOut)) : undefined;
     return (
@@ -338,8 +393,9 @@ function CurveBuy({c, amount, slip, onDone}: {c: CurveDetail; amount: bigint; sl
                         {quote.graduates && <p className="text-[12px] text-brass-400 m-0 mt-2">{tr.curve.graduatesNow}</p>}
                     </>
                 )}
+                {overCap && capTokens !== undefined && <p className="text-[12px] text-error m-0 mt-2">{tr.trade.priorityCapOver(capTokens)}</p>}
             </div>
-            <CtaBlock state={effective} side="buy" action={(run) => execute(run)} payToken={payToken} amount={amount} refetch={refetch} blocked={slip.blocked} />
+            <CtaBlock state={effective} side="buy" action={(run) => execute(run)} payToken={payToken} amount={amount} refetch={refetch} blocked={slip.blocked || overCap} />
             <GuardPanel guard={g.guard} dp={4} unit={c.symbol} retry={execute} autoAvailable={!slip.isAuto} switchToAuto={slip.toAuto} autoBps={slip.autoBps} blocked={slip.blocked} />
         </>
     );

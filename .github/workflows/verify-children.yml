@@ -10,7 +10,7 @@ name: verify-children
 # through CurveFactory.allCurves(). Already verified contracts are skipped.
 #
 # RPC and verifier are public endpoints (no secrets). CurveFactory and the library address come
-# from deployments/giwa-sepolia-v3_2.json.
+# from deployments/giwa-sepolia-v3_5.json (W-T54: the v3.5 CurveFactory; v3.2 curves are no longer scanned).
 
 on:
   schedule:
@@ -18,7 +18,7 @@ on:
   workflow_dispatch:
     inputs:
       from_block:
-        description: "First block to scan (default: latest - 27000). Use the deployBlock (41419458) for a full pass."
+        description: "First block to scan (default: latest - 27000). Use the deployBlock (41649609) for a full pass."
         required: false
         type: string
 
@@ -33,7 +33,7 @@ env:
   FOUNDRY_PROFILE: default
   RPC_URL: https://sepolia-rpc.giwa.io
   VERIFIER_URL: https://sepolia-explorer.giwa.io/api/
-  DEPLOYMENT: deployments/giwa-sepolia-v3_2.json
+  DEPLOYMENT: deployments/giwa-sepolia-v3_5.json
   WINDOW_BLOCKS: "27000"
 
 jobs:

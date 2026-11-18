@@ -21,7 +21,7 @@
 //
 // v3.2: event logs are read in windows of LOG_CHUNK (9,000) blocks from --from-block to --to-block
 // (default latest): the RPC rejects ranges over 10,000 blocks ("block range greater than 10000
-// max"). The deployment json defaults to giwa-sepolia-v3_2.json when present (same library).
+// max"). The deployment json defaults to giwa-sepolia-v3_5.json when present (W-T54; same library as v3.2).
 //
 // v3.2-L1 (C-T2): a factory that exposes proceedsLockDeployer() emits OfferingCreated with a 4th data
 // word (proceedsLock), its Offering takes (proceedsLock, proceedsUpfrontBps) after recipients, its
@@ -72,7 +72,7 @@ if (args["from-block"] === undefined) {
 // MembershipTokenDeployer (linked library) address: --library, else the deployment json.
 const V3_JSON =
     args.deployment ??
-    ["deployments/giwa-sepolia-v3_2.json", "deployments/giwa-sepolia-v3_1.json", "deployments/giwa-sepolia-v3.json"].find((f) =>
+    ["deployments/giwa-sepolia-v3_5.json", "deployments/giwa-sepolia-v3_2.json", "deployments/giwa-sepolia-v3_1.json", "deployments/giwa-sepolia-v3.json"].find((f) =>
         existsSync(f)
     );
 const library =

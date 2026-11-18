@@ -19,6 +19,11 @@
           "value": "default-src 'self'; script-src 'self'; style-src 'self' https://cdn.jsdelivr.net https://fonts.googleapis.com; font-src 'self' https://cdn.jsdelivr.net https://fonts.gstatic.com; img-src 'self' data: blob: https://*.public.blob.vercel-storage.com; connect-src 'self' https://sepolia-rpc.giwa.io; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
         }
       ]
+    },
+    {
+      "source": "/(.*)",
+      "has": [{"type": "host", "value": "mapae-gasok-7k2.vercel.app"}],
+      "headers": [{"key": "X-Robots-Tag", "value": "noindex, nofollow"}]
     }
   ]
 }
