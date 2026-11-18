@@ -36,9 +36,23 @@ contract DemoCurveSimTest is Test {
         });
     }
 
+    /// @dev v3.5: the trade step buys far past 2% per wallet, so it runs after the priority window
+    ///      (on a live v3.5 chain the operator runs the two steps that far apart).
+    function _scenarioA() internal returns (DemoCurve.Result memory) {
+        CurveSale c = demo.scenarioAOpen(ctx);
+        vm.warp(c.priorityUntil());
+        return demo.scenarioATrade(ctx, c);
+    }
+
+    function _scenarioB() internal returns (DemoCurve.Result memory) {
+        CurveSale c = demo.scenarioBOpen(ctx);
+        vm.warp(c.priorityUntil());
+        return demo.scenarioBTrade(ctx, c);
+    }
+
     function test_ScenarioA_KrwsCurveTwelveBuyers() public {
         uint256 g = gasleft();
-        DemoCurve.Result memory a = demo.scenarioA(ctx);
+        DemoCurve.Result memory a = _scenarioA();
         emit log_named_uint("DemoCurve scenario A gas (simulated)", g - gasleft());
         assertTrue(CurveSale(a.curve).graduated());
         assertEq(a.verifiedBuyers, 12);
@@ -51,7 +65,7 @@ contract DemoCurveSimTest is Test {
 
     function test_ScenarioB_EthSelfGraduation() public {
         uint256 opBefore = deployer.balance;
-        DemoCurve.Result memory b = demo.scenarioB(ctx);
+        DemoCurve.Result memory b = _scenarioB();
         assertTrue(CurveSale(b.curve).graduated());
         assertEq(address(CurveSale(b.curve).quote()), GiwaSepolia.WETH);
         assertEq(MapaePool(b.pool).totalFeeBps(), 100);
@@ -66,8 +80,8 @@ contract DemoCurveSimTest is Test {
     }
 
     function test_BothScenariosSequential() public {
-        demo.scenarioA(ctx);
-        demo.scenarioB(ctx);
+        _scenarioA();
+        _scenarioB();
         assertEq(d.curveFactoryMock.allCurves().length, 2);
     }
 }

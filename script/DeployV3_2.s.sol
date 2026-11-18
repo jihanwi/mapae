@@ -107,7 +107,8 @@ contract DeployV3_2 is Script {
             PoolFactory(r.poolFactory),
             mf,
             IWETH(GiwaSepolia.WETH),
-            deployer
+            deployer,
+            200
         );
         vm.stopBroadcast();
         require(d.curveFactory.priorityWindow() == PRIORITY_WINDOW, "DeployV3_2: priority window");

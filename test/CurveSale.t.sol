@@ -76,6 +76,10 @@ abstract contract CurveSaleTestBase is Test {
         poolFactory = new PoolFactory();
         curve = _newCurve(IDojang(address(dojang)));
         token = curve.token();
+        // v3.5: these are curve-mechanics tests with single wallets buying far past 2% of supply;
+        // they run after the priority window (the window and its holding cap: CurvePriority.t.sol,
+        // CurveHoldingCap.t.sol)
+        vm.warp(curve.priorityUntil());
     }
 
     function _newCurve(IDojang d) internal returns (CurveSale c) {
@@ -90,7 +94,8 @@ abstract contract CurveSaleTestBase is Test {
                 tokenName: "Curve Token",
                 tokenSymbol: "CRV",
                 virtualQuote: vq,
-                priorityWindow: PRIORITY_WINDOW
+                priorityWindow: PRIORITY_WINDOW,
+                priorityMaxHolding: P.TOTAL_SUPPLY * 200 / 10_000
             })
         );
     }
@@ -243,6 +248,7 @@ abstract contract CurveSaleTestBase is Test {
     function testFuzz_C1_priority_UnverifiedCannotBuyInWindow(address who, uint256 amount) public {
         vm.assume(who != address(0) && !dojang.isVerified(who));
         amount = bound(amount, 1, 1e30);
+        vm.warp(curve.priorityUntil() - 1); // v3.5: setUp moved past the window; this one runs inside it
         vm.prank(who);
         vm.expectRevert(abi.encodeWithSelector(CurveSale.NotVerified.selector, who));
         curve.buy(amount, 0);
@@ -395,6 +401,7 @@ abstract contract CurveSaleTestBase is Test {
         feeRouter.setCurveFees(IFeeRouter.CurveFees({platformBps: 60, devBps: 40, lpSeedBps: 0}));
         curve = _newCurve(IDojang(address(dojang)));
         token = curve.token();
+        vm.warp(curve.priorityUntil()); // v3.5: as in setUp, mechanics run after the priority window
         assertEq(curve.lpSeedBps(), 0);
         (uint256 rF, uint256 lpF) = _graduateWithHistory();
         MapaePool pool = curve.pool();
@@ -601,7 +608,8 @@ abstract contract CurveSaleTestBase is Test {
                 tokenName: "X",
                 tokenSymbol: "X",
                 virtualQuote: 0,
-                priorityWindow: PRIORITY_WINDOW
+                priorityWindow: PRIORITY_WINDOW,
+                priorityMaxHolding: P.TOTAL_SUPPLY * 200 / 10_000
             })
         );
         vm.expectRevert(CurveSale.ZeroAddress.selector);
@@ -616,7 +624,8 @@ abstract contract CurveSaleTestBase is Test {
                 tokenName: "X",
                 tokenSymbol: "X",
                 virtualQuote: vq,
-                priorityWindow: PRIORITY_WINDOW
+                priorityWindow: PRIORITY_WINDOW,
+                priorityMaxHolding: P.TOTAL_SUPPLY * 200 / 10_000
             })
         );
     }

@@ -86,7 +86,7 @@ contract CurveFactoryETHTest is MapaeFactoryTestBase {
         factory.allowQuote(IERC20(address(weth)), P.VIRTUAL_QUOTE_RESERVE_WETH);
         factory.allowQuote(IERC20(address(krw)), P.krwsVirtualQuote(krw.decimals()));
         cf = new CurveFactory(
-            IDojang(address(dojang)), feeRouter, poolFactory, factory, IWETH(address(weth)), address(this)
+            IDojang(address(dojang)), feeRouter, poolFactory, factory, IWETH(address(weth)), address(this), 200
         );
         dojang.setVerified(dev, true);
         dojang.setVerified(buyer, true);
@@ -113,6 +113,7 @@ contract CurveFactoryETHTest is MapaeFactoryTestBase {
 
     // W1 regular buy
     function test_W1_BuyWithETH() public {
+        vm.warp(curve.priorityUntil()); // v3.5: single-wallet buys past 2% of supply run after the priority window
         uint256 before = buyer.balance;
         vm.recordLogs();
         vm.prank(buyer);
@@ -139,6 +140,7 @@ contract CurveFactoryETHTest is MapaeFactoryTestBase {
 
     // W2 closing buy refunds the excess in ETH and graduates in the same tx
     function test_W2_ClosingBuyRefundsAndGraduates() public {
+        vm.warp(curve.priorityUntil()); // v3.5: single-wallet buys past 2% of supply run after the priority window
         uint256 budget = _sellOutBudget(curve);
         uint256 sent = budget + 5 ether;
         uint256 before = buyer.balance;
@@ -186,6 +188,7 @@ contract CurveFactoryETHTest is MapaeFactoryTestBase {
 
     // W6 re-entry on refund reverts the whole tx
     function test_W6_ReentrancyOnRefundReverts() public {
+        vm.warp(curve.priorityUntil()); // v3.5: single-wallet buys past 2% of supply run after the priority window
         ReentrantBuyer rb = new ReentrantBuyer(cf);
         dojang.setVerified(address(rb), true);
         vm.deal(address(this), 10 ether);
@@ -201,6 +204,7 @@ contract CurveFactoryETHTest is MapaeFactoryTestBase {
 
     // W7 refund-refusing contract buyer reverts the whole tx
     function test_W7_RefundRejectedReverts() public {
+        vm.warp(curve.priorityUntil()); // v3.5: single-wallet buys past 2% of supply run after the priority window
         RefundRejecter rj = new RefundRejecter();
         dojang.setVerified(address(rj), true);
         vm.deal(address(this), 10 ether);
@@ -231,7 +235,7 @@ contract CurveFactoryETHTest is MapaeFactoryTestBase {
         assertFalse(CurveSale(c1).countedVerifiedBuyer(buyer), "dev never counted");
         _assertFactoryClean(c1);
 
-        // v3.2: a first buy that would sell out (or pass 5%) reverts the whole tx, ETH stays
+        // v3.2: a first buy that would sell out (or pass 2%) reverts the whole tx, ETH stays
         uint256 cost = Math.mulDiv(
             P.VIRTUAL_QUOTE_RESERVE_WETH, P.CURVE_SUPPLY, P.VIRTUAL_TOKEN_RESERVE - P.CURVE_SUPPLY, Math.Rounding.Ceil
         );
@@ -285,7 +289,7 @@ contract CurveFactoryETHTest is MapaeFactoryTestBase {
     }
 
     // ---------------------------------------------------------------------
-    // v3.2 Dev first-buy cap (5% of supply, creation tx only)
+    // v3.5 Dev first-buy cap (2% of supply, the priority holding cap)
     // ---------------------------------------------------------------------
 
     /// @dev Largest quoteIn whose fresh-curve quote stays within the cap (ref must be untraded).
@@ -293,7 +297,7 @@ contract CurveFactoryETHTest is MapaeFactoryTestBase {
         uint256 hi = 1000 ether;
         while (lo < hi) {
             uint256 mid = (lo + hi + 1) / 2;
-            if (ref.quoteBuy(mid).tokensOut <= P.DEV_FIRST_BUY_MAX_TOKENS) lo = mid;
+            if (ref.quoteBuy(mid).tokensOut <= (P.TOTAL_SUPPLY * 200 / 10_000)) lo = mid;
             else hi = mid - 1;
         }
     }
@@ -305,10 +309,10 @@ contract CurveFactoryETHTest is MapaeFactoryTestBase {
     function test_W_DevFirstBuyCap_MainnetPreset() public {
         uint256 maxIn = _maxFirstBuy(curve); // `curve` is untraded here
         uint256 atMax = curve.quoteBuy(maxIn).tokensOut;
-        emit log_named_decimal_uint("5% first buy, ETH 0.6 preset, quoteIn (fee incl)", maxIn, 18);
-        emit log_named_decimal_uint("5% first buy, ETH 0.6 preset, net to curve", _netOf(curve, maxIn), 18);
-        assertLe(atMax, P.DEV_FIRST_BUY_MAX_TOKENS);
-        assertGt(curve.quoteBuy(maxIn + 1).tokensOut, P.DEV_FIRST_BUY_MAX_TOKENS, "1 wei more passes the cap");
+        emit log_named_decimal_uint("2% first buy, ETH 0.6 preset, quoteIn (fee incl)", maxIn, 18);
+        emit log_named_decimal_uint("2% first buy, ETH 0.6 preset, net to curve", _netOf(curve, maxIn), 18);
+        assertLe(atMax, (P.TOTAL_SUPPLY * 200 / 10_000));
+        assertGt(curve.quoteBuy(maxIn + 1).tokensOut, (P.TOTAL_SUPPLY * 200 / 10_000), "1 wei more passes the cap");
 
         // just under: succeeds
         vm.prank(dev);
@@ -331,22 +335,28 @@ contract CurveFactoryETHTest is MapaeFactoryTestBase {
         TestWETH9 weth2 = new TestWETH9();
         factory.allowQuote(IERC20(address(weth2)), 0.002 ether);
         CurveFactory cf2 = new CurveFactory(
-            IDojang(address(dojang)), feeRouter, poolFactory, factory, IWETH(address(weth2)), address(this)
+            IDojang(address(dojang)), feeRouter, poolFactory, factory, IWETH(address(weth2)), address(this), 200
         );
         vm.prank(dev);
         (address refA,) = cf2.createCurveWithETH("Ref", "REF", 0);
         CurveSale ref = CurveSale(refA);
         uint256 maxIn = _maxFirstBuy(ref);
-        emit log_named_decimal_uint("5% first buy, ETH 0.002 testnet, quoteIn (fee incl)", maxIn, 18);
-        emit log_named_decimal_uint("5% first buy, ETH 0.002 testnet, net to curve", _netOf(ref, maxIn), 18);
+        emit log_named_decimal_uint("2% first buy, ETH 0.002 testnet, quoteIn (fee incl)", maxIn, 18);
+        emit log_named_decimal_uint("2% first buy, ETH 0.002 testnet, net to curve", _netOf(ref, maxIn), 18);
 
-        // the web's current default first buy (0.00005 ETH) passes
+        // v3.5: the largest first buy under 2% passes
         vm.prank(dev);
-        (, address t1) = cf2.createCurveWithETH{value: 0.000_05 ether}("Small", "SMALL", 0);
+        (, address t1) = cf2.createCurveWithETH{value: maxIn}("Small", "SMALL", 0);
         assertGt(MembershipToken(t1).balanceOf(dev), 0);
-        assertLe(MembershipToken(t1).balanceOf(dev), P.DEV_FIRST_BUY_MAX_TOKENS);
+        assertLe(MembershipToken(t1).balanceOf(dev), (P.TOTAL_SUPPLY * 200 / 10_000));
 
-        // 0.001 ETH is past 5% on the testnet preset: reverts, ETH back
+        // v3.5: the web's current default first buy (0.00005 ETH, ~2.58% here) is now past the cap
+        // (W-T54 changes the web default)
+        vm.prank(dev);
+        vm.expectPartialRevert(CurveFactory.DevFirstBuyTooLarge.selector);
+        cf2.createCurveWithETH{value: 0.000_05 ether}("Default", "DEF", 0);
+
+        // 0.001 ETH is past 2% on the testnet preset: reverts, ETH back
         uint256 before = dev.balance;
         vm.prank(dev);
         vm.expectPartialRevert(CurveFactory.DevFirstBuyTooLarge.selector);
@@ -355,7 +365,8 @@ contract CurveFactoryETHTest is MapaeFactoryTestBase {
     }
 
     function test_W_DevBuysPastCapAfterCreation() public {
-        // the cap is for the creation tx only: a later buy has no per-wallet limit (결정 19)
+        // v3.5: after the priority window a buy has no per-wallet limit (결정 19), the Dev included
+        vm.warp(curve.priorityUntil());
         uint256 budget = _sellOutBudget(curve);
         vm.prank(dev);
         cf.buyWithETH{value: budget}(curve, 0);

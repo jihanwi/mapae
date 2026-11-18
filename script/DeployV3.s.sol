@@ -130,10 +130,22 @@ contract DeployV3 is Script {
         _registerQuotes(d.factoryDojang, d);
 
         d.curveFactoryMock = new CurveFactory(
-            IDojang(address(d.mockDojang)), d.feeRouter, d.poolFactory, d.factoryMock, IWETH(GiwaSepolia.WETH), deployer
+            IDojang(address(d.mockDojang)),
+            d.feeRouter,
+            d.poolFactory,
+            d.factoryMock,
+            IWETH(GiwaSepolia.WETH),
+            deployer,
+            200
         );
         d.curveFactoryDojang = new CurveFactory(
-            IDojang(address(d.adapter)), d.feeRouter, d.poolFactory, d.factoryDojang, IWETH(GiwaSepolia.WETH), deployer
+            IDojang(address(d.adapter)),
+            d.feeRouter,
+            d.poolFactory,
+            d.factoryDojang,
+            IWETH(GiwaSepolia.WETH),
+            deployer,
+            200
         );
         vm.stopBroadcast();
 
