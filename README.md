@@ -58,11 +58,11 @@ The platform never receives the issued token by any path (`test/NoPlatformTokens
 
 Chain ID `91342` · RPC `https://sepolia-rpc.giwa.io` · Explorer [sepolia-explorer.giwa.io](https://sepolia-explorer.giwa.io)
 
-L0, from [`deployments/giwa-sepolia-v3_2.json`](deployments/giwa-sepolia-v3_2.json):
+L0, from [`deployments/giwa-sepolia-v3_2.json`](deployments/giwa-sepolia-v3_2.json) (CurveFactory from [`deployments/giwa-sepolia-v3_6.json`](deployments/giwa-sepolia-v3_6.json)):
 
 | Contract | Address | Role |
 |---|---|---|
-| CurveFactory | [`0x9b8155C39cdB912557d8588157fC11e8D989e652`](https://sepolia-explorer.giwa.io/address/0x9b8155C39cdB912557d8588157fC11e8D989e652) | bonding-curve launches |
+| CurveFactory (v3.6) | [`0xC872B81fBFE7853531970F1aFBC1ab6b47078Cc5`](https://sepolia-explorer.giwa.io/address/0xC872B81fBFE7853531970F1aFBC1ab6b47078Cc5) | bonding-curve launches (scheduled start, verified-only option) |
 | FeeRouter | [`0xAB665B7867080cd62Aa316717400f3Cc094E7bd6`](https://sepolia-explorer.giwa.io/address/0xAB665B7867080cd62Aa316717400f3Cc094E7bd6) | curve and L0 pool fees |
 | PoolFactory | [`0xf4E7Bf1ACe429400AC23E271E4409D212677e44F`](https://sepolia-explorer.giwa.io/address/0xf4E7Bf1ACe429400AC23E271E4409D212677e44F) | pools after graduation or settlement (shared with L1) |
 | DojangAnyOf | [`0x87326FbbF76e724bA2bA954dAc04c3B939999f84`](https://sepolia-explorer.giwa.io/address/0x87326FbbF76e724bA2bA954dAc04c3B939999f84) | real-name check (shared with L1) |

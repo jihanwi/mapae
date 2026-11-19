@@ -800,7 +800,7 @@ Dev 첫 매수 상한도 5%에서 2%로 맞춘다. 우선 구간이 끝나면 �
   - 다시 씀: `CurvePriority.test_priority_GraduateInWindowPoolOpenToAnyone`(한 지갑 졸업 → 40개 지갑 + 먼지 매수 졸업).
 - 합계 461 → **476 그린 + 포크 스위트 1건 건너뜀**. CurveFactory 런타임 20,327 바이트(여유 4,249), CurveSale 8,980 바이트(여유 15,596).
 
-## v3.6 (C-T6, 2026-11-19): 예고 발행(startTime)과 실명 전용 토큰(verifiedOnly), 배포 전
+## v3.6 (C-T6, 2026-11-19): 예고 발행(startTime)과 실명 전용 토큰(verifiedOnly)
 
 배경: v3.5는 커브가 열리는 순간 거래가 시작돼 10분 우선 구간을 발행자 주변만 알 수 있었고, 구간 뒤에도 실명 보유자로만 시작하고 싶은
 발행자에게 선택지가 없었다. 발행자가 고르는 옵션 두 개를 넣었다. 둘 다 꺼짐이 기본이고, 끄면 v3.5와 같다.
@@ -831,6 +831,8 @@ Dev 첫 매수 상한도 5%에서 2%로 맞춘다. 우선 구간이 끝나면 �
   v3.5 스크립트와 달리 broadcast(또는 resume)일 때만 `deployments/giwa-sepolia-v3_6.json`을 쓴다. 리허설이 시뮬레이션 주소로 기록을
   덮어쓰지 않게 하려는 것이다. 절차: `docs/DEPLOY_V3_6.md`.
 - 작업 세션에서 GIWA RPC에 연결할 수 없어 RPC 리허설은 실행하지 못했다. 로컬 스택 리허설(`DeployV3_6.t.sol`)만 통과.
+- 배포(11-19): CurveFactory `0xC872B81fBFE7853531970F1aFBC1ab6b47078Cc5`, 블록 41712578, tx `0x59bb79222d19c40b88e99b2e660ff15bb9b36ea146525cc3c5f36d59ee20f1ec`. 배포자는 테스트 지갑 0xE4D0…98C4, owner는 생성자 인자로 0x67a2…D00C.
+  스크립트가 아니라 같은 빌드 산출물을 직접 배포했고 Blockscout 검증까지 끝났다. 기록은 `deployments/giwa-sepolia-v3_6.json`.
 
 ### 테스트
 
