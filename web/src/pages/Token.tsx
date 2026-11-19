@@ -20,7 +20,7 @@ import {AUTO_RETRY_MS, INITIAL_GRACE_MS, retryTarget, tokenPageState} from "../l
 import {PriorityBadge, PriorityBanner} from "../components/PriorityCountdown";
 import {Comments} from "../components/Comments";
 import {agoLabel, prefersReducedMotion, tradeAmount, tradeUnit, useNow} from "../components/feed";
-import {Badge, Gauge, NetError, PrimaryBtn, SecondaryBtn, Skeleton, Stat, StaleBand} from "../components/ui";
+import {Badge, Eyebrow, Gauge, Icon, NetError, PrimaryBtn, SecondaryBtn, Skeleton, Stat, StaleBand, UnderlineTabs} from "../components/ui";
 import {CurveAvatar, draftValid, linkDomain, MetaFields, SaveStatus} from "../components/MetaForm";
 import {API_BASE, CurveMeta, draftHasContent, emptyDraft, MetaDraft, useCurveMeta, useSaveMeta} from "../hooks/meta";
 import {CurveTradePanel} from "../components/CurveTradePanel";
@@ -40,6 +40,10 @@ import {useToast} from "../components/tx";
 // column wrappers are display:contents so `order-*` interleaves their blocks), metrics in 2 columns,
 // four tabs that fit 390px, and a bottom buy/sell bar. From lg: left column (header, metrics, meta,
 // chart, progress, tabs) and a sticky 360px right column (banner, trade panel, fixed panel).
+// design-token-page: the header is image + serif name, one bordered button (address copy) and the
+// Dev facts as text, quiet share buttons; the five metrics are one band (2 columns below xl, values
+// never truncated); the progress sits at the bottom of the chart card; underline tabs; the fixed
+// facts moved into the trust signals card.
 
 function ExtLink({href, children}: {href: string; children: React.ReactNode}) {
     return (
@@ -75,16 +79,19 @@ function usePrice(c: CurveDetail) {
     return {spot, mcap, poolSpot: poolSpot.data as bigint | undefined, spotError: poolSpot.isError};
 }
 
-function Metric({label, children, big}: {label: string; children: React.ReactNode; big?: boolean}) {
+/** One item of the metrics band: label (12px) over the value (.num 20px 500); never truncated. */
+function Metric({label, children}: {label: string; children: React.ReactNode}) {
     return (
-        <div className="bg-ink-900 rounded-stat px-3.5 py-3 min-w-0">
-            <div className="text-[12px] text-hanji-400 mb-1 truncate">{label}</div>
-            <div className={`font-semibold tabular-nums truncate ${big ? "text-[20px]" : "text-[15px]"}`}>{children}</div>
+        <div className="min-w-0 xl:flex-auto xl:px-5 xl:border-l xl:border-ink-700 xl:first:border-l-0 xl:first:pl-0 xl:last:pr-0">
+            <div className="text-[12px] text-hanji-400 mb-1">{label}</div>
+            <div className="num text-[20px] font-medium text-hanji-100 flex flex-wrap items-baseline gap-x-1.5 break-all">{children}</div>
         </div>
     );
 }
 
-/** Market cap, 24 h change, 24 h volume, holders, verified traders. */
+/** Market cap, 24 h change, 24 h volume, holders, verified traders: one band. Below xl two columns
+ *  with 16px between rows (from xl one row with 1px dividers; the lg left column is too narrow for
+ *  five untruncated values). */
 function Metrics({c}: {c: CurveDetail}) {
     const tr = useCopy();
     const unit = quoteUnit(c);
@@ -95,32 +102,31 @@ function Metrics({c}: {c: CurveDetail}) {
     const change = changeBps(currentPrice({...c, poolSpot}), refPrice(c, server));
     const row = server?.curves[addrKey(c.address)];
     const dp = unit === "ETH" ? 4 : 0;
-    const small = <span className="text-hanji-400 font-normal text-[12px]"> {unit}</span>;
+    const small = <span className="font-sans font-normal text-[12px] text-hanji-400">{unit}</span>;
+    const dash = <span className="text-hanji-400">–</span>;
     return (
-        <div className="grid grid-cols-2 lg:grid-cols-[1.4fr_1fr_1.2fr_0.8fr_1fr] gap-3 min-w-0">
-            <div className="col-span-2 lg:col-span-1 min-w-0">
-                <Metric label={tr.curve.marketCap} big>
-                    {mcap !== undefined ? fmtRound(mcap, dp, tr.locale) : "…"}
-                    {small}
-                </Metric>
-            </div>
+        <div className="bg-ink-900 border border-ink-700 rounded-[14px] px-4 sm:px-5 py-[18px] grid grid-cols-2 gap-x-4 gap-y-4 xl:flex xl:gap-0 min-w-0">
+            <Metric label={tr.curve.marketCap}>
+                <span>{mcap !== undefined ? fmtRound(mcap, dp, tr.locale) : "…"}</span>
+                {small}
+            </Metric>
             <Metric label={tr.homeRows.changeCol(86400)}>
                 <Change bps={change} />
             </Metric>
             <Metric label={tr.tokenPage.volume}>
                 {server ? (
                     <>
-                        {fmtRound(BigInt(row?.volume24h ?? "0"), dp, tr.locale)}
+                        <span>{fmtRound(BigInt(row?.volume24h ?? "0"), dp, tr.locale)}</span>
                         {small}
                     </>
                 ) : (
-                    <span className="text-hanji-400">–</span>
+                    dash
                 )}
             </Metric>
-            <Metric label={tr.tokenPage.holders}>{holders.isSuccess ? holders.data.total.toLocaleString(tr.locale) : <span className="text-hanji-400">–</span>}</Metric>
+            <Metric label={tr.tokenPage.holders}>{holders.isSuccess ? <span>{holders.data.total.toLocaleString(tr.locale)}</span> : dash}</Metric>
             <Metric label={tr.homeRows.cols.traders}>
-                {c.verifiedBuyerCount}
-                <span className="text-hanji-400 font-normal text-[12px]"> ({tr.curve.verifiedTradersNote})</span>
+                <span>{c.verifiedBuyerCount}</span>
+                <span className="font-sans font-normal text-[12px] text-hanji-400">{tr.tokenPage.exclDev}</span>
             </Metric>
         </div>
     );
@@ -140,7 +146,7 @@ function DevHolds({c}: {c: CurveDetail}) {
     });
     if (bal.isError || bal.data === undefined) return null;
     const b = bal.data as bigint;
-    return <Badge kind="neutral">{tr.tokenPage.devHolds(b === 0n ? "0" : sharePct(b, TOTAL_SUPPLY))}</Badge>;
+    return <span className="whitespace-nowrap">{tr.tokenPage.devHolds(b === 0n ? "0" : sharePct(b, TOTAL_SUPPLY))}</span>;
 }
 
 /** "n tokens launched by this Dev" from the flow endpoint; hidden without a server answer. */
@@ -148,7 +154,7 @@ function DevLaunched({c}: {c: CurveDetail}) {
     const tr = useCopy();
     const f = useFlow(c.address);
     if (!f.isSuccess) return null;
-    return <Badge kind="neutral">{tr.tokenPage.devLaunched(f.data.devLaunched)}</Badge>;
+    return <span className="whitespace-nowrap">{tr.tokenPage.devLaunched(f.data.devLaunched)}</span>;
 }
 
 /** The Dev's nickname next to the Dev address (owner decision: Dev only). Plain text, never a link;
@@ -186,11 +192,11 @@ function FlowCard({c}: {c: CurveDetail}) {
                     <div className="flex flex-wrap justify-between gap-x-3 gap-y-1 text-[13px] tabular-nums mb-2">
                         <span>
                             <span className="text-success">{tr.tokenPage.buys(f.data.buys.count)}</span>
-                            <span className="text-hanji-100"> · {fmtRound(buyVol, dp, tr.locale)} {unit}</span>
+                            <span className="text-hanji-100"> · <span className="num">{fmtRound(buyVol, dp, tr.locale)}</span> {unit}</span>
                         </span>
                         <span>
                             <span className="text-error">{tr.tokenPage.sells(f.data.sells.count)}</span>
-                            <span className="text-hanji-100"> · {fmtRound(sellVol, dp, tr.locale)} {unit}</span>
+                            <span className="text-hanji-100"> · <span className="num">{fmtRound(sellVol, dp, tr.locale)}</span> {unit}</span>
                         </span>
                     </div>
                     {share !== null && (
@@ -213,40 +219,56 @@ function Header({c, imageUrl}: {c: CurveDetail; imageUrl?: string | null}) {
     const tr = useCopy();
     // decision 54: other tokens with the same ticker (from the summary list already loaded)
     const same = useSameTicker(c.symbol, c.address);
+    const avatarChar = c.symbol.slice(0, 1) || "馬";
     return (
         <div className="flex flex-col gap-3 min-w-0">
-            <div className="flex items-center gap-4 min-w-0">
-                <CurveAvatar char={c.symbol.slice(0, 1) || "馬"} imageUrl={imageUrl} size={64} />
+            <div className="flex items-center gap-4 sm:gap-5 min-w-0">
+                <span className="sm:hidden flex-none">
+                    <CurveAvatar char={avatarChar} imageUrl={imageUrl} size={64} />
+                </span>
+                <span className="hidden sm:inline-flex flex-none">
+                    <CurveAvatar char={avatarChar} imageUrl={imageUrl} size={88} />
+                </span>
                 <div className="min-w-0 flex-1">
-                    <h1 className="m-0 text-[24px] sm:text-[28px] font-bold break-all">{c.name}</h1>
-                    <div className="text-[13px] text-hanji-400 flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
-                        <span className="min-w-0 break-all">
+                    {/* long names wrap, never cut */}
+                    <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 min-w-0">
+                        <h1 className="m-0 min-w-0 font-serif text-[28px] sm:text-[38px] font-bold leading-[1.15] [overflow-wrap:anywhere]">{c.name}</h1>
+                        <span className="text-[15px] text-hanji-400 min-w-0 break-all">
                             {c.symbol} · {quoteUnit(c)}
                         </span>
+                    </div>
+                    {/* existing badges, as they were, under the name line */}
+                    <div className="mt-2 text-[13px] text-hanji-400 flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0 empty:hidden">
                         <NonStandardTicker symbol={c.symbol} />
                         {same !== null && (
                             <Link to={`/?q=${encodeURIComponent(normalizeTicker(c.symbol))}`} className="text-brass-400 hover:text-hanji-100 whitespace-nowrap">
                                 {tr.tokenPage.otherSameTicker(same)}
                             </Link>
                         )}
+                        {!c.graduated && <PriorityBadge priorityUntil={c.priorityUntil} />}
                     </div>
                 </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2 min-w-0 text-[12px]">
-                <CopyAddress address={c.token} label={tr.tokenPage.copyLabel} />
-                {!c.graduated && <PriorityBadge priorityUntil={c.priorityUntil} />}
-                <DevHolds c={c} />
-                <DevLaunched c={c} />
+            <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 min-w-0">
+                <div className="flex flex-wrap items-center gap-x-[18px] gap-y-2 min-w-0 text-[13px] text-hanji-400">
+                    <CopyAddress address={c.token} label={tr.tokenPage.copyLabel} variant="outline" />
+                    <span className="inline-flex flex-wrap items-center gap-x-1.5 min-w-0">
+                        {tr.curve.dev} <DevNickname c={c} />{" "}
+                        <Link to={`/w/${c.dev}`} className="num text-brass-400 hover:text-hanji-100">
+                            {shortAddr(c.dev)}
+                        </Link>
+                    </span>
+                    <DevHolds c={c} />
+                    <DevLaunched c={c} />
+                </div>
                 <ShareButtons c={c} />
-                <span className="inline-flex flex-wrap items-center gap-x-1.5 text-hanji-400 min-w-0">
-                    {tr.curve.dev} <DevNickname c={c} /> <Link to={`/w/${c.dev}`} className="text-brass-400 hover:text-hanji-100">{shortAddr(c.dev)}</Link>
-                </span>
             </div>
         </div>
     );
 }
 
-/** Copy the preview link (/t/<curve>) and post it on X (web intent). */
+/** Copy the preview link (/t/<curve>) and post it on X (web intent): quiet buttons, a generic share
+ *  icon (no X mark). */
 function ShareButtons({c}: {c: CurveDetail}) {
     const tr = useCopy();
     const push = useToast();
@@ -261,42 +283,51 @@ function ShareButtons({c}: {c: CurveDetail}) {
             window.prompt(tr.tokenPage.copyLink, link);
         }
     };
-    const chip = "inline-flex items-center min-h-[36px] px-3 rounded-full border border-ink-700 text-[12px] text-hanji-100 no-underline hover:border-brass-600";
+    const quiet = "inline-flex items-center gap-1.5 min-h-[44px] px-2 text-[13px] text-hanji-400 no-underline hover:text-hanji-100";
     return (
-        <>
-            <button type="button" onClick={() => void copy()} className={chip}>
+        <div className="flex items-center gap-1 -mx-2">
+            <button type="button" onClick={() => void copy()} className={quiet}>
+                <Icon name="link" />
                 {tr.tokenPage.copyLink}
             </button>
-            <a href={xIntentUrl(`${c.name} (${c.symbol}) | MAPAE`, link)} target="_blank" rel="noopener noreferrer" className={chip}>
+            <a href={xIntentUrl(`${c.name} (${c.symbol}) | MAPAE`, link)} target="_blank" rel="noopener noreferrer" className={quiet}>
+                <Icon name="share" />
                 {tr.tokenPage.shareX}
             </a>
-        </>
+        </div>
     );
 }
 
-function Progress({c}: {c: CurveDetail}) {
+/** Bottom of the chart card: label, "N% · X left", a 6px gauge; graduated: the badge and pool link. */
+function ProgressFooter({c}: {c: CurveDetail}) {
     const tr = useCopy();
     const unit = quoteUnit(c);
     if (c.graduated) {
         return (
-            <div className="bg-ink-800 border border-ink-700 rounded-card p-4 sm:p-6">
-                <Gauge committed={10_000n} target={10_000n} height={10} />
-                <div className="mt-3 flex items-center justify-between gap-3 flex-wrap text-[14px]">
-                    <Badge kind="neutral">{tr.curve.graduated}</Badge>
-                    {c.pool !== ZERO && <ExtLink href={explorerAddr(c.pool)}>{tr.curve.poolLink}</ExtLink>}
+            <div className="min-w-0">
+                <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
+                    <Eyebrow locale={tr.locale}>{tr.tokenPage.progressLabel}</Eyebrow>
+                    <span className="flex items-center gap-3 flex-wrap text-[13px]">
+                        <Badge kind="neutral">{tr.curve.graduated}</Badge>
+                        {c.pool !== ZERO && <ExtLink href={explorerAddr(c.pool)}>{tr.curve.poolLink}</ExtLink>}
+                    </span>
                 </div>
+                <Gauge committed={10_000n} target={10_000n} height={6} />
             </div>
         );
     }
     const bps = progressBps(c.virtualQuote, c.r);
     const left = grossForNet(costToSellOut(c.virtualQuote, c.r, c.s), BigInt(c.totalFeeBps));
     return (
-        <div className="bg-ink-800 border border-ink-700 rounded-card p-4 sm:p-6">
-            <Gauge committed={bps} target={10_000n} height={10} />
-            <div className="mt-3 flex justify-between gap-3 flex-wrap text-[13px] tabular-nums">
-                <span className="text-hanji-400">{tr.curve.progress(pctLabel(bps))}</span>
-                <span className="text-hanji-100">{tr.curve.toGraduate(fmtCeil(left, unit === "ETH" ? 6 : 0, tr.locale), unit)}</span>
+        <div className="min-w-0">
+            <div className="flex items-baseline justify-between gap-3 flex-wrap mb-2">
+                <Eyebrow locale={tr.locale}>{tr.tokenPage.progressLabel}</Eyebrow>
+                <span className="text-[13px] text-hanji-400">
+                    <span className="num text-hanji-100">{pctLabel(bps)}%</span> · <span className="num text-hanji-100">{fmtCeil(left, unit === "ETH" ? 6 : 0, tr.locale)}</span> {unit}{" "}
+                    {tr.tokenPage.leftWord}
+                </span>
             </div>
+            <Gauge committed={bps} target={10_000n} height={6} />
         </div>
     );
 }
@@ -329,20 +360,20 @@ function TradeHistory({c}: {c: CurveDetail}) {
                 <ul className="m-0 p-0 list-none">
                     {rows.map((t) => (
                         <li key={t.key} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 border-t border-ink-700 first:border-t-0 text-[13px] tabular-nums min-w-0">
-                            <span className="text-hanji-400 w-[72px] flex-none">{t.ts !== undefined ? agoLabel(tr, now, t.ts) : ""}</span>
+                            <span className="num text-hanji-400 w-[72px] flex-none">{t.ts !== undefined ? agoLabel(tr, now, t.ts) : ""}</span>
                             <span className="flex-none">
                                 {t.isDev && <Badge kind="partial">{tr.curve.dev}</Badge>}
                                 {t.isDev && " "}
-                                <WalletLink address={t.trader} nickname={nicks.get(addrKey(t.trader))} className="max-w-[160px] text-hanji-100 hover:text-brass-400" />
+                                <WalletLink address={t.trader} nickname={nicks.get(addrKey(t.trader))} className={`max-w-[160px] text-hanji-100 hover:text-brass-400 ${nicks.get(addrKey(t.trader)) ? "" : "num"}`} />
                             </span>
                             <span className={`flex-none font-semibold ${t.side === "buy" ? "text-success" : "text-error"}`}>{t.side === "buy" ? tr.feed.buy : tr.feed.sell}</span>
                             {/* v3.1: buys made by a verified wallet (server: indexed status, browser: Buy.verified) */}
                             {t.side === "buy" && t.verified === true && <Badge kind="neutral">{tr.priority.verifiedTag}</Badge>}
                             <span className="text-hanji-100">
-                                {fmt(t.tokenAmount, 2, tr.locale)} {c.symbol}
+                                <span className="num">{fmt(t.tokenAmount, 2, tr.locale)}</span> {c.symbol}
                             </span>
                             <span className="text-hanji-100">
-                                {tradeAmount(t, c.isEth, tr.locale)} {tradeUnit(t, c.isEth)}
+                                <span className="num">{tradeAmount(t, c.isEth, tr.locale)}</span> {tradeUnit(t, c.isEth)}
                             </span>
                             <span className="ml-auto flex-none">
                                 <ExtLink href={explorerTx(t.tx)}>{tr.feed.txLink}</ExtLink>
@@ -390,14 +421,16 @@ function Holders({c}: {c: CurveDetail}) {
                         const l = label(h.label);
                         return (
                             <li key={h.address} className="flex items-center gap-3 py-1.5 text-[13px] tabular-nums min-w-0">
-                                <span className="text-hanji-400 w-6 flex-none text-right">{i + 1}</span>
+                                <span className="num text-hanji-400 w-6 flex-none text-right">{i + 1}</span>
                                 {h.label === "curve" || h.label === "pool" ? (
-                                    <ExtLink href={explorerAddr(h.address)}>{shortAddr(h.address)}</ExtLink>
+                                    <ExtLink href={explorerAddr(h.address)}>
+                                        <span className="num">{shortAddr(h.address)}</span>
+                                    </ExtLink>
                                 ) : (
-                                    <WalletLink address={h.address} nickname={nicks.get(addrKey(h.address))} className="max-w-[160px] text-brass-400 hover:text-hanji-100" />
+                                    <WalletLink address={h.address} nickname={nicks.get(addrKey(h.address))} className={`max-w-[160px] text-brass-400 hover:text-hanji-100 ${nicks.get(addrKey(h.address)) ? "" : "num"}`} />
                                 )}
                                 {l && <Badge kind="neutral">{l}</Badge>}
-                                <span className="ml-auto flex-none text-hanji-100">{sharePct(BigInt(h.balance), TOTAL_SUPPLY)}%</span>
+                                <span className="num ml-auto flex-none text-hanji-100">{sharePct(BigInt(h.balance), TOTAL_SUPPLY)}%</span>
                             </li>
                         );
                     })}
@@ -480,7 +513,9 @@ function Contracts({c}: {c: CurveDetail}) {
             {rows.map(([label, a]) => (
                 <div key={label} className="flex justify-between gap-3 text-[13px] py-1.5 min-w-0">
                     <span className="text-hanji-400 flex-none">{label}</span>
-                    <ExtLink href={explorerAddr(a)}>{shortAddr(a)}</ExtLink>
+                    <ExtLink href={explorerAddr(a)}>
+                        <span className="num">{shortAddr(a)}</span>
+                    </ExtLink>
                 </div>
             ))}
         </div>
@@ -498,7 +533,11 @@ function InfoTab({c}: {c: CurveDetail}) {
     return (
         <div className="flex flex-col gap-3 min-w-0">
             <div className="grid grid-cols-2 gap-3">
-                <Stat label={tr.curve.spot} value={spot !== undefined ? fmtSig(spot, 4, tr.locale) : spotError ? tr.curve.quoteError : "…"} unit={`${unit}${tr.curve.perToken}`} />
+                <Stat
+                    label={tr.curve.spot}
+                    value={spot !== undefined ? <span className="num">{fmtSig(spot, 4, tr.locale)}</span> : spotError ? tr.curve.quoteError : "…"}
+                    unit={`${unit}${tr.curve.perToken}`}
+                />
                 <Stat label={tr.curve.quoteAsset} value={c.graduated && c.isEth ? "WETH" : unit} />
             </div>
             <Contracts c={c} />
@@ -513,22 +552,22 @@ function TokenTabs({c}: {c: CurveDetail}) {
     const holders = useHolders(c.address);
     return (
         <section className="min-w-0">
-            <div role="tablist" className="grid grid-cols-4 border-b border-ink-700 mb-4">
-                {TOKEN_TABS.map((t) => (
-                    <button
-                        key={t}
-                        role="tab"
-                        id={`token-tab-${t}`}
-                        aria-selected={tab === t}
-                        aria-controls={`token-panel-${t}`}
-                        onClick={() => setTab(t)}
-                        className={`min-h-[44px] px-1 text-[14px] whitespace-nowrap border-b-2 -mb-px ${tab === t ? "border-brass-400 text-hanji-100 font-semibold" : "border-transparent text-hanji-400 hover:text-hanji-100"}`}
-                    >
-                        {tr.tokenPage.tabs[t]}
-                        {t === "holders" && holders.isSuccess && <span className="tabular-nums"> {holders.data.total}</span>}
-                    </button>
-                ))}
-            </div>
+            <UnderlineTabs
+                className="mb-4"
+                idPrefix="token"
+                label={tr.tokenPage.tabsLabel}
+                value={tab}
+                onChange={setTab}
+                items={TOKEN_TABS.map((t) => ({
+                    key: t,
+                    label: (
+                        <>
+                            {tr.tokenPage.tabs[t]}
+                            {t === "holders" && holders.isSuccess && <span className="num font-normal text-hanji-400"> {holders.data.total}</span>}
+                        </>
+                    ),
+                }))}
+            />
             <div role="tabpanel" id={`token-panel-${tab}`} aria-labelledby={`token-tab-${tab}`} className="min-w-0">
                 {tab === "comments" && <Comments curve={c.address} />}
                 {tab === "trades" && <TradeHistory c={c} />}
@@ -651,7 +690,7 @@ export default function Token() {
     const m = meta.get(c.address);
     const isDev = !!account && account.toLowerCase() === c.dev.toLowerCase();
     // Below lg the two column wrappers are display:contents and `order-*` sets the one-column order:
-    // header, metrics, meta, progress, chart, banner, panel, fixed panel, 24 h flow, tabs.
+    // header, metrics (+ trust signals), meta, chart (with progress), banner, panel, 24 h flow, tabs.
     return wrap(
         <div className="flex flex-col gap-5 sm:gap-6 lg:flex-row lg:items-start lg:gap-8 w-full min-w-0">
             <div className="contents lg:flex lg:flex-col lg:gap-6 lg:flex-1 lg:min-w-0">
@@ -678,10 +717,14 @@ export default function Token() {
                 )}
                 {/* candle chart from the server index */}
                 <div className="order-5 lg:order-none min-w-0">
-                    <CandleChart curve={c.address} unit={c.graduated && c.isEth ? "WETH" : quoteUnit(c)} virtualQuote={c.virtualQuote} graduated={c.graduated} dev={c.dev} />
-                </div>
-                <div className="order-4 lg:order-none min-w-0">
-                    <Progress c={c} />
+                    <CandleChart
+                        curve={c.address}
+                        unit={c.graduated && c.isEth ? "WETH" : quoteUnit(c)}
+                        virtualQuote={c.virtualQuote}
+                        graduated={c.graduated}
+                        dev={c.dev}
+                        footer={<ProgressFooter c={c} />}
+                    />
                 </div>
                 <div className="order-10 lg:order-none min-w-0">
                     <TokenTabs c={c} />
@@ -700,9 +743,6 @@ export default function Token() {
                 {/* trust signals: under the trade panel from lg, under the metrics below lg */}
                 <div className="order-2 lg:order-none min-w-0">
                     <TrustSignals curve={c.address} />
-                </div>
-                <div className="order-8 lg:order-none rounded-input px-4 py-3.5 text-[13px] text-hanji-100 border border-ink-700 bg-ink-900 text-center">
-                    {tr.curve.fixedPanel}
                 </div>
                 <div className="order-9 lg:order-none min-w-0">
                     <FlowCard c={c} />

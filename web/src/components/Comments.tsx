@@ -18,7 +18,7 @@ import {agoLabel, useNow} from "./feed";
 import {useOnboardingModal} from "./OnboardingModal";
 import {useNicknameModal} from "./NicknameModal";
 import {OpenInWalletApp, WalletPicker} from "./WalletPicker";
-import {Badge, PrimaryBtn} from "./ui";
+import {Badge, PrimaryBtn, SecondaryBtn} from "./ui";
 import {ZERO} from "../hooks/curves";
 
 export function Comments({curve}: {curve: string}) {
@@ -79,18 +79,19 @@ export function Comments({curve}: {curve: string}) {
     const button = (() => {
         switch (cta) {
             case "connect":
-                return <PrimaryBtn className="w-full sm:w-auto" disabled={wc.isPending} onClick={wc.connectWallet}>{tr.social.connect}</PrimaryBtn>;
+                // design-token-page: without a wallet the button is the outline one
+                return <SecondaryBtn className="flex-none whitespace-nowrap" disabled={wc.isPending} onClick={wc.connectWallet}>{tr.social.connect}</SecondaryBtn>;
             case "switch":
-                return <PrimaryBtn className="w-full sm:w-auto" onClick={switchToGiwa}>{tr.wrongChain}</PrimaryBtn>;
+                return <PrimaryBtn className="flex-none whitespace-nowrap" onClick={switchToGiwa}>{tr.wrongChain}</PrimaryBtn>;
             case "verify":
-                return <PrimaryBtn className="w-full sm:w-auto" onClick={() => openOnboarding({onProgress: () => void verified.refetch()})}>{tr.social.verify}</PrimaryBtn>;
+                return <PrimaryBtn className="flex-none whitespace-nowrap" onClick={() => openOnboarding({onProgress: () => void verified.refetch()})}>{tr.social.verify}</PrimaryBtn>;
             case "nickname":
-                return <PrimaryBtn className="w-full sm:w-auto" onClick={openNickname}>{tr.social.setNickname}</PrimaryBtn>;
+                return <PrimaryBtn className="flex-none whitespace-nowrap" onClick={openNickname}>{tr.social.setNickname}</PrimaryBtn>;
             case "loading":
-                return <PrimaryBtn className="w-full sm:w-auto" disabled>{tr.curve.cta.loading}</PrimaryBtn>;
+                return <PrimaryBtn className="flex-none whitespace-nowrap" disabled>{tr.curve.cta.loading}</PrimaryBtn>;
             default:
                 return (
-                    <PrimaryBtn className="w-full sm:w-auto" disabled={busy || len < 1 || len > BODY_MAX} onClick={() => void submit()}>
+                    <PrimaryBtn className="flex-none whitespace-nowrap" disabled={busy || len < 1 || len > BODY_MAX} onClick={() => void submit()}>
                         {busy ? tr.social.posting : tr.social.post}
                     </PrimaryBtn>
                 );
@@ -108,16 +109,19 @@ export function Comments({curve}: {curve: string}) {
                     </button>
                 )}
             </div>
-            <textarea
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                rows={3}
-                placeholder={tr.social.placeholder}
-                disabled={cta !== "post" && cta !== "sign"}
-                className="w-full min-w-0 resize-y bg-ink-800 border border-ink-700 rounded-input px-4 py-3 text-[15px] text-hanji-100 outline-none focus:border-brass-400 disabled:opacity-60"
-            />
-            <div className="flex items-center justify-between gap-3 flex-wrap mt-2">
-                <span className={`text-[12px] tabular-nums ${len > BODY_MAX ? "text-error" : "text-hanji-400"}`}>{tr.social.chars(len, BODY_MAX)}</span>
+            {/* design-token-page: one box (input, character count, button on the right) */}
+            {/* narrow: a long button label wraps to its own row (right-aligned) instead of squeezing the input */}
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 bg-ink-900 border border-ink-700 rounded-[12px] pl-4 pr-1.5 py-1.5 focus-within:border-brass-400 min-w-0">
+                <textarea
+                    value={text}
+                    onChange={(e) => setText(e.target.value)}
+                    rows={1}
+                    aria-label={tr.social.placeholder}
+                    placeholder={tr.social.placeholder}
+                    disabled={cta !== "post" && cta !== "sign"}
+                    className="flex-[1_1_160px] min-w-0 resize-none [field-sizing:content] max-h-40 bg-transparent border-none py-2.5 text-[15px] text-hanji-100 outline-none disabled:opacity-60"
+                />
+                <span className={`num flex-none ml-auto text-[12px] ${len > BODY_MAX ? "text-error" : "text-hanji-400"}`}>{tr.social.chars(len, BODY_MAX)}</span>
                 {button}
             </div>
             {cta === "sign" && <p className="m-0 mt-2 text-[12px] text-hanji-400">{tr.social.signNote}</p>}

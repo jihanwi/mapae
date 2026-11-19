@@ -1,4 +1,4 @@
-import {ReactNode, useEffect, useMemo, useState} from "react";
+import {ReactNode, useEffect, useId, useMemo, useState} from "react";
 import {Abi} from "viem";
 import {formatUnits, parseUnits} from "viem";
 import {useAccount, useBalance, usePublicClient, useReadContract, useReadContracts, useWriteContract} from "wagmi";
@@ -26,7 +26,7 @@ import {PrimaryBtn, SecondaryBtn} from "./ui";
 import {opensOnboarding, useOnboardingModal} from "./OnboardingModal";
 import {minSec, priorityRemaining} from "../lib/priority";
 import {capFull, capLeft, exceedsCap, maxQuoteForCap, truncateDecimals} from "../lib/priorityCap";
-import {GuardPanel, ImpactRows, SlippagePicker, useGuardedSend, useSlippagePref} from "./TradeGuard";
+import {GuardPanel, ImpactRows, SlippageControl, useGuardedSend, useSlippagePref} from "./TradeGuard";
 import {useNow} from "./feed";
 import {useActivity} from "../hooks/activity";
 import {spotPrice} from "../lib/curveMath";
@@ -46,11 +46,12 @@ const ETH_BUY_ABI = [...CurveFactoryAbi, ...CurveSaleAbi.filter((x) => x.type ==
  *  trade button may run. */
 type Slip = {bps: number; autoBps: number; isAuto: boolean; toAuto: () => void; blocked: boolean};
 
-function Row({label, value, strong}: {label: string; value: ReactNode; strong?: boolean}) {
+/** `plain`: a value that reads as a sentence (fees breakdown) keeps the text face; others are .num. */
+function Row({label, value, strong, plain}: {label: string; value: ReactNode; strong?: boolean; plain?: boolean}) {
     return (
         <div className="flex justify-between gap-3 text-[13px] mb-1 flex-wrap">
             <span className="text-hanji-400">{label}</span>
-            <span className={`tabular-nums text-right ${strong ? "text-hanji-100 font-semibold" : "text-hanji-100"}`}>{value}</span>
+            <span className={`${plain ? "tabular-nums" : "num"} text-right ${strong ? "text-hanji-100 font-semibold" : "text-hanji-100"}`}>{value}</span>
         </div>
     );
 }
@@ -135,6 +136,7 @@ export function CurveTradePanel({c, side: sideProp, onSideChange, paused = false
         onSideChange?.(s);
     };
     const [raw, setRaw] = useState("");
+    const inputId = useId();
     // A new side starts from an empty amount (also when the page changes the side).
     useEffect(() => setRaw(""), [side]);
     // Auto tolerance from this curve's (or, after graduation, this pool's) recent fills.
@@ -185,29 +187,41 @@ export function CurveTradePanel({c, side: sideProp, onSideChange, paused = false
                     <p className="m-0 text-[12px] text-hanji-400">{tr.curve.poolNote}</p>
                 </div>
             )}
-            <div className="flex rounded-input overflow-hidden border border-ink-700 mb-5">
+            {/* buy / sell segment: the selected side is tinted (success / error at 16%) */}
+            <div className="flex gap-1 rounded-input border border-ink-700 bg-ink-900 p-[3px] mb-5">
                 {(["buy", "sell"] as const).map((d) => (
                     <button
                         key={d}
+                        type="button"
+                        aria-pressed={side === d}
                         onClick={() => setSide(d)}
-                        className={`flex-1 py-3 text-[14px] font-semibold ${side === d ? "bg-ink-700 text-hanji-100" : "bg-transparent text-hanji-400 hover:text-hanji-100"}`}
+                        className={`flex-1 min-h-[44px] rounded-[7px] text-[14px] font-semibold ${
+                            side !== d
+                                ? "text-hanji-400 hover:text-hanji-100"
+                                : d === "buy"
+                                  ? "bg-[rgba(122,155,109,.16)] text-success"
+                                  : "bg-[rgba(201,122,104,.16)] text-error"
+                        }`}
                     >
                         {d === "buy" ? tr.curve.buy : tr.curve.sell}
                     </button>
                 ))}
             </div>
-            <label className="block text-[13px] text-hanji-400 mb-2">
-                {side === "buy" ? tr.curve.payLabel(c.graduated && c.isEth ? "WETH" : unit) : tr.curve.sellLabel}
-            </label>
-            <div className="flex items-center bg-ink-900 border border-ink-700 rounded-input px-4 focus-within:border-brass-400 mb-2">
-                <input
-                    value={raw}
-                    onChange={(e) => setRaw(sanitizeAmountInput(e.target.value))}
-                    inputMode="decimal"
-                    placeholder="0"
-                    className="flex-1 min-w-0 bg-transparent border-none outline-none py-3.5 text-[16px] text-hanji-100 tabular-nums"
-                />
-                <span className="text-hanji-400 text-[14px] flex-none">{side === "buy" ? (c.graduated && c.isEth ? "WETH" : unit) : c.symbol}</span>
+            <div className="bg-ink-900 border border-ink-700 rounded-input px-4 pt-3 pb-2 focus-within:border-brass-400 mb-2">
+                <label htmlFor={inputId} className="block text-[12px] text-hanji-400">
+                    {side === "buy" ? tr.curve.payLabel(c.graduated && c.isEth ? "WETH" : unit) : tr.curve.sellLabel}
+                </label>
+                <div className="flex items-baseline gap-2 min-w-0">
+                    <input
+                        id={inputId}
+                        value={raw}
+                        onChange={(e) => setRaw(sanitizeAmountInput(e.target.value))}
+                        inputMode="decimal"
+                        placeholder="0"
+                        className="num flex-1 min-w-0 bg-transparent border-none outline-none py-1 text-[30px] font-medium text-hanji-100 placeholder:text-hanji-400"
+                    />
+                    <span className="text-hanji-400 text-[14px] flex-none">{side === "buy" ? (c.graduated && c.isEth ? "WETH" : unit) : c.symbol}</span>
+                </div>
             </div>
             {/* quick amounts; "max" is the former balance button (maxInput) */}
             <div className="grid grid-cols-4 gap-2 mb-2">
@@ -217,7 +231,7 @@ export function CurveTradePanel({c, side: sideProp, onSideChange, paused = false
                         type="button"
                         disabled={q.disabled}
                         onClick={() => setRaw(formatUnits(q.value === "max" ? maxInput(balance ?? 0n, payNative) : q.value, 18))}
-                        className="min-h-[40px] px-1 rounded-input border border-ink-700 text-[13px] text-hanji-100 tabular-nums whitespace-nowrap hover:border-brass-600 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-ink-700"
+                        className="num min-h-[44px] px-1 rounded-[8px] border border-ink-700 text-[13px] text-hanji-100 whitespace-nowrap hover:border-brass-600 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-ink-700"
                     >
                         {q.label === "max" ? tr.curve.useMax : tr.tokenPage.quick[q.label]}
                     </button>
@@ -244,7 +258,7 @@ export function CurveTradePanel({c, side: sideProp, onSideChange, paused = false
                     )}
                 </div>
             )}
-            <SlippagePicker pref={pref} setPref={setPref} autoBps={autoBps} onBlockedChange={setSlipBlocked} />
+            <SlippageControl pref={pref} setPref={setPref} autoBps={autoBps} onBlockedChange={setSlipBlocked} />
             {c.graduated ? (
                 <PoolSide c={c} side={side} amount={amount} slip={slip} onDone={clear} />
             ) : side === "buy" ? (
@@ -330,6 +344,7 @@ function Fees({platform, dev, lp, unit}: {platform: bigint; dev: bigint; lp: big
     const dp = unit === "KRWs" ? 2 : 8;
     return (
         <Row
+            plain
             label={tr.curve.feeTotal}
             value={`${fmtCeil(platform + dev + lp, dp, tr.locale)} ${unit} (${tr.curve.feePlatform} ${fmtCeil(platform, dp, tr.locale)} · ${tr.curve.feeDev} ${fmtCeil(dev, dp, tr.locale)} · ${tr.curve.feeLp} ${fmtCeil(lp, dp, tr.locale)})`}
         />
