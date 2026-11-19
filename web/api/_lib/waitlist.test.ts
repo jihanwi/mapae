@@ -17,6 +17,9 @@ import {
     POINTS_REPOST,
     POINTS_WALLET,
     isMission,
+    suspectOf,
+    SUSPECT_MAX_ACCOUNT_AGE_DAYS,
+    SUSPECT_MIN_FOLLOWERS,
     followUrl,
     repostUrl,
     REF_ALPHABET,
@@ -36,7 +39,7 @@ import {
     X_TOKEN,
 } from "./waitlist.js";
 import {b64url, fromB64url, handleWaitlist, MAX_REF_DRAWS, OAuthPayload, readCookie, signCookie, verifyCookie, WaitlistDeps, WaitlistStore} from "./waitlistApi.js";
-import {pointsSql, WAITLIST_JOIN_SQL, WAITLIST_ME_POINTS_SQL, WAITLIST_ME_SQL, WAITLIST_POSITION_BY_CODE_POINTS_SQL, WaitlistJoin, WaitlistMe} from "./db.js";
+import {pointsSql, suspectSql, WAITLIST_STATS_TOP_SQL, WAITLIST_STATS_TOTALS_SQL, WAITLIST_JOIN_SQL, WAITLIST_ME_POINTS_SQL, WAITLIST_ME_SQL, WAITLIST_POSITION_BY_CODE_POINTS_SQL, WaitlistJoin, WaitlistMe} from "./db.js";
 
 const SECRET = "s".repeat(40);
 const ORIGIN = "https://mapae-snowy.vercel.app";
@@ -233,6 +236,7 @@ function memStore() {
             const r = rows.find((x) => x.xid === xid);
             if (r) r.email = null;
         },
+        stats: () => statsOf(),
         async positionByCode(code, rank) {
             positionCalls++;
             ranks.push(rank);
@@ -242,9 +246,30 @@ function memStore() {
         },
     };
     const ranks: string[] = [];
+    // W-T72: the operator stats, counted from the rows (handles only, as the SQL answers)
+    async function statsOf() {
+        statsCalls++;
+        if (failStats) throw new Error("db down");
+        const top = rows.filter((r) => r.referrals > 0).sort((a, b) => b.referrals - a.referrals || a.seq - b.seq).slice(0, 10);
+        return {
+            total: rows.length,
+            withWallet: rows.filter((r) => r.wallet).length,
+            withEmail: rows.filter((r) => r.email).length,
+            followed: rows.filter((r) => r.followed).length,
+            reposted: rows.filter((r) => r.reposted).length,
+            referred: rows.filter((r) => r.referredBy).length,
+            byDay: [{day: "2026-11-23", joined: rows.length}],
+            byLang: [{lang: "ko", joined: rows.length}],
+            referralBuckets: {"0": rows.filter((r) => r.referrals === 0).length, "1": 0, "2-4": 0, "5-9": 0, "10+": 0},
+            suspect: {youngAccount: 0, lowFollowers: 0, either: 0, unknown: rows.length, referredAndEither: 0},
+            topReferrers: top.map((r) => ({username: r.username, referrals: r.referrals, suspectReferrals: 0, points: pointsOf(r)})),
+        };
+    }
+    let statsCalls = 0;
+    let failStats = false;
     let positionCalls = 0;
     let failPosition = false;
-    return {store, rows: () => rows, ranks, positionCalls: () => positionCalls, failPosition: (v: boolean) => (failPosition = v)};
+    return {store, rows: () => rows, ranks, positionCalls: () => positionCalls, failPosition: (v: boolean) => (failPosition = v), statsCalls: () => statsCalls, failStats: (v: boolean) => (failStats = v)};
 }
 
 type XMode = "ok" | "token500" | "me500" | "meMissing";
@@ -685,5 +710,107 @@ describe("W-T70 points: handler", () => {
         expect(cardB.status).toBe(200);
         expect(h.rendered.at(-1)).toBe(2);
         expect(h.db.ranks).not.toContain("referrals");
+    });
+});
+
+// ---------------------------------------------------------------------------------------------
+// W-T72: operator stats (GET ?stats=1 with the CRON_SECRET bearer)
+// ---------------------------------------------------------------------------------------------
+
+const CRON = "c".repeat(40);
+const ENV_STATS: WaitlistEnv = {...ENV, CRON_SECRET: CRON};
+
+describe("W-T72 stats: the suspect rule", () => {
+    const joined = new Date("2026-11-23T00:00:00Z");
+    const daysBefore = (d: number) => new Date(joined.getTime() - d * 86_400_000);
+    it("account age 29 days is young, 30 is not; 9 followers is low, 10 is not; NULL is unknown", () => {
+        expect([SUSPECT_MAX_ACCOUNT_AGE_DAYS, SUSPECT_MIN_FOLLOWERS]).toEqual([30, 10]);
+        expect(suspectOf({xCreatedAt: daysBefore(29), joinedAt: joined, followers: 100})).toEqual({unknown: false, youngAccount: true, lowFollowers: false, either: true});
+        expect(suspectOf({xCreatedAt: daysBefore(30), joinedAt: joined, followers: 100})).toEqual({unknown: false, youngAccount: false, lowFollowers: false, either: false});
+        expect(suspectOf({xCreatedAt: daysBefore(400), joinedAt: joined, followers: 9})).toEqual({unknown: false, youngAccount: false, lowFollowers: true, either: true});
+        expect(suspectOf({xCreatedAt: daysBefore(400), joinedAt: joined, followers: 10})).toMatchObject({either: false});
+        expect(suspectOf({xCreatedAt: null, joinedAt: joined, followers: 1})).toEqual({unknown: true});
+        expect(suspectOf({xCreatedAt: daysBefore(1), joinedAt: joined, followers: null})).toEqual({unknown: true});
+    });
+    it("the SQL uses the same constants and returns no ids, codes, wallets or emails", () => {
+        expect(suspectSql("r")).toContain(`interval '${SUSPECT_MAX_ACCOUNT_AGE_DAYS} days'`);
+        expect(suspectSql("r")).toContain(`r.followers < ${SUSPECT_MIN_FOLLOWERS}`);
+        expect(suspectSql("r")).toContain("r.x_created_at IS NOT NULL AND r.followers IS NOT NULL");
+        expect(WAITLIST_STATS_TOP_SQL).toContain(pointsSql("m"));
+        const select = WAITLIST_STATS_TOP_SQL.slice(0, WAITLIST_STATS_TOP_SQL.indexOf("FROM mapae_waitlist m"));
+        for (const col of ["x_user_id", "ref_code AS", "email", "m.wallet,"]) expect(select).not.toContain(col);
+        expect(WAITLIST_STATS_TOTALS_SQL).not.toMatch(/SELECT[^]*\bemail\b AS/);
+    });
+});
+
+describe("W-T72 stats: handler", () => {
+    const get = (h: ReturnType<typeof harness>, q: string, auth?: string) => h.call(`/api/waitlist?${q}`, {headers: auth ? {authorization: auth} : {}});
+    it("401 without the bearer, with a wrong one, or with no CRON_SECRET set", async () => {
+        const h = harness(ENV_STATS);
+        for (const auth of [undefined, "Bearer wrong", CRON, `bearer ${CRON}`]) {
+            const r = await get(h, "stats=1", auth);
+            expect(r.status, String(auth)).toBe(401);
+            expect(await r.json()).toEqual({error: "unauthorized"});
+        }
+        const noSecret = await get(harness(ENV), "stats=1", "Bearer ");
+        expect(noSecret.status).toBe(401);
+        expect((await get(harness(ENV), "stats=1", `Bearer ${CRON}`)).status).toBe(401);
+        expect(h.db.statsCalls()).toBe(0);
+    });
+    it("order: the secret before the flag (flag off: 401 without it, 404 with it)", async () => {
+        const off = harness({CRON_SECRET: CRON});
+        expect((await get(off, "stats=1")).status).toBe(401);
+        const r = await get(off, "stats=1", `Bearer ${CRON}`);
+        expect(r.status).toBe(404);
+        expect(await r.json()).toEqual({error: "disabled"});
+    });
+    it("400 unless the query is exactly stats=1", async () => {
+        const h = harness(ENV_STATS);
+        for (const q of ["stats=2", "stats=1&card=x", "stats=", "stats=1&stats=1", "stats=1&v=1"]) {
+            const r = await get(h, q, `Bearer ${CRON}`);
+            expect(r.status, q).toBe(400);
+            expect(await r.json()).toEqual({error: "bad_request"});
+        }
+        expect(h.db.statsCalls()).toBe(0);
+    });
+    it("200 no-store, one store read, no handle sign, address, email or wallet in the answer", async () => {
+        const h = harness({...ENV_STATS, FEATURE_WAITLIST_POINTS: "1"});
+        const a = await h.signIn("codeA");
+        const codeA = (await h.me(a.session)).refCode;
+        await h.signIn("codeB", `&ref=${codeA}`);
+        await h.db.store.setWallet("100", "0x" + "a".repeat(40));
+        await h.db.store.setEmail("100", "alice@example.com");
+        const r = await get(h, "stats=1", `Bearer ${CRON}`);
+        expect(r.status).toBe(200);
+        expect(r.headers.get("cache-control")).toBe("no-store");
+        expect(h.db.statsCalls()).toBe(1);
+        const text = await r.text();
+        const body = JSON.parse(text);
+        expect(body).toMatchObject({generatedAt: new Date(NOW * 1000).toISOString(), pointsEnabled: true, total: 2, withWallet: 1, withEmail: 1, referred: 1});
+        expect(body.topReferrers).toEqual([{username: "alice", referrals: 1, suspectReferrals: 0, points: 15}]);
+        expect(text).not.toContain("@");
+        expect(text).not.toContain("0x");
+        expect(text).not.toContain(codeA);
+        expect(text).not.toContain('"100"');
+        expect(text).not.toMatch(/"(email|wallet|xUserId|x_user_id|refCode|ref_code)"/);
+        expect(Object.keys(body)).toEqual(["generatedAt", "pointsEnabled", "total", "withWallet", "withEmail", "followed", "reposted", "referred", "byDay", "byLang", "referralBuckets", "suspect", "topReferrers"]);
+    });
+    it("a store error: 503 and logged (no empty count)", async () => {
+        const h = harness(ENV_STATS);
+        h.db.failStats(true);
+        const err = vi.spyOn(console, "error").mockImplementation(() => {});
+        const r = await get(h, "stats=1", `Bearer ${CRON}`);
+        expect(r.status).toBe(503);
+        expect(await r.json()).toEqual({error: "unavailable"});
+        expect(err).toHaveBeenCalled();
+        expect(JSON.stringify(err.mock.calls)).not.toContain(CRON);
+        err.mockRestore();
+    });
+    it("HEAD and POST do not take the branch; GET without stats is unchanged", async () => {
+        const h = harness(ENV_STATS);
+        const head = await h.call("/api/waitlist?stats=1", {method: "HEAD", headers: {authorization: `Bearer ${CRON}`}});
+        expect(head.status).toBe(400);
+        expect(h.db.statsCalls()).toBe(0);
+        expect(await h.me(null)).toEqual({joined: false, emailEnabled: false, contact: null});
     });
 });

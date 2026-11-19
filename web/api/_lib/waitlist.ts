@@ -55,7 +55,10 @@ export function walletMessage(xUserId: string, wallet: string): string {
 
 export const WAITLIST_ENV = ["X_CLIENT_ID", "X_CLIENT_SECRET", "WAITLIST_SESSION_SECRET", "WAITLIST_ORIGIN"] as const;
 export type WaitlistEnv = Partial<
-    Record<"FEATURE_WAITLIST" | "FEATURE_WAITLIST_EMAIL" | "WAITLIST_CONTACT_EMAIL" | "FEATURE_WAITLIST_POINTS" | "WAITLIST_REPOST_POST_ID" | (typeof WAITLIST_ENV)[number], string>
+    Record<
+        "FEATURE_WAITLIST" | "FEATURE_WAITLIST_EMAIL" | "WAITLIST_CONTACT_EMAIL" | "FEATURE_WAITLIST_POINTS" | "WAITLIST_REPOST_POST_ID" | "CRON_SECRET" | (typeof WAITLIST_ENV)[number],
+        string
+    >
 >;
 export type WaitlistConfig = {clientId: string; clientSecret: string; sessionSecret: string; origin: string};
 /** Minimum length of WAITLIST_SESSION_SECRET (32 bytes as text). */
@@ -132,6 +135,29 @@ export function positionByPoints(rows: readonly (PointsRow & {xid: string; seq: 
     if (!me) return null;
     const p = pointsOf(me);
     return 1 + rows.filter((r) => pointsOf(r) > p || (pointsOf(r) === p && r.seq < me.seq)).length;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Operator stats (W-T72): the "suspect" rule. The SQL in db.ts is built from these constants.
+// ---------------------------------------------------------------------------------------------
+
+/** An X account younger than this many days when it joined is suspect. */
+export const SUSPECT_MAX_ACCOUNT_AGE_DAYS = 30;
+/** An X account with fewer followers than this is suspect. */
+export const SUSPECT_MIN_FOLLOWERS = 10;
+const DAY_MS = 86_400_000;
+
+export type SuspectInput = {xCreatedAt: Date | null; joinedAt: Date; followers: number | null};
+export type SuspectResult = {unknown: true} | {unknown: false; youngAccount: boolean; lowFollowers: boolean; either: boolean};
+
+/** A row with no account date or no follower count is "unknown", never suspect. Otherwise suspect
+ *  when the account was younger than SUSPECT_MAX_ACCOUNT_AGE_DAYS at joining, or has fewer than
+ *  SUSPECT_MIN_FOLLOWERS followers. */
+export function suspectOf(r: SuspectInput): SuspectResult {
+    if (r.xCreatedAt === null || r.followers === null) return {unknown: true};
+    const youngAccount = r.joinedAt.getTime() - r.xCreatedAt.getTime() < SUSPECT_MAX_ACCOUNT_AGE_DAYS * DAY_MS;
+    const lowFollowers = r.followers < SUSPECT_MIN_FOLLOWERS;
+    return {unknown: false, youngAccount, lowFollowers, either: youngAccount || lowFollowers};
 }
 
 // ---------------------------------------------------------------------------------------------
