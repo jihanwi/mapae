@@ -8,6 +8,17 @@ import {
     maskEmail,
     normalizeEmail,
     positionOf,
+    positionByPoints,
+    pointsOf,
+    pointsConfig,
+    POINT_WEIGHTS,
+    POINTS_REFERRAL,
+    POINTS_FOLLOW,
+    POINTS_REPOST,
+    POINTS_WALLET,
+    isMission,
+    followUrl,
+    repostUrl,
     REF_ALPHABET,
     refCodeFrom,
     walletMessage,
@@ -25,7 +36,7 @@ import {
     X_TOKEN,
 } from "./waitlist.js";
 import {b64url, fromB64url, handleWaitlist, MAX_REF_DRAWS, OAuthPayload, readCookie, signCookie, verifyCookie, WaitlistDeps, WaitlistStore} from "./waitlistApi.js";
-import {WAITLIST_JOIN_SQL, WAITLIST_ME_SQL, WaitlistJoin, WaitlistMe} from "./db.js";
+import {pointsSql, WAITLIST_JOIN_SQL, WAITLIST_ME_POINTS_SQL, WAITLIST_ME_SQL, WAITLIST_POSITION_BY_CODE_POINTS_SQL, WaitlistJoin, WaitlistMe} from "./db.js";
 
 const SECRET = "s".repeat(40);
 const ORIGIN = "https://mapae-snowy.vercel.app";
@@ -179,7 +190,7 @@ describe("signed cookies", () => {
 // Handler with a fake store and fake X
 // ---------------------------------------------------------------------------------------------
 
-type Row = WaitlistRow & {wallet: string | null; email: string | null};
+type Row = WaitlistRow & {wallet: string | null; email: string | null; followed: boolean; reposted: boolean};
 
 function memStore() {
     let rows: Row[] = [];
@@ -187,12 +198,23 @@ function memStore() {
         async join(j: WaitlistJoin) {
             if (rows.some((r) => r.refCode === j.refCode && r.xid !== j.xid)) return "ref_code_taken";
             const r = applyJoin(rows, {xid: j.xid, username: j.username, followers: j.followers, refCode: j.refCode, ref: j.ref});
-            rows = r.rows.map((x) => ({wallet: null, email: null, ...x}) as Row);
+            rows = r.rows.map((x) => ({wallet: null, email: null, followed: false, reposted: false, ...x}) as Row);
             return {inserted: r.inserted};
         },
-        async me(xid): Promise<WaitlistMe | null> {
+        async me(xid, rank): Promise<WaitlistMe | null> {
+            ranks.push(rank);
             const r = rows.find((x) => x.xid === xid);
-            return r ? {username: r.username, refCode: r.refCode, referrals: r.referrals, wallet: r.wallet, email: r.email, position: positionOf(rows, xid)!} : null;
+            if (!r) return null;
+            const base = {username: r.username, refCode: r.refCode, referrals: r.referrals, wallet: r.wallet, email: r.email};
+            if (rank === "referrals") return {...base, position: positionOf(rows, xid)!};
+            return {...base, followed: r.followed, reposted: r.reposted, points: pointsOf(r), position: positionByPoints(rows, xid)!};
+        },
+        async setMission(xid, mission) {
+            const r = rows.find((x) => x.xid === xid);
+            if (!r) return false;
+            if (mission === "follow") r.followed = true;
+            else r.reposted = true;
+            return true;
         },
         async setWallet(xid, wallet) {
             if (rows.some((r) => r.wallet === wallet && r.xid !== xid)) return "taken";
@@ -211,16 +233,18 @@ function memStore() {
             const r = rows.find((x) => x.xid === xid);
             if (r) r.email = null;
         },
-        async positionByCode(code) {
+        async positionByCode(code, rank) {
             positionCalls++;
+            ranks.push(rank);
             if (failPosition) throw new Error("db down");
             const r = rows.find((x) => x.refCode === code);
-            return r ? positionOf(rows, r.xid)! : null;
+            return r ? (rank === "points" ? positionByPoints(rows, r.xid)! : positionOf(rows, r.xid)!) : null;
         },
     };
+    const ranks: string[] = [];
     let positionCalls = 0;
     let failPosition = false;
-    return {store, rows: () => rows, positionCalls: () => positionCalls, failPosition: (v: boolean) => (failPosition = v)};
+    return {store, rows: () => rows, ranks, positionCalls: () => positionCalls, failPosition: (v: boolean) => (failPosition = v)};
 }
 
 type XMode = "ok" | "token500" | "me500" | "meMissing";
@@ -501,5 +525,165 @@ describe("W-T52: card image (?card=<code>)", () => {
         expect(r.status).toBe(200);
         expect(await r.text()).toContain(`${ORIGIN}/api/waitlist?card=ABCDEFGH`);
         expect(h.db.positionCalls()).toBe(0);
+    });
+});
+
+// ---------------------------------------------------------------------------------------------
+// W-T70: points and missions (FEATURE_WAITLIST_POINTS)
+// ---------------------------------------------------------------------------------------------
+
+const ENV_POINTS: WaitlistEnv = {...ENV, FEATURE_WAITLIST_POINTS: "1"};
+const ENV_POINTS_REPOST: WaitlistEnv = {...ENV_POINTS, WAITLIST_REPOST_POST_ID: "1888000000000000001"};
+const pr = (xid: string, seq: number, referrals: number, followed = false, reposted = false, wallet: string | null = null) => ({xid, seq, referrals, followed, reposted, wallet});
+
+describe("W-T70 points: pure rules", () => {
+    it("weights live in one place and the API answer carries the same values", () => {
+        expect([POINTS_REFERRAL, POINTS_FOLLOW, POINTS_REPOST, POINTS_WALLET]).toEqual([10, 5, 5, 5]);
+        expect(POINT_WEIGHTS).toEqual({referral: POINTS_REFERRAL, follow: POINTS_FOLLOW, repost: POINTS_REPOST, wallet: POINTS_WALLET});
+    });
+    it("points: referrals 0/1/3 with the mission and wallet combinations", () => {
+        for (const [ref, base] of [[0, 0], [1, 10], [3, 30]] as const) {
+            expect(pointsOf({referrals: ref, followed: false, reposted: false, wallet: null})).toBe(base);
+            expect(pointsOf({referrals: ref, followed: true, reposted: false, wallet: null})).toBe(base + 5);
+            expect(pointsOf({referrals: ref, followed: false, reposted: true, wallet: null})).toBe(base + 5);
+            expect(pointsOf({referrals: ref, followed: false, reposted: false, wallet: "0xabc"})).toBe(base + 5);
+            expect(pointsOf({referrals: ref, followed: true, reposted: true, wallet: "0xabc"})).toBe(base + 15);
+        }
+    });
+    it("position: more points first, ties by seq; one referral ties with two missions", () => {
+        const rows = [pr("a", 1, 1), pr("b", 2, 0, true, false, "0xb"), pr("c", 3, 0, true, true, "0xc"), pr("d", 4, 0)];
+        // c 15, a 10 (seq 1), b 10 (seq 2), d 0
+        expect(["a", "b", "c", "d"].map((x) => positionByPoints(rows, x))).toEqual([2, 3, 1, 4]);
+        // B joined first: B ahead of A at the same 10 points
+        const flipped = [pr("b", 1, 0, true, false, "0xb"), pr("a", 2, 1)];
+        expect([positionByPoints(flipped, "b"), positionByPoints(flipped, "a")]).toEqual([1, 2]);
+        expect(positionByPoints(rows, "zz")).toBeNull();
+    });
+    it("flag off: the referral rule, a wallet or missions do not move anyone", () => {
+        const rows = [pr("a", 1, 0, true, true, "0xa"), pr("b", 2, 0)];
+        expect([positionOf(rows, "a"), positionOf(rows, "b")]).toEqual([1, 2]);
+        const rows2 = [pr("a", 1, 0, true, true, "0xa"), pr("b", 2, 1)];
+        expect([positionOf(rows2, "b"), positionOf(rows2, "a")]).toEqual([1, 2]);
+    });
+    it("config: off unless the flag is 1; the repost mission off without a valid post id", () => {
+        expect(pointsConfig(ENV)).toEqual({enabled: false});
+        expect(pointsConfig({...ENV, FEATURE_WAITLIST_POINTS: "true"})).toEqual({enabled: false});
+        expect(pointsConfig(ENV_POINTS)).toEqual({enabled: true, repostId: null, repostMisconfigured: false});
+        expect(pointsConfig({...ENV_POINTS, WAITLIST_REPOST_POST_ID: ""})).toEqual({enabled: true, repostId: null, repostMisconfigured: false});
+        expect(pointsConfig(ENV_POINTS_REPOST)).toEqual({enabled: true, repostId: "1888000000000000001", repostMisconfigured: false});
+        for (const bad of ["abc", "12a", "1".repeat(21), " 123", "https://x.com/a/status/1"]) {
+            expect(pointsConfig({...ENV_POINTS, WAITLIST_REPOST_POST_ID: bad}), bad).toEqual({enabled: true, repostId: null, repostMisconfigured: true});
+        }
+    });
+    it("missions and intents", () => {
+        expect(isMission("follow") && isMission("repost")).toBe(true);
+        expect(isMission("wallet")).toBe(false);
+        expect(isMission(undefined)).toBe(false);
+        expect(followUrl()).toBe("https://x.com/intent/follow?screen_name=MapaeGiwa");
+        expect(repostUrl("123")).toBe("https://x.com/intent/retweet?tweet_id=123");
+    });
+    it("SQL: the points are built from the constants; the referral SQL is unchanged", () => {
+        expect(pointsSql("o")).toBe(
+            `(o.referrals * ${POINTS_REFERRAL} + (CASE WHEN o.followed_at IS NOT NULL THEN ${POINTS_FOLLOW} ELSE 0 END) + (CASE WHEN o.reposted_at IS NOT NULL THEN ${POINTS_REPOST} ELSE 0 END) + (CASE WHEN o.wallet IS NOT NULL THEN ${POINTS_WALLET} ELSE 0 END))`,
+        );
+        expect(WAITLIST_ME_POINTS_SQL).toContain(`${pointsSql("o")} > ${pointsSql("m")} OR (${pointsSql("o")} = ${pointsSql("m")} AND o.seq < m.seq)`);
+        expect(WAITLIST_POSITION_BY_CODE_POINTS_SQL).toContain(`${pointsSql("o")} > ${pointsSql("m")}`);
+        expect(WAITLIST_ME_SQL).toContain("o.referrals > m.referrals OR (o.referrals = m.referrals AND o.seq < m.seq)");
+        expect(WAITLIST_ME_SQL).not.toContain("followed_at");
+    });
+});
+
+describe("W-T70 points: handler", () => {
+    const OLD_KEYS = ["joined", "xUserId", "username", "position", "referrals", "refCode", "shareUrl", "wallet", "email", "emailEnabled", "contact"];
+    it("flag off: GET answers have exactly the old keys, the referral rank is used, mission is 404", async () => {
+        const h = harness();
+        expect(await h.me(null)).toEqual({joined: false, emailEnabled: false, contact: null});
+        const {session} = await h.signIn("codeA");
+        await h.db.store.setWallet("100", "0x" + "a".repeat(40));
+        const m = await h.me(session);
+        expect(Object.keys(m)).toEqual(OLD_KEYS);
+        expect(h.db.ranks.every((r) => r === "referrals")).toBe(true);
+        const r = await h.post(session, {action: "mission", mission: "follow"});
+        expect(r.status).toBe(404);
+        expect(await r.json()).toEqual({error: "disabled"});
+        expect(h.db.rows()[0].followed).toBe(false);
+    });
+    it("flag on, not joined: pointsEnabled and weights after the old keys", async () => {
+        expect(await harness(ENV_POINTS).me(null)).toEqual({joined: false, emailEnabled: false, contact: null, pointsEnabled: true, weights: {referral: 10, follow: 5, repost: 5, wallet: 5}});
+    });
+    it("flag on, joined: points, missions (repost null without a post id), wallet done", async () => {
+        const h = harness(ENV_POINTS);
+        const {session} = await h.signIn("codeA");
+        const m = await h.me(session);
+        expect(Object.keys(m)).toEqual([...OLD_KEYS, "pointsEnabled", "weights", "points", "missions"]);
+        expect(m).toMatchObject({points: 0, missions: {follow: {done: false, url: "https://x.com/intent/follow?screen_name=MapaeGiwa"}, repost: null, wallet: {done: false}}});
+        await h.db.store.setWallet("100", "0x" + "a".repeat(40));
+        expect(await h.me(session)).toMatchObject({points: 5, missions: {wallet: {done: true}}});
+        expect(h.db.ranks.filter((r) => r === "points").length).toBeGreaterThan(0);
+        expect(h.db.ranks).not.toContain("referrals");
+    });
+    it("mission: counts once, answers my state; bad mission 400; repost off 404; no session 401", async () => {
+        const h = harness(ENV_POINTS);
+        const {session} = await h.signIn("codeA");
+        const r = await h.post(session, {action: "mission", mission: "follow"});
+        expect(r.status).toBe(200);
+        expect(r.headers.get("cache-control")).toBe("private, no-store");
+        const st = await r.json();
+        expect(st).toMatchObject({joined: true, points: 5, position: 1, missions: {follow: {done: true}}});
+        expect(Object.keys(st)).toEqual(Object.keys(await h.me(session)));
+        expect(await (await h.post(session, {action: "mission", mission: "follow"})).json()).toMatchObject({points: 5});
+        for (const mission of ["wallet", "like", undefined, 1]) {
+            const b = await h.post(session, {action: "mission", mission});
+            expect(b.status).toBe(400);
+            expect(await b.json()).toEqual({error: "bad_mission"});
+        }
+        const rp = await h.post(session, {action: "mission", mission: "repost"});
+        expect(rp.status).toBe(404);
+        expect(await rp.json()).toEqual({error: "disabled"});
+        expect(h.db.rows()[0].reposted).toBe(false);
+        const none = await h.post(null, {action: "mission", mission: "follow"});
+        expect(none.status).toBe(401);
+        expect(await none.json()).toEqual({error: "no_session"});
+    });
+    it("repost mission with a post id: url, counts once; removing the id keeps the 5 points", async () => {
+        const h = harness(ENV_POINTS_REPOST);
+        const {session} = await h.signIn("codeA");
+        expect((await h.me(session)).missions.repost).toEqual({done: false, url: "https://x.com/intent/retweet?tweet_id=1888000000000000001"});
+        const st = await (await h.post(session, {action: "mission", mission: "repost"})).json();
+        expect(st).toMatchObject({points: 5, missions: {repost: {done: true}}});
+        // the same row read after WAITLIST_REPOST_POST_ID is removed: no repost line, the 5 points stay
+        const later = harness(ENV_POINTS);
+        const l = await later.signIn("codeA");
+        (later.db.rows()[0] as {reposted: boolean}).reposted = true;
+        const ml = await later.me(l.session);
+        expect(ml.missions.repost).toBeNull();
+        expect(ml.points).toBe(5);
+    });
+    it("a misconfigured post id is logged by name only and the repost mission is off", async () => {
+        const err = vi.spyOn(console, "error").mockImplementation(() => {});
+        const h = harness({...ENV_POINTS, WAITLIST_REPOST_POST_ID: "not-a-number-777"});
+        const {session} = await h.signIn("codeA");
+        expect((await h.me(session)).missions.repost).toBeNull();
+        expect(JSON.stringify(err.mock.calls)).toContain("WAITLIST_REPOST_POST_ID");
+        expect(JSON.stringify(err.mock.calls)).not.toContain("not-a-number-777");
+        err.mockRestore();
+    });
+    it("tie at 10 points: one referral (A, joined first) ahead of follow + wallet (B); the card uses the same rank", async () => {
+        const h = harness(ENV_POINTS);
+        const a = await h.signIn("codeA");
+        const b = await h.signIn("codeB");
+        const codeA = (await h.me(a.session)).refCode;
+        // a third account joins through A's link
+        h.db.store.join({xid: "300", username: "carol", xCreatedAt: null, followers: 1, refCode: "ZZZZZZZZ", ref: codeA, lang: null});
+        await h.post(b.session, {action: "mission", mission: "follow"});
+        await h.db.store.setWallet("200", "0x" + "b".repeat(40));
+        const ma = await h.me(a.session);
+        const mb = await h.me(b.session);
+        expect([ma.points, mb.points]).toEqual([10, 10]);
+        expect([ma.position, mb.position]).toEqual([1, 2]);
+        const cardB = await h.call(`/api/waitlist?card=${mb.refCode}`);
+        expect(cardB.status).toBe(200);
+        expect(h.rendered.at(-1)).toBe(2);
+        expect(h.db.ranks).not.toContain("referrals");
     });
 });

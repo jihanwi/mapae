@@ -7,10 +7,10 @@ import {useState} from "react";
 import {Link, useSearchParams} from "react-router-dom";
 import {useAccount, useSignMessage} from "wagmi";
 import {useCopy, useLang} from "../copy";
-import {SecondaryBtn, Skeleton} from "../components/ui";
+import {Icon, SecondaryBtn, Skeleton} from "../components/ui";
 import {OpenInWalletApp, WalletPicker} from "../components/WalletPicker";
 import {useWalletConnect} from "../hooks/useWalletConnect";
-import {useWaitlist, useWaitlistAction, WaitlistState} from "../hooks/waitlist";
+import {useWaitlist, useWaitlistAction, WaitlistMissions, WaitlistState, WaitlistWeights} from "../hooks/waitlist";
 import {API_BASE} from "../hooks/meta";
 import {X_INTENT} from "../lib/share";
 import {fmtCount} from "../lib/format";
@@ -22,6 +22,14 @@ import {WAITLIST_ONLY} from "../lib/waitlistOnly";
 
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 const BTN = "h-12 py-0 inline-flex items-center justify-center";
+/** W-T70: the SecondaryBtn look on a link (the mission buttons open X in a new tab). */
+const SECONDARY_LINK = `${BTN} rounded-input bg-transparent border border-ink-700 text-hanji-100 hover:text-hanji-100 text-[14px] px-5 hover:border-brass-600`;
+
+type Joined = Extract<WaitlistState, {joined: true}>;
+/** W-T70: the points part of my state, only when the server sent it (FEATURE_WAITLIST_POINTS on). */
+type PointsView = {points: number; weights: WaitlistWeights; missions: WaitlistMissions};
+const pointsView = (s: Joined): PointsView | null =>
+    s.pointsEnabled === true && s.weights && s.missions && typeof s.points === "number" ? {points: s.points, weights: s.weights, missions: s.missions} : null;
 
 export default function Waitlist() {
     useTitle(DEFAULT_TITLE);
@@ -121,6 +129,7 @@ function Joined({s, notice}: {s: Extract<WaitlistState, {joined: true}>; notice:
     };
     const num = fmtCount(s.position, tr.locale);
     const size = positionFontSize(num);
+    const pv = pointsView(s);
     return (
         <div className="max-w-[680px] w-full box-border mx-auto px-5 sm:px-10 pt-8 sm:pt-12 pb-12 flex flex-col gap-[26px] sm:gap-[32px]">
             {notice && <div className="flex justify-center"><Notice text={notice} /></div>}
@@ -136,13 +145,17 @@ function Joined({s, notice}: {s: Extract<WaitlistState, {joined: true}>; notice:
                 </div>
                 <div>
                     <div className="text-[17px] font-bold">{t.position(num)}</div>
+                    {pv && <div className="text-[15px] font-semibold text-brass-400 tabular-nums mt-1">{t.points(fmtCount(pv.points, tr.locale))}</div>}
                     <div className="text-[13px] text-hanji-400 mt-1">@{s.username}</div>
                 </div>
             </div>
             <MyCard code={s.refCode} position={s.position} />
             <section className="bg-ink-900 border border-ink-700 rounded-card p-5 sm:p-7">
                 <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                    <div className="text-[15px] font-semibold tabular-nums">{t.referrals(s.referrals)}</div>
+                    <div className="text-[15px] font-semibold tabular-nums">
+                        {t.referrals(s.referrals)}
+                        {pv && <span className="text-hanji-400 font-normal"> · {t.referralEach(pv.weights.referral)}</span>}
+                    </div>
                     <div className="text-[13px] text-hanji-400">{t.referralHint}</div>
                 </div>
                 <div className="mt-5 flex flex-wrap gap-3">
@@ -155,8 +168,9 @@ function Joined({s, notice}: {s: Extract<WaitlistState, {joined: true}>; notice:
                     </a>
                 </div>
             </section>
+            {pv && <MissionList pv={pv} />}
             <div className="border-t border-ink-700">
-                <WalletRow s={s} />
+                <WalletRow s={s} plus={pv ? {n: pv.weights.wallet, done: pv.missions.wallet.done} : null} />
                 {(s.emailEnabled || s.email) && <EmailRow s={s} />}
             </div>
             <div className="flex justify-center">
@@ -191,13 +205,16 @@ function MyCard({code, position}: {code: string; position: number}) {
 }
 
 /** One line of the list under the referral box: title and hint on the left, the action on the right. */
-function Row({title, hint, action, children}: {title: string; hint: string; action: React.ReactNode; children?: React.ReactNode}) {
+function Row({title, titleExtra, hint, action, children}: {title: string; titleExtra?: React.ReactNode; hint?: string; action: React.ReactNode; children?: React.ReactNode}) {
     return (
         <div className="py-5 border-b border-ink-700">
             <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
                 <div className="min-w-0">
-                    <div className="text-[15px] font-semibold">{title}</div>
-                    <div className="text-[13px] text-hanji-400 mt-0.5">{hint}</div>
+                    <div className="text-[15px] font-semibold">
+                        {title}
+                        {titleExtra}
+                    </div>
+                    {hint && <div className="text-[13px] text-hanji-400 mt-0.5">{hint}</div>}
                 </div>
                 <div className="flex flex-wrap items-center gap-3 max-w-full">{action}</div>
             </div>
@@ -206,7 +223,73 @@ function Row({title, hint, action, children}: {title: string; hint: string; acti
     );
 }
 
-function WalletRow({s}: {s: Extract<WaitlistState, {joined: true}>}) {
+/** W-T70: "+N" of a line. Before: brass-400. Done: hanji-400 (the wallet line adds a check; a
+ *  mission line shows its check on "Done" instead). */
+function PointsPlus({n, done, inline, check}: {n: number; done: boolean; inline?: boolean; check?: boolean}) {
+    const t = useCopy().waitlist;
+    return (
+        <span className={`${inline ? "ml-2 " : ""}inline-flex items-center gap-1 align-middle text-[13px] font-normal tabular-nums ${done ? "text-hanji-400" : "text-brass-400"}`}>
+            {done && check && <Icon name="check" className="w-3.5 h-3.5" />}
+            {t.pointsPlus(n)}
+        </span>
+    );
+}
+
+/** W-T70: the missions (follow, and repost when it is on) and the recount note. One line per
+ *  mission (MissionRow), so the next layout ticket can move them as they are. */
+function MissionList({pv}: {pv: PointsView}) {
+    const t = useCopy().waitlist;
+    return (
+        <section aria-labelledby="wl-missions">
+            <h2 id="wl-missions" className="m-0 mb-1 text-[15px] font-semibold">{t.missionsTitle}</h2>
+            <div className="border-t border-ink-700">
+                <MissionRow mission="follow" title={t.missionFollow} cta={t.missionFollowCta} url={pv.missions.follow.url} done={pv.missions.follow.done} n={pv.weights.follow} />
+                {pv.missions.repost && (
+                    <MissionRow mission="repost" title={t.missionRepost} cta={t.missionRepostCta} url={pv.missions.repost.url} done={pv.missions.repost.done} n={pv.weights.repost} />
+                )}
+            </div>
+            <p className="m-0 mt-3 text-[13px] text-hanji-400">{t.missionNote}</p>
+        </section>
+    );
+}
+
+/** One mission: the link opens X in a new tab and, at the same time, records the press. The new
+ *  tab stays open when the record fails; the line then shows the error and is not marked done. */
+function MissionRow({mission, title, cta, url, done, n}: {mission: "follow" | "repost"; title: string; cta: string; url: string; done: boolean; n: number}) {
+    const t = useCopy().waitlist;
+    const post = useWaitlistAction();
+    const [busy, setBusy] = useState(false);
+    const [failed, setFailed] = useState(false);
+    const press = async () => {
+        setBusy(true);
+        setFailed(false);
+        const err = await post({action: "mission", mission});
+        setBusy(false);
+        if (err) setFailed(true);
+    };
+    const action = (
+        <>
+            <PointsPlus n={n} done={done} />
+            {done ? (
+                <span className="min-h-[44px] inline-flex items-center gap-1.5 text-[14px] text-hanji-100">
+                    <Icon name="check" className="w-4 h-4 text-brass-400" />
+                    {t.missionDone}
+                </span>
+            ) : (
+                <a href={url} target="_blank" rel="noopener noreferrer" aria-busy={busy || undefined} onClick={() => void press()} className={SECONDARY_LINK}>
+                    {cta}
+                </a>
+            )}
+        </>
+    );
+    return (
+        <Row title={title} action={action}>
+            {failed && <p className="m-0 mt-3 text-[13px] text-brass-400">{t.missionError}</p>}
+        </Row>
+    );
+}
+
+function WalletRow({s, plus}: {s: Joined; plus: {n: number; done: boolean} | null}) {
     const t = useCopy().waitlist;
     const {address, isConnected} = useAccount();
     const wc = useWalletConnect();
@@ -235,7 +318,7 @@ function WalletRow({s}: {s: Extract<WaitlistState, {joined: true}>}) {
         <SecondaryBtn className={BTN} disabled={wc.isPending} onClick={wc.connectWallet}>{t.walletConnect}</SecondaryBtn>
     );
     return (
-        <Row title={t.walletTitle} hint={t.walletHint} action={action}>
+        <Row title={t.walletTitle} titleExtra={plus ? <PointsPlus n={plus.n} done={plus.done} inline check /> : undefined} hint={t.walletHint} action={action}>
             {msg && <p className="m-0 mt-3 text-[13px] text-brass-400">{msg}</p>}
             {wc.choices && <WalletPicker choices={wc.choices} onChoose={wc.choose} onClose={wc.closePicker} />}
             {wc.openInApp && <OpenInWalletApp onClose={wc.closeOpenInApp} />}

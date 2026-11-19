@@ -54,7 +54,9 @@ export function walletMessage(xUserId: string, wallet: string): string {
 // ---------------------------------------------------------------------------------------------
 
 export const WAITLIST_ENV = ["X_CLIENT_ID", "X_CLIENT_SECRET", "WAITLIST_SESSION_SECRET", "WAITLIST_ORIGIN"] as const;
-export type WaitlistEnv = Partial<Record<"FEATURE_WAITLIST" | "FEATURE_WAITLIST_EMAIL" | "WAITLIST_CONTACT_EMAIL" | (typeof WAITLIST_ENV)[number], string>>;
+export type WaitlistEnv = Partial<
+    Record<"FEATURE_WAITLIST" | "FEATURE_WAITLIST_EMAIL" | "WAITLIST_CONTACT_EMAIL" | "FEATURE_WAITLIST_POINTS" | "WAITLIST_REPOST_POST_ID" | (typeof WAITLIST_ENV)[number], string>
+>;
 export type WaitlistConfig = {clientId: string; clientSecret: string; sessionSecret: string; origin: string};
 /** Minimum length of WAITLIST_SESSION_SECRET (32 bytes as text). */
 export const MIN_SECRET_LENGTH = 32;
@@ -79,6 +81,57 @@ export function emailConfig(env: WaitlistEnv): {enabled: true; contact: string} 
     if (env.FEATURE_WAITLIST_EMAIL !== "1") return {enabled: false, misconfigured: false};
     if (!contact) return {enabled: false, misconfigured: true};
     return {enabled: true, contact};
+}
+
+// ---------------------------------------------------------------------------------------------
+// Points (W-T70): the line is ordered by points when FEATURE_WAITLIST_POINTS = "1"
+// ---------------------------------------------------------------------------------------------
+
+/** The only place the weights are written; the SQL in db.ts and the API answer are built from these. */
+export const POINTS_REFERRAL = 10;
+export const POINTS_FOLLOW = 5;
+export const POINTS_REPOST = 5;
+export const POINTS_WALLET = 5;
+export const POINT_WEIGHTS = {referral: POINTS_REFERRAL, follow: POINTS_FOLLOW, repost: POINTS_REPOST, wallet: POINTS_WALLET} as const;
+
+/** The account the follow mission points at (the @MapaeGiwa of the share text). */
+export const FOLLOW_ACCOUNT = "MapaeGiwa";
+/** X Web Intents (docs.x.com, x-for-websites/web-intents and follow-button/guides/web-intent-follow-button):
+ *  follow takes screen_name (or user_id), retweet takes tweet_id. No X API call is made for them. */
+export const X_FOLLOW_INTENT = "https://x.com/intent/follow";
+export const X_REPOST_INTENT = "https://x.com/intent/retweet";
+export const followUrl = () => `${X_FOLLOW_INTENT}?${new URLSearchParams({screen_name: FOLLOW_ACCOUNT}).toString()}`;
+export const repostUrl = (postId: string) => `${X_REPOST_INTENT}?${new URLSearchParams({tweet_id: postId}).toString()}`;
+
+export const MISSIONS = ["follow", "repost"] as const;
+export type Mission = (typeof MISSIONS)[number];
+export const isMission = (s: unknown): s is Mission => s === "follow" || s === "repost";
+
+const POST_ID_RE = /^\d{1,20}$/;
+
+/** off: the flag is not "1". On: the repost post id when WAITLIST_REPOST_POST_ID is 1 to 20 digits,
+ *  else null (the repost mission is off); `repostMisconfigured` asks the caller to log it (a value
+ *  is set but has the wrong shape; the value itself is never logged). */
+export function pointsConfig(env: WaitlistEnv): {enabled: false} | {enabled: true; repostId: string | null; repostMisconfigured: boolean} {
+    if (env.FEATURE_WAITLIST_POINTS !== "1") return {enabled: false};
+    const raw = env.WAITLIST_REPOST_POST_ID;
+    if (raw === undefined || raw === "") return {enabled: true, repostId: null, repostMisconfigured: false};
+    return POST_ID_RE.test(raw) ? {enabled: true, repostId: raw, repostMisconfigured: false} : {enabled: true, repostId: null, repostMisconfigured: true};
+}
+
+export type PointsRow = {referrals: number; followed: boolean; reposted: boolean; wallet: string | null};
+
+/** referrals x 10 + follow 5 + repost 5 + wallet 5 (each mission once). */
+export const pointsOf = (r: PointsRow) =>
+    r.referrals * POINTS_REFERRAL + (r.followed ? POINTS_FOLLOW : 0) + (r.reposted ? POINTS_REPOST : 0) + (r.wallet ? POINTS_WALLET : 0);
+
+/** 1 + rows with more points + rows with as many points that joined earlier (the reference for
+ *  WAITLIST_ME_POINTS_SQL). */
+export function positionByPoints(rows: readonly (PointsRow & {xid: string; seq: number})[], xid: string): number | null {
+    const me = rows.find((r) => r.xid === xid);
+    if (!me) return null;
+    const p = pointsOf(me);
+    return 1 + rows.filter((r) => pointsOf(r) > p || (pointsOf(r) === p && r.seq < me.seq)).length;
 }
 
 // ---------------------------------------------------------------------------------------------
