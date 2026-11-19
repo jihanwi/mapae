@@ -1,8 +1,8 @@
 // /api/waitlist (W-T43): the waitlist with X sign-in. Off unless FEATURE_WAITLIST = "1" (404
 // {"error":"disabled"}). Logic in _lib/waitlistApi.ts; also serves the /waitlist, /waitlist/callback
 // and /w/:code rewrites (vercel.json). W-T52: ?card=<code> returns the line-number card PNG.
-// W-T70: points and missions behind FEATURE_WAITLIST_POINTS.
-import {ensureSchema, getSql, joinWaitlist, removeWaitlistEmail, setWaitlistEmail, setWaitlistMission, setWaitlistWallet, waitlistMe, waitlistPositionByCode, withSchemaRetry} from "../_lib/db.js";
+// W-T70: points and missions behind FEATURE_WAITLIST_POINTS. W-T72: ?stats=1 for the operator.
+import {ensureSchema, getSql, joinWaitlist, removeWaitlistEmail, setWaitlistEmail, setWaitlistMission, setWaitlistWallet, waitlistMe, waitlistStats, waitlistPositionByCode, withSchemaRetry} from "../_lib/db.js";
 import {renderCard} from "../_lib/waitlistCard.js";
 import {preflight} from "../_lib/http.js";
 import {handleWaitlist, WaitlistStore} from "../_lib/waitlistApi.js";
@@ -18,6 +18,7 @@ function store(): WaitlistStore {
         removeEmail: (xid) => retry("email-remove", () => removeWaitlistEmail(sql, xid)),
         positionByCode: (code, rank) => retry("card", () => waitlistPositionByCode(sql, code, rank)),
         setMission: (xid, mission) => retry("mission", () => setWaitlistMission(sql, xid, mission)),
+        stats: () => retry("stats", () => waitlistStats(sql)),
     };
 }
 

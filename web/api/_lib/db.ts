@@ -7,7 +7,7 @@ import type {FoldRow} from "./positions.js";
 import type {Interval, KnownCurve, RangeWrite} from "./indexer.js";
 import type {KnownOffering, RangeWriteL1} from "./indexerL1.js";
 import {ADDR_L1, L1_FACTORIES} from "../../src/contracts/addressesV3L1.js";
-import {POINTS_FOLLOW, POINTS_REFERRAL, POINTS_REPOST, POINTS_WALLET, type Mission} from "./waitlist.js";
+import {POINTS_FOLLOW, POINTS_REFERRAL, POINTS_REPOST, POINTS_WALLET, SUSPECT_MAX_ACCOUNT_AGE_DAYS, SUSPECT_MIN_FOLLOWERS, type Mission} from "./waitlist.js";
 
 export type Sql = NeonQueryFunction<false, false>;
 
@@ -1164,6 +1164,91 @@ export const WAITLIST_POSITION_BY_CODE_SQL = `
 export async function waitlistPositionByCode(sql: Sql, code: string, rank: WaitlistRank = "referrals"): Promise<number | null> {
     const rows = (await sql.query(rank === "points" ? WAITLIST_POSITION_BY_CODE_POINTS_SQL : WAITLIST_POSITION_BY_CODE_SQL, [code])) as {position: number}[];
     return rows[0]?.position ?? null;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Operator stats (W-T72): read only, four aggregate statements read together
+// ---------------------------------------------------------------------------------------------
+
+/** The suspect rule of suspectOf (waitlist.ts) in SQL, from the same constants. A row with a NULL
+ *  account date or follower count is never suspect (it is counted as unknown). */
+const knownSql = (t: string) => `(${t}.x_created_at IS NOT NULL AND ${t}.followers IS NOT NULL)`;
+const youngSql = (t: string) => `(${knownSql(t)} AND ${t}.created_at - ${t}.x_created_at < interval '${SUSPECT_MAX_ACCOUNT_AGE_DAYS} days')`;
+const lowSql = (t: string) => `(${knownSql(t)} AND ${t}.followers < ${SUSPECT_MIN_FOLLOWERS})`;
+export const suspectSql = (t: string) => `(${youngSql(t)} OR ${lowSql(t)})`;
+
+export const WAITLIST_STATS_TOTALS_SQL = `
+    SELECT count(*)::int AS total,
+           count(w.wallet)::int AS "withWallet",
+           count(w.email)::int AS "withEmail",
+           count(w.followed_at)::int AS followed,
+           count(w.reposted_at)::int AS reposted,
+           count(w.referred_by)::int AS referred,
+           (count(*) FILTER (WHERE w.referrals = 0))::int AS r0,
+           (count(*) FILTER (WHERE w.referrals = 1))::int AS r1,
+           (count(*) FILTER (WHERE w.referrals BETWEEN 2 AND 4))::int AS r2,
+           (count(*) FILTER (WHERE w.referrals BETWEEN 5 AND 9))::int AS r5,
+           (count(*) FILTER (WHERE w.referrals >= 10))::int AS r10,
+           (count(*) FILTER (WHERE ${youngSql("w")}))::int AS "youngAccount",
+           (count(*) FILTER (WHERE ${lowSql("w")}))::int AS "lowFollowers",
+           (count(*) FILTER (WHERE ${suspectSql("w")}))::int AS either,
+           (count(*) FILTER (WHERE NOT ${knownSql("w")}))::int AS unknown,
+           (count(*) FILTER (WHERE w.referred_by IS NOT NULL AND ${suspectSql("w")}))::int AS "referredAndEither"
+    FROM mapae_waitlist w`;
+
+/** Joins per day in Korean time, oldest first, days with joins only. */
+export const WAITLIST_STATS_BY_DAY_SQL = `
+    SELECT to_char((w.created_at AT TIME ZONE 'Asia/Seoul')::date, 'YYYY-MM-DD') AS day, count(*)::int AS joined
+    FROM mapae_waitlist w GROUP BY 1 ORDER BY 1`;
+
+export const WAITLIST_STATS_BY_LANG_SQL = `
+    SELECT w.lang, count(*)::int AS joined FROM mapae_waitlist w GROUP BY w.lang ORDER BY joined DESC, w.lang ASC NULLS LAST`;
+
+/** The 10 accounts with the most referrals (ties by seq), with their suspect referrals and their
+ *  points (the rank's pointsSql). Only the handle leaves the server, never ids, codes or contacts. */
+export const WAITLIST_STATS_TOP_SQL = `
+    SELECT m.username, m.referrals,
+           (SELECT count(*) FROM mapae_waitlist r WHERE r.referred_by = m.ref_code AND ${suspectSql("r")})::int AS "suspectReferrals",
+           ${pointsSql("m")}::int AS points
+    FROM mapae_waitlist m WHERE m.referrals > 0
+    ORDER BY m.referrals DESC, m.seq ASC LIMIT 10`;
+
+export type WaitlistStats = {
+    total: number;
+    withWallet: number;
+    withEmail: number;
+    followed: number;
+    reposted: number;
+    referred: number;
+    byDay: {day: string; joined: number}[];
+    byLang: {lang: string | null; joined: number}[];
+    referralBuckets: {"0": number; "1": number; "2-4": number; "5-9": number; "10+": number};
+    suspect: {youngAccount: number; lowFollowers: number; either: number; unknown: number; referredAndEither: number};
+    topReferrers: {username: string | null; referrals: number; suspectReferrals: number; points: number}[];
+};
+
+export async function waitlistStats(sql: Sql): Promise<WaitlistStats> {
+    const [totals, byDay, byLang, top] = (await Promise.all([
+        sql.query(WAITLIST_STATS_TOTALS_SQL),
+        sql.query(WAITLIST_STATS_BY_DAY_SQL),
+        sql.query(WAITLIST_STATS_BY_LANG_SQL),
+        sql.query(WAITLIST_STATS_TOP_SQL),
+    ])) as [Record<string, number>[], WaitlistStats["byDay"], WaitlistStats["byLang"], WaitlistStats["topReferrers"]];
+    const t = totals[0];
+    if (!t) throw new Error("waitlist stats: no totals row");
+    return {
+        total: t.total,
+        withWallet: t.withWallet,
+        withEmail: t.withEmail,
+        followed: t.followed,
+        reposted: t.reposted,
+        referred: t.referred,
+        byDay,
+        byLang,
+        referralBuckets: {"0": t.r0, "1": t.r1, "2-4": t.r2, "5-9": t.r5, "10+": t.r10},
+        suspect: {youngAccount: t.youngAccount, lowFollowers: t.lowFollowers, either: t.either, unknown: t.unknown, referredAndEither: t.referredAndEither},
+        topReferrers: top,
+    };
 }
 
 /** Links a wallet: "taken" when another account already has it, "no_account" when the row is gone. */

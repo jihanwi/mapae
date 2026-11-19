@@ -7,11 +7,12 @@
 // GET  ?action=land[&ref][&lang]     -> 302 /#/waitlist (the /waitlist rewrite)
 // GET  ?share=<code>                  -> link preview HTML (no DB read)
 // GET  (no params)                    -> my state (private, no-store)
+// GET  ?stats=1 (Bearer CRON_SECRET)  -> operator stats (W-T72, checked before the flag)
 // POST {action: wallet | email | email-remove | logout | mission (W-T70)}
 import {isAddress, recoverMessageAddress} from "viem";
 import {cors, forbiddenOrigin, json} from "./http.js";
 import {paramsAllowed} from "./chainApi.js";
-import type {WaitlistJoin, WaitlistMe, WaitlistRank} from "./db.js";
+import type {WaitlistJoin, WaitlistMe, WaitlistRank, WaitlistStats} from "./db.js";
 import {
     appPath,
     authorizeUrl,
@@ -54,6 +55,8 @@ export type WaitlistStore = {
     positionByCode(code: string, rank: WaitlistRank): Promise<number | null>;
     /** W-T70: records a mission's first press; false when the account row is gone. */
     setMission(xid: string, mission: Mission): Promise<boolean>;
+    /** W-T72: the operator's aggregate view (no ids, codes, wallets or emails). */
+    stats(): Promise<WaitlistStats>;
 };
 
 export type WaitlistDeps = {
@@ -70,6 +73,8 @@ export type WaitlistDeps = {
 export const MAX_REF_DRAWS = 5;
 const MAX_POST = 4 * 1024;
 const NO_STORE = {"Cache-Control": "private, no-store"};
+/** W-T72: the operator stats answer (spec: Cache-Control: no-store). */
+const NO_STORE_ONLY = {"Cache-Control": "no-store"};
 const SHARE_CACHE = "s-maxage=300, stale-while-revalidate=3600";
 /** W-T52: a card shows the number at render time; a new number appears within about 5 minutes. */
 export const CARD_CACHE = "public, s-maxage=300, stale-while-revalidate=600";
@@ -246,7 +251,35 @@ async function card(code: string | null, origin: string, rank: WaitlistRank, dep
 /** The app with the chosen language (?lang= before the hash, as the app reads it) and the ref. */
 const landing = (ref: string | null, lang: string | null) => (isWaitlistLang(lang) ? `/?lang=${lang}${appPath(ref).slice(1)}` : appPath(ref));
 
+/** W-T72: GET ?stats=1 for the operator. Order: the CRON_SECRET bearer first (401), then the
+ *  waitlist flag (404 / 503 as for every route), then the parameters (only stats=1, else 400).
+ *  Read only; a database error is logged and answered 503 (never an empty count). */
+async function stats(request: Request, p: URLSearchParams, deps: WaitlistDeps): Promise<Response> {
+    const secret = deps.env.CRON_SECRET;
+    if (!secret || request.headers.get("authorization") !== `Bearer ${secret}`) return json(401, {error: "unauthorized"});
+    const conf = waitlistConfig(deps.env);
+    if (conf.state === "disabled") return json(404, {error: "disabled"});
+    if (conf.state === "missing") {
+        console.error("waitlist: missing configuration", conf.missing);
+        return json(503, {error: "unavailable"});
+    }
+    // exactly one parameter, stats=1 (not even the "v" cache key paramsAllowed lets through)
+    if ([...p.keys()].length !== 1 || p.get("stats") !== "1") return json(400, {error: "bad_request"}, NO_STORE_ONLY);
+    try {
+        const s = await deps.store().stats();
+        return json(200, {generatedAt: new Date(deps.nowSec() * 1000).toISOString(), pointsEnabled: pointsConfig(deps.env).enabled, ...s}, NO_STORE_ONLY);
+    } catch (e) {
+        console.error("waitlist stats: read failed", e);
+        return json(503, {error: "unavailable"}, NO_STORE_ONLY);
+    }
+}
+
 export async function handleWaitlist(request: Request, deps: WaitlistDeps): Promise<Response> {
+    // W-T72: the operator stats branch, before the flag check (its own order: secret, flag, params)
+    if (request.method === "GET") {
+        const sp = new URL(request.url).searchParams;
+        if (sp.has("stats")) return stats(request, sp, deps);
+    }
     const conf = waitlistConfig(deps.env);
     if (conf.state === "disabled") return json(404, {error: "disabled"});
     if (conf.state === "missing") {
