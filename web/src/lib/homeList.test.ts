@@ -139,7 +139,7 @@ function listRow(i: number, over: Partial<ServerListRow> = {}): ServerListRow {
         ...over,
     };
 }
-/** What useCurves builds from the chain reads for the same curve state. */
+/** What useCurves builds from the chain reads for the matching curve state. */
 function chainInfo(i: number, index: number, over: Partial<CurveInfo> = {}): CurveInfo {
     return {
         address: addr(0xc0 + i),

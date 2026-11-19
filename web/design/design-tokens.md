@@ -38,8 +38,11 @@ colors: {
 fontFamily: {
   sans:  ['"Pretendard Variable"', 'Pretendard', 'sans-serif'], // 본문 · UI 전체
   serif: ['"Noto Serif KR"', 'serif'],                          // 등급 한자 · 큰 숫자 · 로고 워드마크 전용
+  mono:  ['"IBM Plex Mono"', 'ui-monospace', 'monospace'],      // 표와 상단 바의 숫자 전용 (`.num`)
 }
 ```
+
+- 숫자 서체 `.num` (IBM Plex Mono 400/500 + `tabular-nums`, 오너 결정 2026-11-18): 홈 목록과 상단 바의 표 숫자에만 쓴다. 시가총액, 등락률, 실명 거래자 수, 졸업 진행률, 경과 시간, 금액, 줄인 주소. 문장 안의 숫자와 serif 큰 숫자에는 쓰지 않는다. 단위(KRWs, ETH)는 12px hanji-400 Pretendard
 
 - CDN: Pretendard `cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/...variable...` · Noto Serif KR은 Google Fonts (400/600/700)
 - 스케일: 페이지 타이틀 28~34/700 · 섹션 타이틀 21/700 · 카드 타이틀 17/700 · 본문 14~16/400 · 라벨·메타 13 · 캡션 12 · 배지 12

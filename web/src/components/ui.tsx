@@ -88,11 +88,14 @@ export function Gauge({committed, target, height = 8}: {committed: bigint; targe
     );
 }
 
+/** PrimaryBtn's look, also for a link that navigates (an <a> styled as the button). */
+export const PRIMARY_CLS = "rounded-input bg-brass-400 text-ink-950 text-[14px] font-bold px-5 py-3 hover:bg-brass-500";
+
 export function PrimaryBtn({children, ...props}: React.ButtonHTMLAttributes<HTMLButtonElement>) {
     return (
         <button
             {...props}
-            className={`rounded-input bg-brass-400 text-ink-950 text-[14px] font-bold px-5 py-3 hover:bg-brass-500 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-brass-400 ${props.className ?? ""}`}
+            className={`${PRIMARY_CLS} disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-brass-400 ${props.className ?? ""}`}
         >
             {children}
         </button>
@@ -188,5 +191,49 @@ export function CardSkeleton() {
             </div>
             <span className="block rounded bg-ink-700 shimmer" style={{height: 13, width: "60%"}} />
         </div>
+    );
+}
+
+/** Underline tabs (design-home): the selected tab is hanji-100 600 with a 2px brass-400 underline,
+ *  the others hanji-400 500; 26px apart over a 1px ink-700 line, 44px high. On a narrow screen the
+ *  row scrolls sideways inside itself with no visible scrollbar. */
+export function UnderlineTabs<K extends string>({
+    items,
+    value,
+    onChange,
+    label,
+    className = "",
+}: {
+    items: readonly {key: K; label: ReactNode}[];
+    value: K;
+    onChange: (k: K) => void;
+    label: string;
+    className?: string;
+}) {
+    return (
+        <div role="tablist" aria-label={label} className={`flex gap-[26px] overflow-x-auto no-scrollbar border-b border-ink-700 min-w-0 ${className}`}>
+            {items.map((t) => (
+                <button
+                    key={t.key}
+                    type="button"
+                    role="tab"
+                    aria-selected={value === t.key}
+                    onClick={() => onChange(t.key)}
+                    className={`flex-none min-h-[44px] border-b-2 text-[14px] whitespace-nowrap ${
+                        value === t.key ? "border-brass-400 text-hanji-100 font-semibold" : "border-transparent text-hanji-400 font-medium hover:text-hanji-100"
+                    }`}
+                >
+                    {t.label}
+                </button>
+            ))}
+        </div>
+    );
+}
+
+/** Small uppercase-style label over a section (English: 11px caps, 0.22em; Korean: 12px, 0.04em). */
+export function Eyebrow({locale, children, className = ""}: {locale: string; children: ReactNode; className?: string}) {
+    const en = locale.startsWith("en");
+    return (
+        <span className={`font-semibold text-brass-400 ${en ? "text-[11px] uppercase tracking-[0.22em]" : "text-[12px] tracking-[0.04em]"} ${className}`}>{children}</span>
     );
 }
