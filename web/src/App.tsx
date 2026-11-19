@@ -77,15 +77,15 @@ function Nav() {
         </button>
     ) : null;
 
-    // Top tabs: 토큰 / 발행 / (내 지갑, when connected) / 피드 / 공모. 공모 is active across the whole
-    // offering section; 내 지갑 only on the connected wallet's own profile.
+    // Top tabs (design-home): 토큰 / 발행 / 공모 / 피드 / (내 지갑, when connected). 공모 is active
+    // across the whole offering section; 내 지갑 only on the connected wallet's own profile.
     const ownWallet = isConnected && address ? address : undefined;
     const tabs = [
         {to: "/", label: tr.nav.curves, active: pathname === "/" || pathname.startsWith("/t/")},
         {to: "/create", label: tr.nav.create, active: pathname.startsWith("/create")},
-        ...(ownWallet ? [{to: `/w/${ownWallet}`, label: tr.nav.wallet, active: pathname.toLowerCase() === `/w/${ownWallet.toLowerCase()}`}] : []),
-        {to: "/feed", label: tr.nav.feed, active: pathname.startsWith("/feed")},
         {to: "/offerings", label: tr.nav.home, active: legacy},
+        {to: "/feed", label: tr.nav.feed, active: pathname.startsWith("/feed")},
+        ...(ownWallet ? [{to: `/w/${ownWallet}`, label: tr.nav.wallet, active: pathname.toLowerCase() === `/w/${ownWallet.toLowerCase()}`}] : []),
     ];
     // Offering-section sub tabs (routes unchanged)
     // decision 55: "리딤" only when some offering has redeem items or a sponsorship (shown on read
@@ -115,10 +115,10 @@ function Nav() {
         <button onClick={() => disconnect()} title={tr.nav.disconnect}
             className="flex items-center gap-2.5 min-h-[44px] px-4 py-2 border border-ink-700 rounded-full text-[13px] hover:border-brass-600 active:border-brass-400">
             <span className="w-[7px] h-[7px] rounded-full bg-success" />
-            <span className="text-hanji-100 tabular-nums">{shortAddr(address)}</span>
+            <span className="text-hanji-100 num">{shortAddr(address)}</span>
             <span className="hidden sm:flex items-center gap-2.5">
                 <span className="text-ink-700">|</span>
-                <span className="text-hanji-400 tabular-nums">{fmt(shownKrw, 0, tr.locale)} KRWs</span>
+                <span className="text-hanji-400"><span className="num">{fmt(shownKrw, 0, tr.locale)}</span> KRWs</span>
             </span>
         </button>
     ) : (

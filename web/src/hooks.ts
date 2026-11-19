@@ -336,6 +336,8 @@ export type ApiOfferingRow = {
     totalCommitted: string;
     redeemItems: number;
     settled: boolean;
+    /** block of the Settled event (null before settle); the list query already returns it */
+    settledBlock?: string | null;
     upfront?: string | null;
 };
 export type ApiOfferingList = {indexedBlock: string | null; offerings: ApiOfferingRow[]};

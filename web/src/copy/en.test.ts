@@ -62,3 +62,13 @@ describe("feed copy guardrails", () => {
         expect(en.feed.window(1)).toBe("Based on about the last 1 hour");
     });
 });
+
+describe("design-home copy", () => {
+    it("the brass accent is part of each tagline", () => {
+        for (const c of [ko, en]) expect(c.homeRows.tagline).toContain(c.homeRows.taglineAccent);
+    });
+    it("the intro lines carry the priority window and the holding cap", () => {
+        expect(ko.homeRows.intro[0]).toMatch(/^개설 후 \d+분은 실명 지갑만 살 수 있고, 한 지갑이 [\d.]+%를 넘게 가질 수 없어요$/);
+        expect(en.homeRows.intro[0]).toMatch(/^First \d+ minutes: verified wallets only, and no wallet can hold more than [\d.]+%\.$/);
+    });
+});

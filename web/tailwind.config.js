@@ -18,6 +18,7 @@ export default {
         fontFamily: {
             sans: ['"Pretendard Variable"', "Pretendard", "sans-serif"],
             serif: ['"Noto Serif KR"', "serif"],
+            mono: ['"IBM Plex Mono"', "ui-monospace", "monospace"],
         },
         extend: {
             maxWidth: {page: "1240px"},

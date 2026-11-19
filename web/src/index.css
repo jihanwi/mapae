@@ -14,6 +14,11 @@ a:hover { color: #F2EAD9; }
 input, button, textarea { font-family: inherit; }
 ::placeholder { color: #6B5F4E; }
 .tabular-nums { font-variant-numeric: tabular-nums; }
+/* design-home: figures in tables and the top bar (not numbers inside sentences, not the big serif ones) */
+.num { font-family: "IBM Plex Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+/* scrolling strips (sort tabs) scroll without a visible scrollbar */
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
 
 /* M4: iOS 탭 하이라이트 제거 — active 상태는 자체 스타일로 */
 button, a, [role="button"] { -webkit-tap-highlight-color: transparent; }

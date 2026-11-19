@@ -942,7 +942,25 @@ export const ko = {
     // 홈 행 목록 (검색, 기간, 등락률, 실시간 거래 패널, 소개)
     homeRows: {
         tagline: "모두가 같은 출발선에서 시작하는 런치패드",
-        intro: [`첫 ${PRIORITY_MINUTES}분은 실명 지갑만 삽니다. 봇이 먼저 사는 런치가 없습니다.`, "발행자 물량은 0입니다. 유동성은 영구히 잠깁니다.", "모든 토큰이 같은 곡선에서 출발합니다."],
+        // the part of the tagline drawn in brass-400 (it must appear in tagline)
+        taglineAccent: "같은 출발선",
+        intro: [
+            `개설 후 ${PRIORITY_MINUTES}분은 실명 지갑만 살 수 있고, 한 지갑이 ${capPct(CAP_DEFAULT)}%를 넘게 가질 수 없어요`,
+            "Dev 몫은 없고, 유동성은 영구히 잠겨요",
+            "정가 공모도 열 수 있어요. 똑같이 나눈 뒤 남은 물량은 추첨으로 정해요",
+        ],
+        ctaLaunch: "토큰 발행",
+        ctaOffering: "공모 열기",
+        // fixed-price offerings strip (between the home top and the list)
+        strip: {
+            label: "정가 공모",
+            sub: "같은 가격, 같은 기회로 받는 공모",
+            all: "공모 전체 보기 →",
+            committed: "모금",
+            closesIn: "마감까지",
+            offerPrice: "공모가",
+            priceNow: "현재가",
+        },
         search: "이름, 티커, 컨트랙트 주소로 찾기",
         searchEmpty: "찾는 토큰이 없어요",
         periodLabel: "기간",
