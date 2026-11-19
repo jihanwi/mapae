@@ -56,8 +56,16 @@ describe("W-T70: points copy", () => {
         expect(ko.waitlist.points("15")).toBe("15 포인트");
         expect(en.waitlist.points("15")).toBe("15 points");
         expect(ko.waitlist.pointsPlus(5)).toBe("+5");
-        expect(ko.waitlist.referralEach(10)).toBe("1명당 +10");
-        expect(en.waitlist.referralEach(10)).toBe("+10 each");
+        // W-T69: the invite line replaces "1명당 +N"
+        expect("referralEach" in ko.waitlist || "referralEach" in en.waitlist).toBe(false);
+        expect(ko.waitlist.rankNote).toBe("포인트가 많을수록 앞 순번이에요");
+        expect(en.waitlist.rankNote).toBe("More points, earlier in line.");
+        expect(ko.waitlist.inviteTitle).toBe("친구 초대");
+        expect(en.waitlist.inviteTitle).toBe("Invite friends");
+        expect(ko.waitlist.inviteHint).toBe("내 링크로 가입한 사람 1명마다");
+        expect(en.waitlist.inviteHint).toBe("For each person who joins with your link");
+        expect(ko.waitlist.inviteCount(3)).toBe("3명");
+        expect(en.waitlist.inviteCount(3)).toBe("3 joined");
         expect(ko.waitlist.missionsTitle).toBe("순번 올리기");
         expect(en.waitlist.missionsTitle).toBe("Move up the line");
         expect(ko.waitlist.missionFollow).toBe("@MapaeGiwa 팔로우");

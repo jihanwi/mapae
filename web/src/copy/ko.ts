@@ -1203,7 +1203,6 @@ export const ko = {
         /** W-T70: points and missions (the joined screen only, FEATURE_WAITLIST_POINTS) */
         points: (p: string) => `${p} 포인트`,
         pointsPlus: (n: number) => `+${n}`,
-        referralEach: (n: number) => `1명당 +${n}`,
         missionsTitle: "순번 올리기",
         missionFollow: "@MapaeGiwa 팔로우",
         missionFollowCta: "팔로우하기",
@@ -1212,6 +1211,11 @@ export const ko = {
         missionDone: "완료",
         missionNote: "메인넷이 열리기 전에 실제 팔로우와 리포스트를 확인하고 포인트를 다시 계산해요",
         missionError: "잠시 뒤 다시 시도해 주세요",
+        /** W-T69: the joined screen's "move up the line" list */
+        rankNote: "포인트가 많을수록 앞 순번이에요",
+        inviteTitle: "친구 초대",
+        inviteHint: "내 링크로 가입한 사람 1명마다",
+        inviteCount: (n: number) => `${n}명`,
     },
     privacy: {
         title: "개인정보 처리방침 (웨이트리스트)",
