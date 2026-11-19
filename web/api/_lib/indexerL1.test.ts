@@ -290,20 +290,20 @@ function recorder(answer: (q: string, p: unknown[]) => unknown[] = () => []) {
     return {sql, qs};
 }
 
-describe("W-T40: L1 cursor row 133", () => {
-    it("row 133 continues; without it, row 132's position or the v3.3-L1 deployment block, whichever is earlier", async () => {
-        expect(L1_INDEXER_STATE_ID).toBe(133);
-        expect(L1_PREV_STATE_ID).toBe(132);
-        expect(l1Resume(41_520_000n, 41_530_000n, 41_506_506n)).toBe(41_520_000n);
-        // row 132 already past the new factory: start at its deployment (no OfferingCreated missed)
-        expect(l1Resume(null, 41_530_000n, 41_506_506n)).toBe(41_506_506n);
-        // row 132 behind it: continue from row 132 (no block of either factory skipped)
-        expect(l1Resume(null, 41_500_000n, 41_506_506n)).toBe(41_500_000n);
+describe("L1 cursor row 134 (v3.4-L1 switch, the W-T40 way)", () => {
+    it("row 134 continues; without it, row 133's position or the v3.4-L1 deployment block, whichever is earlier", async () => {
+        expect(L1_INDEXER_STATE_ID).toBe(134);
+        expect(L1_PREV_STATE_ID).toBe(133);
+        expect(l1Resume(41_580_000n, 41_590_000n, 41_566_745n)).toBe(41_580_000n);
+        // row 133 already past the new factory: start at its deployment (no OfferingCreated missed)
+        expect(l1Resume(null, 41_590_000n, 41_566_745n)).toBe(41_566_745n);
+        // row 133 behind it: continue from row 133 (no block of any factory skipped)
+        expect(l1Resume(null, 41_560_000n, 41_566_745n)).toBe(41_560_000n);
         // empty database: the indexer starts at the oldest L1 deployment
-        expect(l1Resume(null, null, 41_506_506n)).toBeNull();
+        expect(l1Resume(null, null, 41_566_745n)).toBeNull();
         expect(l1IndexStart()).toBe(41_489_012n);
-        const {sql} = recorder(() => [{id: 132, n: "41530000"}]);
-        expect(await readNextBlockL1(sql)).toBe(41_506_506n);
+        const {sql} = recorder(() => [{id: 133, n: "41590000"}]);
+        expect(await readNextBlockL1(sql)).toBe(41_566_745n);
         const empty = recorder(() => []);
         expect(await readNextBlockL1(empty.sql)).toBeNull();
     });
@@ -326,8 +326,8 @@ describe("W-T40: L1 cursor row 133", () => {
 describe("db: L1 tables and cursor", () => {
     it("own cursor row, never the L0 row", async () => {
         expect(L1_INDEXER_STATE_ID).not.toBe(INDEXER_STATE_ID);
-        const {sql, qs} = recorder(() => [{id: 133, n: "41510000"}, {id: 132, n: "41509000"}]);
-        expect(await readNextBlockL1(sql)).toBe(41_510_000n);
+        const {sql, qs} = recorder(() => [{id: 134, n: "41570000"}, {id: 133, n: "41569000"}]);
+        expect(await readNextBlockL1(sql)).toBe(41_570_000n);
         expect(qs[0].p).toEqual([[L1_INDEXER_STATE_ID, L1_PREV_STATE_ID]]);
         const w = recorder();
         await writeRangeL1(w.sql, {offerings: [], settlements: [], events: [], swaps: [], nextBlock: 5n, indexedTs: 9});

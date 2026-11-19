@@ -14,7 +14,7 @@ import {ADDR_L1} from "../contracts/addressesV3L1";
 import {activeOfferingOf} from "../lib/l1Factories";
 import {ADDR_V3} from "../contracts/addressesV3";
 import {MapaeFactoryL1Abi, MapaeVestingL1Abi, OfferingL1Abi, ProceedsLockAbi} from "../contracts/abisV3L1";
-import {CurveFactoryAbi, FeeRouterAbi, MembershipTokenV3Abi} from "../contracts/abisV3";
+import {CurveFactoryAbi, FeeRouterAbi} from "../contracts/abisV3";
 import {giwaSepolia} from "../config/chain";
 import {useOnboarding} from "../hooks";
 import {clearDraft, loadDraft, saveDraft, useSaveDisclosure} from "../hooks/disclosure";
@@ -82,10 +82,10 @@ function useBounds(): {bounds: ChainBounds | null; failed: boolean} {
     };
 }
 
-/** The wallet's offerings that still count for the current factory's live cap (MapaeFactory._enforceLiveCap:
- *  every L1/L2 offering except a failed one, i.e. refunding with zero supply). W-T40: the contract
- *  counts per factory, so only the current factory (ADDR_L1) is read; an older factory's live
- *  offering never blocks (lib/l1Factories activeOfferingOf). */
+/** The wallet's offerings that still count for the current factory's live cap (MapaeFactory._enforceLiveCap,
+ *  v3.4-L1 decision 63: an L1/L2 offering that is Open or Frozen). W-T40: the contract counts per
+ *  factory, so only the current factory (ADDR_L1) is read; an older factory's offering never blocks
+ *  (lib/l1Factories activeOfferingOf). */
 function useActiveOffering(account: `0x${string}` | undefined): {active: `0x${string}` | null | undefined} {
     const list = useReadContract({
         address: ADDR_L1.mapaeFactory, abi: MapaeFactoryL1Abi, functionName: "offeringsByCreator", args: [account!], chainId: giwaSepolia.id,
@@ -101,10 +101,7 @@ function useActiveOffering(account: `0x${string}` | undefined): {active: `0x${st
     });
     const tokens = addrs.map((_, i) => first.data?.[i * 2 + 1]?.result as `0x${string}` | undefined);
     const second = useReadContracts({
-        contracts: tokens.flatMap((tk) => [
-            {address: tk, abi: MembershipTokenV3Abi as Abi, functionName: "totalSupply", chainId: giwaSepolia.id},
-            {address: ADDR_L1.mapaeFactory, abi: MapaeFactoryL1Abi as Abi, functionName: "tokenTier", args: [tk], chainId: giwaSepolia.id},
-        ]),
+        contracts: tokens.map((tk) => ({address: ADDR_L1.mapaeFactory, abi: MapaeFactoryL1Abi as Abi, functionName: "tokenTier", args: [tk], chainId: giwaSepolia.id})),
         query: {enabled: tokens.length > 0 && tokens.every(Boolean)},
     });
     if (!account || !list.data) return {active: undefined};
@@ -115,8 +112,7 @@ function useActiveOffering(account: `0x${string}` | undefined): {active: `0x${st
         active: activeOfferingOf(addrs.map((address, i) => ({
             address,
             phase: num(first.data![i * 2]?.result),
-            totalSupply: second.data![i * 2]?.result as bigint | undefined,
-            tier: num(second.data![i * 2 + 1]?.result),
+            tier: num(second.data![i]?.result),
         }))),
     };
 }

@@ -226,21 +226,22 @@ export async function withSchemaRetry<T>(label: string, run: () => Promise<T>, e
 export const INDEXER_STATE_ID = 35;
 
 /** Cursor row of the L1 offering indexer. Separate from INDEXER_STATE_ID so L0 is never read again;
- *  the catch-up throttle stays on the L0 row. id 132 = W-T33 (v3.2-L1 factory only, left untouched);
- *  id 133 = W-T40 (every L1 factory). Row 133 starts where no OfferingCreated of the v3.3-L1 factory
- *  can have been missed (l1Resume): the v3.3-L1 deployment block, or row 132's position when that is
- *  earlier, or the oldest L1 deployment on an empty database. Blocks row 132 already read are read
- *  again; every table is keyed (offering, (tx, log_index)) with DO NOTHING and settlements COALESCE,
- *  so nothing is counted twice. */
-export const L1_INDEXER_STATE_ID = 133;
-export const L1_PREV_STATE_ID = 132;
+ *  the catch-up throttle stays on the L0 row. id 132 = W-T33 (v3.2-L1 factory only), id 133 = W-T40
+ *  (v3.2-L1 + v3.3-L1), both left untouched; id 134 = the v3.4-L1 web switch (every L1 factory,
+ *  three since v3.4-L1). Each new row starts where no OfferingCreated of the newest factory can have
+ *  been missed (l1Resume): the newest factory's deployment block, or the previous row's position when
+ *  that is earlier, or the oldest L1 deployment on an empty database. Blocks the previous row already
+ *  read are read again; every table is keyed (offering, (tx, log_index)) with DO NOTHING and
+ *  settlements COALESCE, so nothing is counted twice and nothing is lost. */
+export const L1_INDEXER_STATE_ID = 134;
+export const L1_PREV_STATE_ID = 133;
 
 /** First block of an empty L1 index (no cursor row at all): the oldest L1 deployment. */
 export function l1IndexStart(): bigint {
     return ADDR_L1.firstBlock;
 }
 
-/** Where the L1 cursor continues. `own`: row 133; `prev`: row 132; `current`: the newest L1
+/** Where the L1 cursor continues. `own`: row 134; `prev`: row 133; `current`: the newest L1
  *  factory's deployment block. null: no row, start at l1IndexStart(). */
 export function l1Resume(own: bigint | null, prev: bigint | null, current: bigint): bigint | null {
     if (own !== null) return own;

@@ -38,18 +38,21 @@ export function scanStartFor(factories: readonly (string | undefined)[], all: re
     return start!;
 }
 
-export type CapEntry = {address: `0x${string}`; phase: number | undefined; totalSupply: bigint | undefined; tier: number | undefined};
+export type CapEntry = {address: `0x${string}`; phase: number | undefined; tier: number | undefined};
 
-/** MapaeFactory._enforceLiveCap on the current factory: the wallet's newest offering there that still
- *  counts (every L1/L2 offering except a failed one: refunding with zero supply). `entries` are the
- *  current factory's offeringsByCreator in order; offerings of older factories are never passed in.
- *  undefined while a read is missing, null when nothing blocks. */
+/** IPrimaryMarket.Phase values the v3.4-L1 cap counts (decision 63): Open and Frozen. */
+const PHASE_OPEN = 0;
+const PHASE_FROZEN = 1;
+
+/** MapaeFactory._enforceLiveCap on the current factory (v3.4-L1, decision 63): the wallet's newest
+ *  L1/L2 offering there that is still Open or Frozen. Settled and Refunding offerings no longer block.
+ *  `entries` are the current factory's offeringsByCreator in order; offerings of older factories are
+ *  never passed in (they never block). undefined while a read is missing, null when nothing blocks. */
 export function activeOfferingOf(entries: readonly CapEntry[]): `0x${string}` | null | undefined {
     for (let i = entries.length - 1; i >= 0; i--) {
         const e = entries[i];
-        if (e.phase === undefined || e.totalSupply === undefined || e.tier === undefined) return undefined;
-        const failed = e.phase === 4 && e.totalSupply === 0n;
-        if (!failed && e.tier !== 0) return e.address;
+        if (e.phase === undefined || e.tier === undefined) return undefined;
+        if (e.tier !== 0 && (e.phase === PHASE_OPEN || e.phase === PHASE_FROZEN)) return e.address;
     }
     return null;
 }

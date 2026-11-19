@@ -188,14 +188,15 @@ describe("POST disclosure", () => {
         const reader = (known: Record<string, string>, calls: string[] = []) => async (f: string, o: string) =>
             (calls.push(f), known[rm(f.toLowerCase(), o)] ?? "0x0000000000000000000000000000000000000000");
         const both = {[rm(OLD, OFFERING)]: "0x00000000000000000000000000000000000000b1", [rm(NEW, NEW_O)]: "0x00000000000000000000000000000000000000b2"};
-        // the real factory list from codegen holds both
-        expect(L1_FACTORIES.map((f) => f.mapaeFactory.toLowerCase()).sort()).toEqual([NEW, OLD]);
+        // the real factory list from codegen holds both (and, since the v3.4-L1 switch, a third)
+        const V34 = "0x3d3ad542a0953797b5537f19d6aec84c8b6fc227";
+        expect(L1_FACTORIES.map((f) => f.mapaeFactory.toLowerCase()).sort()).toEqual([NEW, V34, OLD].sort());
         const calls: string[] = [];
         expect(await isOfferingOfAny(reader(both, calls), OFFERING as `0x${string}`)).toBe(true);
         expect(await isOfferingOfAny(reader(both, calls), NEW_O as `0x${string}`)).toBe(true);
         expect(await isOfferingOfAny(reader(both, calls), "0x00000000000000000000000000000000000000ff")).toBe(false);
-        // one read per factory, whatever the offering
-        expect(calls).toHaveLength(6);
+        // at most one read per factory, whatever the offering (3 factories x 3 lookups)
+        expect(calls).toHaveLength(9);
         const via = (known: Record<string, string>) => ({...deps(memStore()), chain: {...chainOf(), isOffering: (x: `0x${string}`) => isOfferingOfAny(reader(known), x)}, sleep: async () => {}});
         // an old-factory offering saves; the same offering unknown to both factories is 404
         expect((await handlePostDisclosure(await signedDoc(), via(both))).status).toBe(201);

@@ -85,6 +85,9 @@ export const en = {
     refund: {
         targetMissed: "The target wasn't met. Once refunds start, every wallet that committed can claim its full commitment back.",
         startCta: "Start refunds",
+        closeNote: "No one committed. You can close this offering.",
+        closeCta: "Close offering",
+        closedEmpty: "This offering closed with no commitments.",
         refundingNote: "Refunds are open.",
         claimCta: (n: string) => `Claim refund · ${n} KRWs`,
         claimLabel: "Claim refund",
@@ -291,7 +294,7 @@ export const en = {
         gate: {
             connect: "Connect a wallet.",
             verify: "Only verified wallets can open an offering. Verify at the top of the page first.",
-            active: "This wallet already has an open offering. One wallet can have one L1 offering at a time.",
+            active: "This wallet has an offering still in progress. You can open a new one once it is settled or refunding.",
             activeLink: "Go to that offering",
         },
         err: {

@@ -4,7 +4,22 @@
 //   emergencyRefund() anyone; deadline + SETTLE_TIMEOUT passed, not settled / refunding (any mode)
 //   refund()          refunding; pays committed[msg.sender] in full
 // Times are chain block times (seconds). SETTLE_TIMEOUT comes from codegen (Offering.sol).
+//   v3.4-L1: enableRefunds() also passes with totalCommitted == 0 in either mode (zero-commit close)
 import {OFFERING_CONSTS} from "../contracts/offeringBoundsL1";
+import {L1_FACTORIES} from "../contracts/addressesV3L1";
+
+const versionNum = (v: string) => {
+    const m = /^v(\d+)\.(\d+)-L1$/.exec(v);
+    return m ? Number(m[1]) * 1000 + Number(m[2]) : 0;
+};
+/** v3.4-L1 and later: an offering with no commitment can be closed (enableRefunds) after its deadline
+ *  in either refund mode. Decided by the offering's factory (from /api/chain/offerings or the
+ *  allOfferings read); an unknown factory is treated as an older one (no zero-commit close). */
+export function allowsZeroCommitClose(factory: string | undefined, factories: readonly {version: string; mapaeFactory: string}[] = L1_FACTORIES): boolean {
+    if (!factory) return false;
+    const f = factories.find((x) => x.mapaeFactory.toLowerCase() === factory.toLowerCase());
+    return !!f && versionNum(f.version) >= versionNum("v3.4-L1");
+}
 
 export type PhaseInput = {
     settled: boolean;
@@ -21,6 +36,8 @@ export type PhaseInput = {
     /** the connected wallet has a Refunded event (true), none in a complete read (false), unknown (undefined) */
     myRefunded?: boolean | undefined;
     settleTimeout?: bigint;
+    /** v3.4-L1 factory (allowsZeroCommitClose): a zero-commit offering may be closed after the deadline */
+    zeroCommitClose?: boolean;
 };
 
 export type AfterDeadline =
@@ -35,16 +52,22 @@ export type AfterDeadline =
     /** d: waiting for settle; anyone may start refunds from `emergencyAt` */
     | {kind: "awaitSettle"; emergencyAt: bigint}
     /** e: the settle timeout passed: anyone may call emergencyRefund */
-    | {kind: "canEmergencyRefund"};
+    | {kind: "canEmergencyRefund"}
+    /** v3.4-L1: no commitment at all, deadline passed: anyone may close it (enableRefunds) */
+    | {kind: "canClose"}
+    /** refunding with no commitment ever made: closed, nothing to take back */
+    | {kind: "closedEmpty"};
 
 export function afterDeadline(p: PhaseInput): AfterDeadline {
     if (p.settled) return {kind: "settled"};
     if (p.refunding) {
+        if (p.totalCommitted === 0n) return {kind: "closedEmpty"};
         if (p.myCommitted !== undefined && p.myCommitted > 0n) return {kind: "claim", amount: p.myCommitted};
         return {kind: "refunding", refunded: p.myRefunded};
     }
     if (p.chainTs < p.deadline) return {kind: "open"};
     const timeout = p.settleTimeout ?? OFFERING_CONSTS.SETTLE_TIMEOUT;
+    if (p.zeroCommitClose && p.totalCommitted === 0n) return {kind: "canClose"};
     if (p.refundMode === 0 && p.totalCommitted < p.raiseTarget) return {kind: "canStartRefund"};
     if (p.chainTs >= p.deadline + timeout) return {kind: "canEmergencyRefund"};
     return {kind: "awaitSettle", emergencyAt: p.deadline + timeout};
