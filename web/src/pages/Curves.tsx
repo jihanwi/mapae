@@ -5,16 +5,17 @@ import {Address, CurveInfo, useCurves} from "../hooks/curves";
 import {useActivity} from "../hooks/activity";
 import {SummaryWindow, useChainSummary} from "../hooks/chainData";
 import {keyByCurves, mergeStats, ServerSummary} from "../lib/chainMerge";
-import {CurveStats, marketCap, sortCurves, Tab, TABS, Trade} from "../lib/activity";
+import {CurveStats, marketCap, Trade} from "../lib/activity";
 import {progressBps} from "../lib/curveMath";
 import {fmtCeil, fmtRound, shortAddr} from "../lib/format";
-import {changeLabel, changeOf, exactAddressHit, featured, leftToGraduate, OVERLAY_MAX, searchCurves} from "../lib/homeList";
+import {changeLabel, changeOf, exactAddressHit, featured, HOME_TABS, HomeTab, homeTab, leftToGraduate, OVERLAY_MAX, searchCurves, upcomingCount} from "../lib/homeList";
+import {LaunchBadges} from "../components/LaunchStatus";
+import {isUpcoming} from "../lib/launchState";
 import {agoLabel, prefersReducedMotion, tradeAmount, tradeUnit, useNow} from "../components/feed";
 import {Badge, Card, Eyebrow, Gauge, NetError, PRIMARY_CLS, StaleBand, UnderlineTabs} from "../components/ui";
 import {OfferingStrip} from "../components/OfferingStrip";
 import {CurveAvatar} from "../components/MetaForm";
 import {addrKey} from "../lib/address";
-import {PriorityBadge} from "../components/PriorityCountdown";
 import {useCurveMeta} from "../hooks/meta";
 import {useNicknames} from "../hooks/nicknames";
 import {WalletLink} from "../components/WalletLink";
@@ -65,9 +66,17 @@ export function Change({bps}: {bps: bigint | undefined}) {
     return <span className={`num ${tone === "up" ? "text-success" : tone === "down" ? "text-error" : "text-hanji-400"}`}>{text}</span>;
 }
 
+/** Graduated / start countdown ("opens soon") / priority countdown, plus the verified-only mark
+ *  (W-T61). Lists read "started" from the device clock. */
 function StatusBadge({c}: {c: CurveInfo}) {
     const tr = useCopy();
-    return c.graduated ? <Badge kind="neutral">{tr.curve.graduated}</Badge> : <PriorityBadge priorityUntil={c.priorityUntil} />;
+    const started = !isUpcoming(c, Date.now() / 1000);
+    return (
+        <span className="inline-flex flex-wrap items-center gap-1.5 max-w-full">
+            {c.graduated && <Badge kind="neutral">{tr.curve.graduated}</Badge>}
+            <LaunchBadges c={c} started={started} compact />
+        </span>
+    );
 }
 
 const progressOf = (c: CurveInfo) => (c.graduated ? 10_000n : progressBps(c.virtualQuote, c.r));
@@ -104,10 +113,11 @@ function CurveRow({rank, c, stats, tsOf, now, imageUrl, change}: RowProps) {
                 <div className="flex items-center gap-3 min-w-0">
                     <CurveAvatar char={avatar} imageUrl={imageUrl} size={36} />
                     <div className="min-w-0">
-                        <div className="flex items-center gap-2 min-w-0">
-                            <span className="font-semibold truncate">{c.name}</span>
+                        {/* W-T61: badges wrap under the name when they do not fit (start countdown + verified-only) */}
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
+                            <span className="font-semibold truncate max-w-full">{c.name}</span>
                             {/* 1024-1279px: the token column is too narrow for name + badge */}
-                            <span className="flex-none hidden xl:inline">
+                            <span className="min-w-0 max-w-full hidden xl:inline-flex">
                                 <StatusBadge c={c} />
                             </span>
                         </div>
@@ -138,9 +148,9 @@ function CurveRow({rank, c, stats, tsOf, now, imageUrl, change}: RowProps) {
             <div className="flex items-center gap-3 min-w-0 lg:hidden">
                 <CurveAvatar char={avatar} imageUrl={imageUrl} size={36} />
                 <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-[15px] font-semibold truncate">{c.name}</span>
-                        <span className="flex-none">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
+                        <span className="text-[15px] font-semibold truncate max-w-full">{c.name}</span>
+                        <span className="min-w-0 max-w-full inline-flex">
                             <StatusBadge c={c} />
                         </span>
                     </div>
@@ -219,7 +229,7 @@ function FeaturedCard({c, imageUrl}: {c: CurveInfo; imageUrl?: string | null}) {
                         </div>
                     </div>
                     <div className="flex-none">
-                        <PriorityBadge priorityUntil={c.priorityUntil} />
+                        <LaunchBadges c={c} started={!isUpcoming(c, Date.now() / 1000)} compact />
                     </div>
                 </div>
                 <div className="flex justify-between gap-3 text-[13px] mb-3 tabular-nums flex-wrap">
@@ -343,11 +353,20 @@ function HomeIntro() {
     );
 }
 
-function Tabs({tab, onChange}: {tab: Tab; onChange: (t: Tab) => void}) {
+function Tabs({tab, onChange, upcoming}: {tab: HomeTab; onChange: (t: HomeTab) => void; upcoming: number}) {
     const tr = useCopy();
     return (
         <UnderlineTabs
-            items={TABS.map((t) => ({key: t, label: tr.feed.tabs[t]}))}
+            items={HOME_TABS.map((t) => ({
+                key: t,
+                label: (
+                    <>
+                        {tr.feed.tabs[t]}
+                        {/* W-T61: how many tokens are scheduled */}
+                        {t === "upcoming" && upcoming > 0 && <span className="num font-normal text-hanji-400"> {upcoming}</span>}
+                    </>
+                ),
+            }))}
             value={tab}
             onChange={onChange}
             label={tr.feed.tabsLabel}
@@ -411,7 +430,7 @@ export default function Curves() {
     const {curves, isLoading, isError, stale, refetch} = useCurves(true, overlay);
     const activity = useActivity();
     const meta = useCurveMeta(); // one request for every curve; no metadata on failure
-    const [tab, setTab] = useState<Tab>("latest");
+    const [tab, setTab] = useState<HomeTab>("latest");
     const [period, setPeriod] = useState<SummaryWindow>(86400);
     // ?q= prefills the search (the token page's "other tokens with this ticker" link)
     const [params] = useSearchParams();
@@ -427,9 +446,10 @@ export default function Curves() {
     const serverOk = summary.isSuccess;
     const server: ServerSummary | undefined = serverOk ? summary.data : undefined;
     const stats = server ? keyByCurves(mergeStats(server, activity.trades, activity.tsOf, now, period), curves) : activity.stats;
-    const sorted = sortCurves(tab, curves, stats, activity.graduatedAt);
+    // W-T61: scheduled tokens show in "upcoming" (and "new") only
+    const sorted = homeTab(tab, curves, stats, activity.graduatedAt, now);
     const shown = searchCurves(sorted, query);
-    const top = featured(curves, stats);
+    const top = featured(curves, stats, now);
     const note = tab === "popular" ? tr.feed.popularNote(period) : tab === "mcap" ? tr.feed.mcapNote : undefined;
     const windowNote = serverOk ? tr.homeRows.periodNote(period) : activity.hours !== undefined ? tr.feed.window(activity.hours) : undefined;
     const visible = [...(top ? [top.address] : []), ...shown.map((c) => c.address)].slice(0, OVERLAY_MAX);
@@ -461,7 +481,7 @@ export default function Curves() {
                             <LatestTrade rows={live.slice(0, 1)} now={now} nicks={liveNicks} />
                             <SearchBox value={query} onChange={setQuery} onHit={openHit} />
                             <div className="flex flex-col sm:flex-row sm:items-end gap-3 mb-3 min-w-0">
-                                <Tabs tab={tab} onChange={setTab} />
+                                <Tabs tab={tab} onChange={setTab} upcoming={upcomingCount(curves, now)} />
                                 <PeriodPicker period={period} onChange={setPeriod} />
                             </div>
                             {(windowNote || note) && <p className="m-0 mb-4 text-[12px] text-hanji-400">{[windowNote, note].filter(Boolean).join(" · ")}</p>}

@@ -97,6 +97,9 @@ export type RunOpts = {
     onRevert?: (errorName: string | undefined) => void;
     /** Replaces the default success toast text ("{label}" + the done suffix) when given. */
     successMessage?: string;
+    /** W-T61: per-call error text for a decoded custom error name (undefined = the default copy),
+     *  e.g. NotVerified on a verified-only token. */
+    errorText?: (errorName: string | undefined) => string | undefined;
 };
 export type RunFn = (label: string, fn: () => Promise<`0x${string}`>, opts?: RunOpts) => Promise<boolean>;
 
@@ -137,7 +140,7 @@ export function useTx() {
                 setTimeout(() => { void qc.invalidateQueries(); }, 4000);
                 return true;
             } catch (e) {
-                update(id, {kind: "error", text: humanError(e, tr, opts?.scope)}); // ③′ 실패 — 버튼은 finally에서 복원
+                update(id, {kind: "error", text: opts?.errorText?.(revertName(e)) ?? humanError(e, tr, opts?.scope)}); // ③′ 실패 — 버튼은 finally에서 복원
                 opts?.onRevert?.(revertName(e));
                 return false;
             } finally {

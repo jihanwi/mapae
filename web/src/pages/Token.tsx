@@ -17,7 +17,8 @@ import {useChainSummary, useFlow, useHolders, useTradeHistory} from "../hooks/ch
 import {mergeHistory, sharePct} from "../lib/chainMerge";
 import {CandleChart} from "../components/CandleChart";
 import {AUTO_RETRY_MS, INITIAL_GRACE_MS, retryTarget, tokenPageState} from "../lib/tokenPage";
-import {PriorityBadge, PriorityBanner} from "../components/PriorityCountdown";
+import {PriorityBanner} from "../components/PriorityCountdown";
+import {LaunchBadges} from "../components/LaunchStatus";
 import {Comments} from "../components/Comments";
 import {agoLabel, prefersReducedMotion, tradeAmount, tradeUnit, useNow} from "../components/feed";
 import {Badge, Eyebrow, Gauge, Icon, NetError, PrimaryBtn, SecondaryBtn, Skeleton, Stat, StaleBand, UnderlineTabs} from "../components/ui";
@@ -33,7 +34,7 @@ import {WalletLink} from "../components/WalletLink";
 import {useNicknames} from "../hooks/nicknames";
 import {Change, pctLabel, quoteUnit} from "./Curves";
 import {DEFAULT_TITLE, titleOf, useTitle} from "../lib/title";
-import {shareLink, xIntentUrl} from "../lib/share";
+import {opensShareText, shareLink, xIntentUrl} from "../lib/share";
 import {useToast} from "../components/tx";
 
 // Layout note: below lg one column of full-width blocks (w-full / min-w-0, no fixed widths; the two
@@ -245,7 +246,8 @@ function Header({c, imageUrl}: {c: CurveDetail; imageUrl?: string | null}) {
                                 {tr.tokenPage.otherSameTicker(same)}
                             </Link>
                         )}
-                        {!c.graduated && <PriorityBadge priorityUntil={c.priorityUntil} />}
+                        {/* v3.6: start countdown before started(), then the priority countdown; verified-only mark */}
+                        <LaunchBadges c={c} started={c.started} />
                     </div>
                 </div>
             </div>
@@ -290,7 +292,13 @@ function ShareButtons({c}: {c: CurveDetail}) {
                 <Icon name="link" />
                 {tr.tokenPage.copyLink}
             </button>
-            <a href={xIntentUrl(`${c.name} (${c.symbol}) | MAPAE`, link)} target="_blank" rel="noopener noreferrer" className={quiet}>
+            <a
+                // v3.6: before the start the post carries the opening time (English on both languages)
+                href={xIntentUrl(!c.graduated && !c.started ? opensShareText(c.symbol, c.startTime) : `${c.name} (${c.symbol}) | MAPAE`, link)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={quiet}
+            >
                 <Icon name="share" />
                 {tr.tokenPage.shareX}
             </a>
@@ -731,10 +739,11 @@ export default function Token() {
                 </div>
             </div>
             <div className="contents lg:flex lg:flex-col lg:gap-4 lg:w-[360px] lg:flex-none lg:sticky lg:top-6 lg:max-h-[calc(100vh-48px)] lg:overflow-y-auto">
-                {/* v3.1: verified-only notice while the priority window is open */}
-                {!c.graduated && (
+                {/* v3.1: verified-only notice while the priority window is open (v3.6: from the start on;
+                    before it the panel itself shows the rules) */}
+                {!c.graduated && c.started && (
                     <div className="order-6 lg:order-none min-w-0">
-                        <PriorityBanner priorityUntil={c.priorityUntil} capTokens={c.priorityMaxHolding} />
+                        <PriorityBanner priorityUntil={c.priorityUntil} capTokens={c.priorityMaxHolding} verifiedOnly={c.verifiedOnly} />
                     </div>
                 )}
                 <div ref={panelRef} className="order-7 lg:order-none min-w-0 scroll-mt-4">

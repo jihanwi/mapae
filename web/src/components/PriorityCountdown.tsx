@@ -5,6 +5,7 @@ import {useSecondClock} from "../hooks/curves";
 import {fmtMmSs, priorityRemaining} from "../lib/priority";
 import {Badge} from "./ui";
 import {ADDR_V3} from "../contracts/addressesV3";
+import {priorityNotice} from "../lib/launchState";
 
 function useRemaining(priorityUntil: bigint): number {
     const open = priorityRemaining(priorityUntil, Date.now() / 1000) > 0;
@@ -25,7 +26,7 @@ export function PriorityBadge({priorityUntil}: {priorityUntil: bigint}) {
 
 /** Notice above the trade panel while the window is open: the real-name rule and (v3.5, W-T54) the
  *  holding cap, `capTokens` read from the curve (the deployment default until it loads). */
-export function PriorityBanner({priorityUntil, capTokens}: {priorityUntil: bigint; capTokens?: bigint}) {
+export function PriorityBanner({priorityUntil, capTokens, verifiedOnly = false}: {priorityUntil: bigint; capTokens?: bigint; verifiedOnly?: boolean}) {
     const tr = useCopy();
     const left = useRemaining(priorityUntil);
     if (left <= 0) return null;
@@ -34,7 +35,8 @@ export function PriorityBanner({priorityUntil, capTokens}: {priorityUntil: bigin
             className="rounded-input px-4 py-3 text-[13px] text-brass-400 tabular-nums"
             style={{background: "rgba(195,154,59,.08)", border: "1px solid rgba(195,154,59,.3)"}}
         >
-            <div>{tr.priority.banner(fmtMmSs(left))}</div>
+            {/* W-T61: a verified-only token stays verified-only after the window */}
+            <div>{priorityNotice(verifiedOnly) === "verifiedOnly" ? tr.launch.verifiedOnlyBlocked : tr.priority.banner(fmtMmSs(left))}</div>
             <div className="mt-1 text-hanji-400">{tr.tokenPage.priorityCapNote(capTokens ?? ADDR_V3.priorityMaxHoldingTokens)}</div>
         </div>
     );

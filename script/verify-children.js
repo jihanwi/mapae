@@ -19,9 +19,15 @@
 // uint32 priorityWindow (recovered as priorityUntil - creation block timestamp) and CurveCreated
 // gained a trailing uint64 priorityUntil.
 //
+// v3.5 / v3.6 (W-T61): CurveSale.InitParams gained uint256 priorityMaxHolding (v3.5), then uint64
+// startTime and bool verifiedOnly (v3.6); CurveCreated gained trailing uint64 startTime, bool
+// verifiedOnly. priorityWindow is recovered as priorityUntil - startTime(); the startTime argument is 0
+// when startTime() equals the creation block timestamp (an immediate launch), else startTime() (a
+// scheduled start is at least 10 minutes after creation). This script reads v3.6 curves only.
+//
 // v3.2: event logs are read in windows of LOG_CHUNK (9,000) blocks from --from-block to --to-block
 // (default latest): the RPC rejects ranges over 10,000 blocks ("block range greater than 10000
-// max"). The deployment json defaults to giwa-sepolia-v3_5.json when present (W-T54; same library as v3.2).
+// max"). The deployment json defaults to giwa-sepolia-v3_6.json when present (W-T61; same library as v3.2).
 //
 // v3.2-L1 (C-T2): a factory that exposes proceedsLockDeployer() emits OfferingCreated with a 4th data
 // word (proceedsLock), its Offering takes (proceedsLock, proceedsUpfrontBps) after recipients, its
@@ -72,7 +78,7 @@ if (args["from-block"] === undefined) {
 // MembershipTokenDeployer (linked library) address: --library, else the deployment json.
 const V3_JSON =
     args.deployment ??
-    ["deployments/giwa-sepolia-v3_5.json", "deployments/giwa-sepolia-v3_2.json", "deployments/giwa-sepolia-v3_1.json", "deployments/giwa-sepolia-v3.json"].find((f) =>
+    ["deployments/giwa-sepolia-v3_6.json", "deployments/giwa-sepolia-v3_5.json", "deployments/giwa-sepolia-v3_2.json", "deployments/giwa-sepolia-v3_1.json", "deployments/giwa-sepolia-v3.json"].find((f) =>
         existsSync(f)
     );
 const library =
@@ -145,7 +151,7 @@ const logs = args.factory
         : scan(args.factory, "OfferingCreated(address,address,address,address,address,address)", "OfferingCreated")
     : [];
 const curveLogs = args["curve-factory"]
-    ? scan(args["curve-factory"], "CurveCreated(address,address,address,address,uint256,string,string,uint64)", "CurveCreated")
+    ? scan(args["curve-factory"], "CurveCreated(address,address,address,address,uint256,string,string,uint64,uint64,bool)", "CurveCreated")
     : [];
 
 // v3 constructor signatures (checked against `forge inspect <Contract> abi`):
@@ -163,7 +169,8 @@ const RM_CTOR = "constructor(address,address,address,address,uint8,address)";
 const VESTING_CTOR = "constructor(address,uint64,uint64,uint64,uint8)";
 const SPONSORSHIP_CTOR = "constructor(address,address,address,uint16,uint16,uint8,address)";
 const POOL_CTOR = "constructor(address,address,address,address,uint8,address,uint16,uint16)";
-const CURVE_CTOR = "constructor((address,address,address,address,address,address,string,string,uint256,uint32))";
+// v3.6: (..., virtualQuote, priorityWindow, priorityMaxHolding, startTime, verifiedOnly)
+const CURVE_CTOR = "constructor((address,address,address,address,address,address,string,string,uint256,uint32,uint256,uint64,bool))";
 
 const EXPLORER = (args.explorer ?? new URL(args["verifier-url"]).origin).replace(/\/+$/, "");
 const PAUSE_MS = 300;
@@ -359,7 +366,7 @@ for (const log of logs) {
   }
 }
 
-// ---- Curve path: CurveCreated(dev, curve, token, quote, virtualQuote, name, symbol, priorityUntil) ----
+// ---- Curve path: CurveCreated(dev, curve, token, quote, virtualQuote, name, symbol, priorityUntil, startTime, verifiedOnly) ----
 const pendingCurves = [];
 const curvesInWindow = new Set();
 for (const log of curveLogs) {
@@ -377,11 +384,15 @@ for (const log of curveLogs) {
         const virtualQuote = num(call(curve, "virtualQuote()(uint256)"));
         const name = JSON.parse(call(token, "name()(string)"));
         const symbol = JSON.parse(call(token, "symbol()(string)"));
-        // priorityWindow is not stored: priorityUntil = creation block timestamp + priorityWindow.
+        // priorityWindow is not stored: priorityUntil = startTime + priorityWindow (v3.6).
         const priorityUntil = BigInt(num(call(curve, "priorityUntil()(uint64)")));
+        const startTime = BigInt(num(call(curve, "startTime()(uint64)")));
         const createdAt = BigInt(cast("block", String(parseInt(log.blockNumber, 16)), "--field", "timestamp", "--rpc-url", args.rpc));
-        const priorityWindow = (priorityUntil - createdAt).toString();
-        const init = [quote, dojang, dev, feeRouter, poolFactory, mapaeFactory, name, symbol, virtualQuote, priorityWindow];
+        const priorityWindow = (priorityUntil - startTime).toString();
+        const priorityMaxHolding = num(call(curve, "priorityMaxHolding()(uint256)"));
+        const startArg = startTime === createdAt ? "0" : startTime.toString();
+        const verifiedOnly = call(curve, "verifiedOnly()(bool)").trim();
+        const init = [quote, dojang, dev, feeRouter, poolFactory, mapaeFactory, name, symbol, virtualQuote, priorityWindow, priorityMaxHolding, startArg, verifiedOnly];
         await verify(curve, "src/CurveSale.sol:CurveSale", CURVE_CTOR, [init], LIB_FLAGS);
 
         // token: MembershipToken(name, symbol, curve, CURVE_LOCK_DURATION, 0, [])

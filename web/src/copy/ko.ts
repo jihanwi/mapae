@@ -638,6 +638,22 @@ export const ko = {
         paused: "지금은 새 토큰을 발행할 수 없어요",
         rateLimited: (when: string) => `다음 토큰은 ${when}부터 발행할 수 있어요`,
         rateRule: "실명 지갑 하나당 7일 동안 토큰을 3개까지 발행할 수 있어요",
+        // W-T61 (v3.6): launch options
+        startLabel: "거래 시작",
+        startNow: "지금 바로",
+        startScheduled: "시각 정하기",
+        quick: {in30m: "30분 뒤", in1h: "1시간 뒤", in24h: "24시간 뒤"},
+        startCustom: "날짜와 시각",
+        startLocal: (offset: string) => `내 기기 시각 기준 (${offset})`,
+        startPick: "거래 시작 시각을 골라 주세요",
+        startTooSoon: (min: number) => `지금부터 ${min}분 뒤 이후로 골라 주세요. 트랜잭션이 늦게 들어가도 되도록 여유를 둬요`,
+        startTooLate: (days: number) => `${days}일 안의 시각으로 골라 주세요`,
+        scheduledDevNote: "예고한 토큰은 발행자도 시작 시각에 함께 사요.",
+        scheduledNote: "시작 전에는 아무도 사거나 팔 수 없어요. 실명 우선 10분과 지갑당 한도는 시작 시각부터 세요",
+        verifiedOnly: "실명 전용",
+        verifiedOnlyNote: "졸업 전까지 실명 지갑만 살 수 있어요. 한 번 정하면 바꿀 수 없어요.",
+        summaryNow: "지금 바로 시작",
+        summaryAt: (when: string) => `${when} 시작`,
         quoteUnavailable: "이 통화로는 지금 토큰을 발행할 수 없어요",
         doneTitle: "토큰을 발행했어요",
         doneNote: (n: string, s: string) => `${n} (${s})`,
@@ -757,7 +773,7 @@ export const ko = {
     // v3 화면 전용 에러 문구 (v1/v2 화면은 위 errors 를 그대로 쓴다)
     feed: {
         tabsLabel: "토큰 정렬",
-        tabs: {latest: "최근 거래", popular: "인기", mcap: "시가총액", almost: "졸업 임박", new: "신규", graduated: "졸업"},
+        tabs: {latest: "최근 거래", popular: "인기", mcap: "시가총액", almost: "졸업 임박", new: "신규", upcoming: "예정", graduated: "졸업"},
         popularNote: (w: number) => `최근 ${w === 3600 ? "1시간" : "24시간"} 실명 매수 지갑 수와 거래대금을 함께 반영해요`,
         mcapNote: "통화가 다른 토큰은 시작가 대비 배수로 비교해요",
         window: (h: number) => `최근 약 ${h}시간 기준`,
@@ -932,6 +948,19 @@ export const ko = {
         approvalPending: "승인이 아직 반영되지 않았어요. 잠시 후 다시 눌러 주세요",
         retry: "다시 시도",
     },
+    // W-T61 (v3.6): scheduled start and verified-only tokens
+    launch: {
+        opensIn: (t: string) => `거래 시작까지 ${t}`,
+        opensAt: (when: string) => `${when} 시작`,
+        soon: "곧 시작",
+        opening: "곧 거래가 열려요",
+        verifiedOnly: "실명 전용",
+        verifiedOnlyGraduated: "실명 전용으로 졸업",
+        verifiedOnlyBlocked: "이 토큰은 졸업 전까지 실명 지갑만 살 수 있어요",
+        panelTitle: "거래 시작까지",
+        rulePriority: (min: number) => `시작하면 ${min}분 동안 실명 지갑만 살 수 있어요`,
+        ruleCap: (min: number, pct: string) => `그 ${min}분 동안은 한 지갑이 총공급의 ${pct}%까지만 가질 수 있어요. 발행자도 같아요`,
+    },
     priority: {
         rule: `출시 후 ${PRIORITY_MINUTES}분 동안은 실명 지갑만 살 수 있어요. 그 뒤에는 누구나 살 수 있어요.`,
         badge: (t: string) => `실명 우선 ${t}`,
@@ -1072,6 +1101,10 @@ export const ko = {
     errorsV3: {
         NotVerified: "실명 인증이 필요해요",
         NotVerifiedCreator: "실명 인증이 필요해요",
+        // W-T61 (v3.6)
+        StartTimeOutOfBand: "거래 시작 시각이 허용 범위를 벗어났어요. 시각을 다시 골라 주세요",
+        DevBuyNotAllowedWhenScheduled: "예고한 토큰은 발행과 동시에 살 수 없어요. 시작 시각에 사 주세요",
+        NotStarted: "아직 거래가 시작되지 않았어요",
     },
     // W-T43: waitlist (/waitlist) and its privacy notice (/privacy)
     waitlist: {

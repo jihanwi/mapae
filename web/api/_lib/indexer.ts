@@ -45,6 +45,9 @@ export type CurveRow = {
     createdTs: string;
     /** v3.1: end of the real-name priority window (unix seconds, from CurveCreated). */
     priorityUntil: string;
+    /** v3.6: trading start (unix seconds) and verified-only, from CurveCreated. */
+    startTime: string;
+    verifiedOnly: boolean;
     /** CurveFactory that emitted CurveCreated (lowercase). */
     factory: Address;
 };
@@ -98,7 +101,18 @@ export function toCurveRows(logs: readonly RawLog[], factory: string, a: BlockTi
         } catch {
             continue;
         }
-        const x = ev.args as {dev: string; curve: string; token: string; quote: string; virtualQuote: bigint; name: string; symbol: string; priorityUntil: bigint};
+        const x = ev.args as {
+            dev: string;
+            curve: string;
+            token: string;
+            quote: string;
+            virtualQuote: bigint;
+            name: string;
+            symbol: string;
+            priorityUntil: bigint;
+            startTime: bigint;
+            verifiedOnly: boolean;
+        };
         out.push({
             curve: lc(x.curve),
             token: lc(x.token),
@@ -110,6 +124,8 @@ export function toCurveRows(logs: readonly RawLog[], factory: string, a: BlockTi
             createdBlock: l.blockNumber.toString(),
             createdTs: tsStr(l.blockNumber, a, b),
             priorityUntil: x.priorityUntil.toString(),
+            startTime: x.startTime.toString(),
+            verifiedOnly: x.verifiedOnly,
             factory: lc(factory),
         });
     }
