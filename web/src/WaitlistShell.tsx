@@ -11,7 +11,7 @@ export const LOGO_SRC = `${import.meta.env.BASE_URL}logo.png`;
 
 export function WaitlistShell({children}: {children?: React.ReactNode}) {
     return (
-        <div className="min-h-[100dvh] bg-ink-950 text-hanji-100 flex flex-col">
+        <div className="min-h-[100dvh] bg-ink-950 text-hanji-100 flex flex-col isolate">
             <div className="px-5 sm:px-10 py-2 flex items-center gap-x-3">
                 <Link
                     to="/waitlist"
