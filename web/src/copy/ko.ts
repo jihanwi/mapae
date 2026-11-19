@@ -1166,7 +1166,6 @@ export const ko = {
         cta: "X로 줄 서기",
         position: (n: string) => `${n}번째로 줄 섰어요`,
         referrals: (k: number) => `내 링크로 줄 선 사람 ${k}명`,
-        referralHint: "내 링크로 한 명이 줄 설 때마다 순번이 올라가요",
         copyLink: "링크 복사",
         shareX: "X에 공유",
         /** W-T49: one English post whatever the screen language */
@@ -1219,6 +1218,8 @@ export const ko = {
     },
     privacy: {
         title: "개인정보 처리방침 (웨이트리스트)",
+        /** W-T71 */
+        back: "웨이트리스트로 돌아가기",
         what: "저장하는 정보: X 아이디와 계정 번호, X 계정 생성일, 팔로워 수, 추천한 계정, 팔로우, 리포스트 버튼을 누른 기록. 직접 입력한 경우에 한해 지갑 주소와 이메일 주소",
         why: "쓰는 목적: 순번을 매기고, 부정 가입을 걸러 내고, 메인넷 오픈을 알리는 데만 써요",
         share: "제공: 다른 곳에 팔거나 넘기지 않아요. 저장과 운영에는 클라우드 서비스(Vercel, Neon)를 써요",

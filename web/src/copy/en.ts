@@ -1118,7 +1118,6 @@ export const en = {
         cta: "Join with X",
         position: (n: string) => `You're #${n} in line`,
         referrals: (k: number) => `${k} joined through your link`,
-        referralHint: "You move up each time someone joins through your link.",
         copyLink: "Copy link",
         shareX: "Share on X",
         /** W-T49: one English post whatever the screen language */
@@ -1169,6 +1168,8 @@ export const en = {
     },
     privacy: {
         title: "Privacy notice (waitlist)",
+        /** W-T71 */
+        back: "Back to waitlist",
         what: "What we store: your X handle and account ID, the account's creation date, follower count, who referred you, and whether you pressed the follow and repost buttons. A wallet address and an email address only if you add them.",
         why: "Why: to keep the order of the line, to filter fake signups, and to tell you when mainnet opens. Nothing else.",
         share: "Sharing: we do not sell or pass this on. It is stored and served on cloud providers (Vercel, Neon).",
