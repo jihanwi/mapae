@@ -168,3 +168,9 @@ export function guardReducer(s: GuardState, e: GuardEvent): GuardState {
             return {kind: "idle"};
     }
 }
+
+/** design-token-page: the collapsed slippage line, "Auto 1%" or "1%": whether the setting is auto
+ *  and the effective percent (one decimal at most). */
+export function slipSummary(pref: SlippagePref, autoBps: number): {auto: boolean; pct: string} {
+    return {auto: pref.mode === "auto", pct: pctOneDecimal(effectiveBps(pref, autoBps))};
+}

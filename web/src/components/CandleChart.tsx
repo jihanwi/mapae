@@ -4,7 +4,7 @@
 // right-anchored at a fixed slot (lib/candles View), so zooming and panning never widen the page.
 // Interaction: wheel zooms at the cursor (horizontal wheel pans), drag pans, two-finger pinch
 // zooms, double click / double tap resets. One finger shows the candle under it.
-import {useEffect, useRef, useState} from "react";
+import {ReactNode, useEffect, useRef, useState} from "react";
 import {useCopy} from "../copy";
 import {useAccount} from "wagmi";
 import {useCandles, useChainSummary} from "../hooks/chainData";
@@ -14,6 +14,7 @@ import {Trade, tradePriceWad} from "../lib/activity";
 import {CandleMarks, MarkerTrade, markSources, marksByCandle} from "../lib/trustSignals";
 import {AREA_GAP, barIndexAt, connectOpens, fitView, layoutCandles, liveFrom, LiveTrade, mergeLiveCandles, panBy, parseCandles, TIME_LABEL_W, timeLabels, toMarketCap, View, zoomAt} from "../lib/candles";
 import {fmtAxisMcap, fmtAxisPrice, fmtRound} from "../lib/format";
+import {Segmented} from "./ui";
 
 const HEIGHT = 240;
 const WHEEL_ZOOM = 1.15;
@@ -100,7 +101,22 @@ const timeLabel = (t: number, locale: string, sec: number) =>
 
 /** `graduated` picks the default scale (log after graduation, linear before) until the user
  *  chooses one. The vertical axis shows market cap by default (STATUS 결정 48). */
-export function CandleChart({curve, unit, virtualQuote, graduated = false, dev}: {curve: string; unit: string; virtualQuote: bigint; graduated?: boolean; dev?: string}) {
+/** `footer`: drawn at the bottom of the same card under a 1px line (the token page's progress). */
+export function CandleChart({
+    curve,
+    unit,
+    virtualQuote,
+    graduated = false,
+    dev,
+    footer,
+}: {
+    curve: string;
+    unit: string;
+    virtualQuote: bigint;
+    graduated?: boolean;
+    dev?: string;
+    footer?: ReactNode;
+}) {
     const tr = useCopy();
     // Trade marks (decision 51): Dev trades and the connected wallet's trades, each toggled.
     const [showDev, setShowDev] = useState(() => readPref<OnOff>(DEV_MARKS_KEY, ["on", "off"]) !== "off");
@@ -219,68 +235,53 @@ export function CandleChart({curve, unit, virtualQuote, graduated = false, dev}:
 
     return (
         <div className="bg-ink-900 border border-ink-700 rounded-card p-4 sm:p-6 min-w-0">
-            <div className="flex items-center justify-between gap-x-3 gap-y-2 flex-wrap mb-3">
-                <h3 className="m-0 text-[15px] font-bold">{tr.chain.chartTitle}</h3>
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-2 min-w-0">
-                    <div role="group" aria-label={tr.chain.axisLabel} className="flex gap-1.5">
-                        {(["mcap", "price"] as const).map((a) => (
-                            <button
-                                key={a}
-                                aria-pressed={axis === a}
-                                onClick={() => setAxis(a)}
-                                className={`px-3 min-h-[32px] rounded-full border text-[12px] whitespace-nowrap ${axis === a ? "border-brass-400 text-brass-400" : "border-ink-700 text-hanji-400 hover:border-brass-600"}`}
-                            >
-                                {a === "mcap" ? tr.chain.axisMcap : tr.chain.axisPrice}
-                            </button>
+            <h3 className="m-0 mb-3 text-[15px] font-bold">{tr.chain.chartTitle}</h3>
+            {/* design-token-page: three segments ([mcap | price], [linear | log], [5m | 1h | 1d]) and the
+                two trade-mark checkboxes on the right; same state and saved prefs as before */}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-3 min-w-0">
+                <Segmented
+                    label={tr.chain.axisLabel}
+                    items={[
+                        {key: "mcap", label: tr.chain.axisMcap},
+                        {key: "price", label: tr.chain.axisPrice},
+                    ]}
+                    value={axis}
+                    onChange={setAxis}
+                />
+                <Segmented
+                    label={tr.chain.scaleLabel}
+                    items={[
+                        {key: "linear", label: tr.chain.scaleLinear},
+                        {key: "log", label: tr.chain.scaleLog},
+                    ]}
+                    value={scale}
+                    onChange={setScale}
+                />
+                <Segmented
+                    label={tr.chain.intervalLabel}
+                    items={INTERVALS.map((it) => ({key: it.sec, label: <span className="num">{tr.chain.intervals[it.key]}</span>}))}
+                    value={interval}
+                    onChange={(sec) => {
+                        setIv(sec);
+                        setHover(null);
+                        setView(null);
+                    }}
+                />
+                {dev && (
+                    <div role="group" aria-label={tr.chain.marksLabel} className="flex flex-wrap items-center gap-x-4 sm:ml-auto">
+                        {(
+                            [
+                                [showDev, toggleDev, tr.chain.marksDev],
+                                [showMine, toggleMine, tr.chain.marksMine],
+                            ] as const
+                        ).map(([on, toggle, text]) => (
+                            <label key={text} className="inline-flex items-center gap-2 min-h-[44px] text-[13px] text-hanji-100 cursor-pointer whitespace-nowrap">
+                                <input type="checkbox" checked={on} onChange={toggle} className="w-4 h-4 accent-brass-400 cursor-pointer" />
+                                {text}
+                            </label>
                         ))}
                     </div>
-                    <div role="group" aria-label={tr.chain.scaleLabel} className="flex gap-1.5">
-                        {(["linear", "log"] as const).map((sc) => (
-                            <button
-                                key={sc}
-                                aria-pressed={scale === sc}
-                                onClick={() => setScale(sc)}
-                                className={`px-3 min-h-[32px] rounded-full border text-[12px] whitespace-nowrap ${scale === sc ? "border-brass-400 text-brass-400" : "border-ink-700 text-hanji-400 hover:border-brass-600"}`}
-                            >
-                                {sc === "linear" ? tr.chain.scaleLinear : tr.chain.scaleLog}
-                            </button>
-                        ))}
-                    </div>
-                    <div role="group" aria-label={tr.chain.intervalLabel} className="flex gap-1.5">
-                        {INTERVALS.map((it) => (
-                            <button
-                                key={it.key}
-                                onClick={() => {
-                                    setIv(it.sec);
-                                    setHover(null);
-                                    setView(null);
-                                }}
-                                className={`px-3 min-h-[32px] rounded-full border text-[12px] ${interval === it.sec ? "border-brass-400 text-brass-400" : "border-ink-700 text-hanji-400 hover:border-brass-600"}`}
-                            >
-                                {tr.chain.intervals[it.key]}
-                            </button>
-                        ))}
-                    </div>
-                    {dev && (
-                        <div role="group" aria-label={tr.chain.marksLabel} className="flex gap-1.5">
-                            {(
-                                [
-                                    [showDev, toggleDev, tr.chain.marksDev],
-                                    [showMine, toggleMine, tr.chain.marksMine],
-                                ] as const
-                            ).map(([on, toggle, text]) => (
-                                <button
-                                    key={text}
-                                    aria-pressed={on}
-                                    onClick={toggle}
-                                    className={`px-3 min-h-[32px] rounded-full border text-[12px] whitespace-nowrap ${on ? "border-brass-400 text-brass-400" : "border-ink-700 text-hanji-400 hover:border-brass-600"}`}
-                                >
-                                    {text}
-                                </button>
-                            ))}
-                        </div>
-                    )}
-                </div>
+                )}
             </div>
             <div ref={boxRef} className="w-full min-w-0 select-none">
                 {q.isError && L.bars.length === 0 ? (
@@ -416,6 +417,7 @@ export function CandleChart({curve, unit, virtualQuote, graduated = false, dev}:
                     </>
                 )}
             </div>
+            {footer !== undefined && <div className="mt-4 pt-4 border-t border-ink-700 min-w-0">{footer}</div>}
         </div>
     );
 }

@@ -553,6 +553,8 @@ export const ko = {
         marketCap: "시가총액",
         perToken: "/개",
         fixedPanel: "Dev 사전 배정 없음 · 추가 발행 불가 · 유동성 영구 잠금",
+        // the same three facts as a list (token page, under the trust signals)
+        fixedItems: ["Dev 사전 배정 없음", "추가 발행 불가", "유동성 영구 잠금"],
         contracts: "컨트랙트",
         contractCurve: "본딩커브",
         contractToken: "토큰",
@@ -1029,6 +1031,11 @@ export const ko = {
         copy: "복사",
         copied: "복사했어요",
         copyLabel: "토큰 컨트랙트 주소 복사",
+        // design-token-page: short "excl. Dev" after the verified traders value; progress footer of the chart card
+        tabsLabel: "토큰 정보",
+        exclDev: "Dev 제외",
+        progressLabel: "졸업까지",
+        leftWord: "남음",
         copyLink: "링크 복사",
         linkCopied: "링크를 복사했어요",
         shareX: "X에 공유",

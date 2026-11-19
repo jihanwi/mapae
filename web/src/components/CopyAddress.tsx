@@ -3,10 +3,13 @@
 import {useEffect, useState} from "react";
 import {useCopy} from "../copy";
 import {shortAddr} from "../lib/format";
+import {Icon} from "./ui";
 
 /** `text` replaces the short address inside the button (e.g. "Copy address" where the address is
  *  already shown right above). */
-export function CopyAddress({address, label, text}: {address: string; label: string; text?: string}) {
+/** `variant="outline"` (token page header): radius-8 bordered button, 44px high, the address in
+ *  .num and a copy icon. The default pill is unchanged for the other pages. */
+export function CopyAddress({address, label, text, variant = "chip"}: {address: string; label: string; text?: string; variant?: "chip" | "outline"}) {
     const tr = useCopy();
     const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
     useEffect(() => {
@@ -24,6 +27,22 @@ export function CopyAddress({address, label, text}: {address: string; label: str
             setState("failed");
         }
     };
+    if (variant === "outline") {
+        if (state === "failed") {
+            return <span className="inline-flex items-center min-h-[44px] px-3 rounded-[8px] border border-ink-700 text-[13px] text-hanji-100 num break-all select-all">{address}</span>;
+        }
+        return (
+            <button
+                type="button"
+                aria-label={label}
+                onClick={() => void copy()}
+                className="inline-flex items-center gap-2 min-h-[44px] px-3 rounded-[8px] border border-ink-700 text-[13px] text-hanji-100 hover:border-brass-600"
+            >
+                <span className="num">{shortAddr(address)}</span>
+                {state === "copied" ? <span className="text-brass-400">{tr.tokenPage.copied}</span> : <Icon name="copy" className="w-4 h-4 text-hanji-400" />}
+            </button>
+        );
+    }
     if (state === "failed") {
         return <span className="inline-flex items-center min-h-[36px] px-3 rounded-full border border-ink-700 text-[12px] text-hanji-100 tabular-nums break-all select-all">{address}</span>;
     }

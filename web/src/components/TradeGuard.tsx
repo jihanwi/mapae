@@ -1,6 +1,6 @@
 // Slippage picker, price impact rows and the re-quote guard used by CurveTradePanel.
 // Layout note (390px): the picker wraps (flex-wrap); the custom input is a small fixed-size field.
-import {ReactNode, useCallback, useEffect, useReducer, useState} from "react";
+import {ReactNode, useCallback, useEffect, useId, useReducer, useState} from "react";
 import {useCopy} from "../copy";
 import {humanError, revertName} from "../lib/errors";
 import {fmt} from "../lib/format";
@@ -17,8 +17,10 @@ import {
     PRESETS,
     requoteDecision,
     savePref,
+    slipSummary,
     SlippagePref,
 } from "../lib/slippage";
+import {Icon} from "./ui";
 import {RunFn, RunOpts, TxButton, useToast} from "./tx";
 import {simulateWithApprovalRetry} from "../lib/allowance";
 
@@ -42,11 +44,14 @@ export function SlippagePicker({
     setPref,
     autoBps,
     onBlockedChange,
+    hideLabel = false,
 }: {
     pref: SlippagePref;
     setPref: (p: SlippagePref) => void;
     autoBps: number;
     onBlockedChange?: (blocked: boolean) => void;
+    /** inside SlippageControl the summary line already carries the label */
+    hideLabel?: boolean;
 }) {
     const tr = useCopy();
     const [custom, setCustom] = useState(pref.mode === "custom" ? pctOneDecimal(pref.bps) : "");
@@ -59,7 +64,7 @@ export function SlippagePicker({
     return (
         <div className="mb-4 text-[12px]">
             <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-hanji-400">{tr.curve.slippage}</span>
+                {!hideLabel && <span className="text-hanji-400">{tr.curve.slippage}</span>}
                 <button onClick={() => (setEditing(false), setPref({mode: "auto"}))} className={chip(pref.mode === "auto" && !editing)}>
                     {pref.mode === "auto" ? tr.tradeGuard.slipAutoValue(pctOneDecimal(autoBps)) : tr.tradeGuard.slipAuto}
                 </button>
@@ -96,6 +101,62 @@ export function SlippagePicker({
     );
 }
 
+/** design-token-page: one line "Slippage  Auto 1% ▾"; the value is a button (aria-expanded) that
+ *  shows the SlippagePicker below. The picker stays mounted while folded, so its custom field and
+ *  the blocked state survive folding; an invalid custom value keeps it open (the fold button is
+ *  disabled then) and the trade buttons stay blocked as before. The high-slippage note shows on the
+ *  folded line too. Saving and the effective bps are useSlippagePref's, unchanged. */
+export function SlippageControl({
+    pref,
+    setPref,
+    autoBps,
+    onBlockedChange,
+}: {
+    pref: SlippagePref;
+    setPref: (p: SlippagePref) => void;
+    autoBps: number;
+    onBlockedChange?: (blocked: boolean) => void;
+}) {
+    const tr = useCopy();
+    const id = useId();
+    const [open, setOpen] = useState(false);
+    const [blocked, setBlocked] = useState(false);
+    const onBlocked = useCallback(
+        (b: boolean) => {
+            setBlocked(b);
+            onBlockedChange?.(b);
+        },
+        [onBlockedChange]
+    );
+    const shown = open || blocked;
+    const sum = slipSummary(pref, autoBps);
+    return (
+        <div className="mb-4">
+            <div className="flex items-center justify-between gap-3 text-[13px]">
+                <span className="text-hanji-400">{tr.curve.slippage}</span>
+                <button
+                    type="button"
+                    aria-expanded={shown}
+                    aria-controls={id}
+                    aria-disabled={blocked || undefined}
+                    onClick={() => {
+                        if (!blocked) setOpen(!shown);
+                    }}
+                    className="inline-flex items-center gap-1.5 min-h-[44px] px-2 -mr-2 text-hanji-100 hover:text-brass-400"
+                >
+                    {sum.auto && <span>{tr.tradeGuard.slipAuto}</span>}
+                    <span className="num">{sum.pct}%</span>
+                    <Icon name="chevron" className={`w-4 h-4 text-hanji-400 transition-transform ${shown ? "rotate-180" : ""}`} />
+                </button>
+            </div>
+            {!shown && pref.mode !== "auto" && pref.bps > HIGH_WARN_BPS && <p className="m-0 text-[12px] text-brass-400">{tr.tradeGuard.slipHigh}</p>}
+            <div id={id} hidden={!shown}>
+                <SlippagePicker pref={pref} setPref={setPref} autoBps={autoBps} onBlockedChange={onBlocked} hideLabel />
+            </div>
+        </div>
+    );
+}
+
 // ---------------------------------------------------------------------------------------------
 // Impact and minimum output
 // ---------------------------------------------------------------------------------------------
@@ -104,7 +165,7 @@ function Line({label, value, warn}: {label: string; value: ReactNode; warn?: boo
     return (
         <div className="flex justify-between gap-3 text-[13px] mb-1 flex-wrap">
             <span className="text-hanji-400">{label}</span>
-            <span className={`tabular-nums text-right ${warn ? "text-brass-400 font-semibold" : "text-hanji-100"}`}>{value}</span>
+            <span className={`num text-right ${warn ? "text-brass-400 font-semibold" : "text-hanji-100"}`}>{value}</span>
         </div>
     );
 }

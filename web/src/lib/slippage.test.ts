@@ -1,6 +1,7 @@
 import {describe, expect, it} from "vitest";
 import {
     autoSlippageBps,
+    slipSummary,
     avgPriceWad,
     curveBuyAvg,
     curveSellAvg,
@@ -133,5 +134,13 @@ describe("customSlippageBlocks", () => {
         expect(customSlippageBlocks(true, "")).toBe(false);
         expect(customSlippageBlocks(true, "   ")).toBe(false);
         expect(customSlippageBlocks(false, "100")).toBe(false); // auto or a preset was picked
+    });
+});
+
+describe("slipSummary (design-token-page folded line)", () => {
+    it("auto shows the auto value, presets and custom their own", () => {
+        expect(slipSummary({mode: "auto"}, 100)).toEqual({auto: true, pct: "1"});
+        expect(slipSummary({mode: "preset", bps: 300}, 100)).toEqual({auto: false, pct: "3"});
+        expect(slipSummary({mode: "custom", bps: 250}, 100)).toEqual({auto: false, pct: "2.5"});
     });
 });
