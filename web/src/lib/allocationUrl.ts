@@ -4,3 +4,6 @@
 export function allocationUrl(offering: string, base: string = import.meta.env.BASE_URL): string {
     return `${base}allocations/${offering.toLowerCase()}.json`;
 }
+
+/** How the allocation is computed and rechecked (linked from the offering list and detail). */
+export const ALLOC_README = "https://github.com/jihanwi/mapae/blob/main/script/allocation/README.md";

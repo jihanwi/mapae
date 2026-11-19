@@ -171,7 +171,7 @@ export function RefundPanel({o, myCommitted, onChanged}: {o: OfferingInfo; myCom
             {myCommitted !== undefined && myCommitted > 0n && state.kind !== "claim" && (
                 <div className="flex justify-between text-[13px] mt-4 pt-4 border-t border-ink-700">
                     <span className="text-hanji-400">{copy.offering.myCommit}</span>
-                    <span className="text-hanji-100 font-semibold tabular-nums">{fmt(myCommitted, 0)} KRWs</span>
+                    <span className="text-hanji-100 font-semibold"><span className="num">{fmt(myCommitted, 0)}</span> KRWs</span>
                 </div>
             )}
         </div>

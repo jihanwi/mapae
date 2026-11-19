@@ -102,8 +102,9 @@ function Nav() {
         `px-3.5 min-h-[44px] flex items-center text-[15px] whitespace-nowrap border-b-2 ${active ? "font-semibold text-hanji-100 border-brass-400" : "text-hanji-400 border-transparent hover:text-hanji-100"}`;
     const gridCls = (active: boolean) =>
         `flex items-center justify-center min-h-[44px] text-[14px] whitespace-nowrap border-b-2 ${active ? "font-semibold text-hanji-100 border-brass-400" : "text-hanji-400 border-transparent"}`;
+    // W-T63: the UnderlineTabs look (links, not tab buttons: each one is a route)
     const subCls = ({isActive}: {isActive: boolean}) =>
-        `flex items-center justify-center sm:justify-start sm:px-3 min-h-[40px] text-[13px] whitespace-nowrap ${isActive ? "font-semibold text-brass-400" : "text-hanji-400 hover:text-hanji-100"}`;
+        `flex-none flex items-center min-h-[44px] border-b-2 text-[14px] whitespace-nowrap ${isActive ? "border-brass-400 text-hanji-100 font-semibold" : "border-transparent text-hanji-400 font-medium hover:text-hanji-100"}`;
     const shownKrw = legacy ? krwBalance : ((krwV3.data as bigint | undefined) ?? 0n);
 
     const wallet = wrongChain ? (
@@ -162,7 +163,7 @@ function Nav() {
             {/* 공모 섹션 하위 탭 */}
             {legacy && (
                 <nav className="border-t border-ink-700">
-                    <div className={`max-w-page mx-auto px-4 sm:px-8 grid ${subTabs.length === 4 ? "grid-cols-4" : "grid-cols-3"} sm:flex sm:gap-2`}>
+                    <div className="max-w-page mx-auto px-4 sm:px-8 flex gap-[26px] overflow-x-auto no-scrollbar">
                         {subTabs.map((t) => (
                             <NavLink key={t.to} to={t.to} end={t.end} className={subCls}>{t.label}</NavLink>
                         ))}
