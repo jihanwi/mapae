@@ -1,6 +1,7 @@
 // /privacy (W-T43): the waitlist privacy notice. Shown only while the email field is on (the API's
 // `contact` is set); otherwise a "not found" note with a link back to /waitlist (W-T45: never into
 // the app). Rendered in WaitlistShell. Text as written in the copy files.
+import {Link} from "react-router-dom";
 import {useCopy} from "../copy";
 import {SecondaryBtn, Skeleton} from "../components/ui";
 import {useWaitlist} from "../hooks/waitlist";
@@ -27,6 +28,11 @@ export default function Privacy() {
     if (!q.data.contact) return <WaitlistNote title={tr.route404.title} note={tr.route404.note} toWaitlist />;
     return shell(
         <>
+            {/* W-T71: the way back to the waitlist (the body only, not the loading or error states) */}
+            <Link to="/waitlist" className="inline-flex items-center gap-1.5 min-h-[44px] mb-6 text-[13px] text-hanji-400 hover:text-brass-400">
+                <span aria-hidden="true">←</span>
+                {p.back}
+            </Link>
             <h1 className="m-0 mb-6 text-[24px] font-bold">{p.title}</h1>
             <div className="space-y-4 text-[14px] leading-relaxed text-hanji-100">
                 {[p.what, p.why, p.share, p.keep, p.rights].map((x) => <p key={x} className="m-0">{x}</p>)}

@@ -36,6 +36,9 @@ describe("waitlist copy (W-T43)", () => {
         expect(en.waitlist.shareText).toBe(ko.waitlist.shareText);
         expect(ko.waitlist.shareText).not.toMatch(/[\u3131-\u318E\uAC00-\uD7A3]/);
         expect(ko.privacy.contact("a@b.co")).toBe("문의: a@b.co");
+        // W-T71
+        expect(ko.privacy.back).toBe("웨이트리스트로 돌아가기");
+        expect(en.privacy.back).toBe("Back to waitlist");
         expect(en.privacy.contact("a@b.co")).toBe("Contact: a@b.co");
     });
     // W-T70: "포인트" / "points" are allowed in the waitlist and privacy copy (the joined screen shows
