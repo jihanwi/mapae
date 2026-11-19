@@ -743,7 +743,7 @@ export default function Token() {
                     before it the panel itself shows the rules) */}
                 {!c.graduated && c.started && (
                     <div className="order-6 lg:order-none min-w-0">
-                        <PriorityBanner priorityUntil={c.priorityUntil} capTokens={c.priorityMaxHolding} />
+                        <PriorityBanner priorityUntil={c.priorityUntil} capTokens={c.priorityMaxHolding} verifiedOnly={c.verifiedOnly} />
                     </div>
                 )}
                 <div ref={panelRef} className="order-7 lg:order-none min-w-0 scroll-mt-4">

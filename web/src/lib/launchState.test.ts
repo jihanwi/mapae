@@ -1,5 +1,7 @@
 import {describe, expect, it} from "vitest";
-import {isUpcoming, startsIn, tradeView, TradeViewInput, windowSec} from "./launchState";
+import {isUpcoming, priorityNotice, startsIn, tradeView, TradeViewInput, windowSec} from "./launchState";
+import {ko} from "../copy/ko";
+import {en} from "../copy/en";
 
 const START = 2_000_000n;
 const base: TradeViewInput = {graduated: false, started: true, priorityUntil: START + 600n, nowSec: Number(START), verifiedOnly: false, verified: true};
@@ -34,5 +36,19 @@ describe("list helpers", () => {
         expect(startsIn(START, Number(START) - 90)).toBe(90);
         expect(startsIn(START, Number(START) + 90)).toBe(0);
         expect(windowSec({startTime: START, priorityUntil: START + 600n})).toBe(600);
+    });
+});
+
+describe("priority-window notice (W-T61 fix)", () => {
+    it("verified-only + inside the window: the verified-only rule, not 'anyone after {t}'", () => {
+        const inWindow = tradeView({...base, verifiedOnly: true, verified: true, nowSec: Number(START) + 30});
+        expect(inWindow).toEqual({kind: "priority"});
+        expect(priorityNotice(true)).toBe("verifiedOnly");
+        expect(ko.launch.verifiedOnlyBlocked).toBe("이 토큰은 졸업 전까지 실명 지갑만 살 수 있어요");
+        expect(en.launch.verifiedOnlyBlocked).toBe("Only verified wallets can buy this token until it graduates.");
+    });
+    it("other tokens keep the window line", () => {
+        expect(priorityNotice(false)).toBe("window");
+        expect(ko.priority.banner("06:52")).toBe("지금은 실명 지갑만 살 수 있어요. 06:52 뒤에는 누구나 살 수 있어요");
     });
 });

@@ -40,5 +40,11 @@ export const startsIn = (startTime: bigint, nowSec: number) => Math.max(0, Numbe
 /** Over a day away the start is shown as a date, otherwise as an HH:MM:SS countdown. */
 export const COUNTDOWN_MAX_SEC = 86_400;
 
+/** The first line of the priority-window notice: a verified-only curve keeps the real-name rule
+ *  after the window, so it states that rule instead of "anyone can buy after {t}". The second line
+ *  (the holding cap) and the "실명 우선 {t}" badge stay: the cap still ends with the window. */
+export type PriorityNotice = "verifiedOnly" | "window";
+export const priorityNotice = (verifiedOnly: boolean): PriorityNotice => (verifiedOnly ? "verifiedOnly" : "window");
+
 /** The real-name window of one curve in seconds (priorityUntil - startTime, both from the chain). */
 export const windowSec = (c: {priorityUntil: bigint; startTime: bigint}) => Number(c.priorityUntil - c.startTime);
