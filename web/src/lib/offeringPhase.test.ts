@@ -1,5 +1,7 @@
 import {describe, expect, it} from "vitest";
-import {afterDeadline, PhaseInput} from "./offeringPhase";
+import {afterDeadline, allowsZeroCommitClose, PhaseInput} from "./offeringPhase";
+import {ko} from "../copy/ko";
+import {en} from "../copy/en";
 import {OFFERING_CONSTS} from "../contracts/offeringBoundsL1";
 
 const E = 10n ** 18n;
@@ -62,5 +64,45 @@ describe("refund copy and error table (W-T38)", async () => {
         expect(ko.refund.claimCta("15,000")).toBe("환불 받기 · 15,000 KRWs");
         expect(ko.refund.refunded("15,000")).toBe("환불 받았어요 · 15,000 KRWs");
         expect(ko.refund.awaitSettle("2026년 11월 25일")).toBe("정산을 기다리는 중이에요. 2026년 11월 25일까지 정산되지 않으면 누구나 환불을 시작할 수 있어요");
+    });
+});
+
+describe("v3.4-L1: closing an offering nobody committed to", () => {
+    const V34 = "0x3D3aD542A0953797B5537f19d6aEc84C8b6FC227";
+    const V33 = "0x3b1D679d6CFA5f2e92832aFfBf516319204D767f";
+    const V32 = "0xa9CA0C10Cd6B6398679B578DCE192cb4cAA5bc71";
+    const empty = {...base, totalCommitted: 0n, myCommitted: 0n};
+    it("only offerings of the v3.4-L1 factory (or later) may close with zero commitments", () => {
+        expect(allowsZeroCommitClose(V34)).toBe(true);
+        expect(allowsZeroCommitClose(V34.toLowerCase())).toBe(true);
+        expect(allowsZeroCommitClose(V33)).toBe(false);
+        expect(allowsZeroCommitClose(V32)).toBe(false);
+        expect(allowsZeroCommitClose(undefined)).toBe(false);
+        expect(allowsZeroCommitClose("0x00000000000000000000000000000000000000ff")).toBe(false);
+        expect(allowsZeroCommitClose("0xabc", [{version: "v3.5-L1", mapaeFactory: "0xABC"}])).toBe(true);
+    });
+    it("v3.4 factory, zero commitments, past the deadline: close, in either mode", () => {
+        expect(afterDeadline({...empty, refundMode: 1, zeroCommitClose: true})).toEqual({kind: "canClose"});
+        expect(afterDeadline({...empty, refundMode: 0, zeroCommitClose: true})).toEqual({kind: "canClose"});
+        expect(afterDeadline({...empty, refundMode: 1, zeroCommitClose: true, chainTs: DEADLINE - 1n})).toEqual({kind: "open"});
+    });
+    it("an older factory's partial-mode, zero-commit offering still waits for settle", () => {
+        expect(afterDeadline({...empty, refundMode: 1, zeroCommitClose: false})).toEqual({kind: "awaitSettle", emergencyAt: DEADLINE + OFFERING_CONSTS.SETTLE_TIMEOUT});
+    });
+    it("a partial-mode offering with commitments waits for settle on any factory", () => {
+        expect(afterDeadline({...base, refundMode: 1, zeroCommitClose: true})).toEqual({kind: "awaitSettle", emergencyAt: DEADLINE + OFFERING_CONSTS.SETTLE_TIMEOUT});
+    });
+    it("closed (refunding, zero commitments): no refund to claim", () => {
+        expect(afterDeadline({...empty, refunding: true, zeroCommitClose: true})).toEqual({kind: "closedEmpty"});
+        expect(afterDeadline({...base, refunding: true})).toEqual({kind: "claim", amount: 15_000n * E});
+    });
+    it("copy", () => {
+        expect(ko.refund.closeNote).toBe("응모가 없어서 공모를 종료할 수 있어요");
+        expect(ko.refund.closeCta).toBe("공모 종료");
+        expect(ko.refund.closedEmpty).toBe("응모 없이 종료된 공모예요");
+        expect(en.refund.closeNote).toBe("No one committed. You can close this offering.");
+        expect(en.refund.closeCta).toBe("Close offering");
+        expect(en.refund.closedEmpty).toBe("This offering closed with no commitments.");
+        for (const s of [en.refund.closeNote, en.refund.closeCta, en.refund.closedEmpty, en.offeringCreate.gate.active]) expect(s).not.toMatch(/[\u3131-\u318E\uAC00-\uD7A3]/);
     });
 });

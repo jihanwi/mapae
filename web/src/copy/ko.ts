@@ -90,6 +90,10 @@ export const ko = {
     refund: {
         targetMissed: "목표에 못 미쳤어요. 환불을 시작하면 응모한 지갑이 응모금 전액을 돌려받을 수 있어요",
         startCta: "환불 시작",
+        /** v3.4-L1: an offering nobody committed to, after its deadline */
+        closeNote: "응모가 없어서 공모를 종료할 수 있어요",
+        closeCta: "공모 종료",
+        closedEmpty: "응모 없이 종료된 공모예요",
         refundingNote: "환불이 진행 중이에요",
         claimCta: (n: string) => `환불 받기 · ${n} KRWs`,
         claimLabel: "환불 받기",
@@ -301,7 +305,7 @@ export const ko = {
         gate: {
             connect: "지갑을 연결해 주세요",
             verify: "공모는 실명 인증한 지갑만 열 수 있어요. 상단에서 실명 인증을 먼저 해 주세요",
-            active: "이 지갑으로 연 공모가 이미 있어요. 한 지갑에서 L1 공모는 하나만 열 수 있어요",
+            active: "이 지갑으로 연 공모가 아직 진행 중이에요. 그 공모가 정산되거나 환불로 끝나면 새 공모를 열 수 있어요",
             activeLink: "그 공모로 가기",
         },
         err: {

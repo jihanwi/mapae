@@ -9,13 +9,21 @@ const NODL = "0xA1AA8da4Fe05fe0bF51d3d8a464ea0269f39bB9f";
 const SOLB = "0xa090331E8DC8E9bcd0dA81D990c07Bcf71D9CB86";
 const FRESH = "0x00000000000000000000000000000000000000f1";
 
-describe("L1 factories from codegen (W-T40)", () => {
-    it("current first, both deployments, ADDR_L1 is the current one", () => {
-        expect(L1_FACTORIES.map((f) => f.version)).toEqual(["v3.3-L1", "v3.2-L1"]);
-        expect(L1_FACTORIES.map((f) => [f.mapaeFactory, f.feeRouter, f.deployBlock])).toEqual([[NEW.mapaeFactory, NEW.feeRouter, NEW.deployBlock], [OLD.mapaeFactory, OLD.feeRouter, OLD.deployBlock]]);
-        expect(ADDR_L1.mapaeFactory).toBe(NEW.mapaeFactory);
-        expect(ADDR_L1.feeRouter).toBe(NEW.feeRouter);
-        expect(ADDR_L1.deployBlock).toBe(41_506_506n);
+const V34: L1Factory = {version: "v3.4-L1", mapaeFactory: "0x3D3aD542A0953797B5537f19d6aEc84C8b6FC227", feeRouter: "0xC8EF125aa945aF92144ECadc39CeE1a0b7415a70", deployBlock: 41_566_745n};
+
+describe("L1 factories from codegen (W-T40, v3.4-L1)", () => {
+    it("three deployments, current (v3.4-L1) first, ADDR_L1 is the current one", () => {
+        expect(L1_FACTORIES).toHaveLength(3);
+        expect(L1_FACTORIES.map((f) => f.version)).toEqual(["v3.4-L1", "v3.3-L1", "v3.2-L1"]);
+        expect(L1_FACTORIES.map((f) => [f.mapaeFactory, f.feeRouter, f.deployBlock])).toEqual([
+            [V34.mapaeFactory, V34.feeRouter, V34.deployBlock],
+            [NEW.mapaeFactory, NEW.feeRouter, NEW.deployBlock],
+            [OLD.mapaeFactory, OLD.feeRouter, OLD.deployBlock],
+        ]);
+        expect(ADDR_L1.version).toBe("v3.4-L1");
+        expect(ADDR_L1.mapaeFactory).toBe(V34.mapaeFactory);
+        expect(ADDR_L1.feeRouter).toBe(V34.feeRouter);
+        expect(ADDR_L1.deployBlock).toBe(41_566_745n);
         expect(ADDR_L1.firstBlock).toBe(41_489_012n);
     });
 });
@@ -57,21 +65,25 @@ describe("scanStartFor", () => {
     });
 });
 
-describe("create cap: current factory only (activeOfferingOf)", () => {
-    const e = (address: string, phase: number | undefined, totalSupply: bigint | undefined, tier: number | undefined) => ({address: address as `0x${string}`, phase, totalSupply, tier});
-    it("no offering on the current factory: nothing blocks (an older factory's live offering is never passed in)", () => {
+describe("create cap: current factory only, Open/Frozen (activeOfferingOf, v3.4-L1 decision 63)", () => {
+    const e = (address: string, phase: number | undefined, tier: number | undefined) => ({address: address as `0x${string}`, phase, tier});
+    it("no offering on the current factory: nothing blocks (an older factory's offering is never passed in)", () => {
         expect(activeOfferingOf([])).toBeNull();
     });
-    it("a live L1 offering on the current factory blocks", () => {
-        expect(activeOfferingOf([e(FRESH, 0, 1n, 1)])).toBe(FRESH);
+    it("Open (0) and Frozen (1) block", () => {
+        expect(activeOfferingOf([e(FRESH, 0, 1)])).toBe(FRESH);
+        expect(activeOfferingOf([e(FRESH, 1, 1)])).toBe(FRESH);
     });
-    it("a failed one (refunding, zero supply) does not; an L0-tier one does not", () => {
-        expect(activeOfferingOf([e(FRESH, 4, 0n, 1)])).toBeNull();
-        expect(activeOfferingOf([e(FRESH, 0, 1n, 0)])).toBeNull();
-        expect(activeOfferingOf([e(NODL, 0, 1n, 1), e(FRESH, 4, 0n, 1)])).toBe(NODL);
+    it("Settled (2) and Refunding (4) do not, whatever the supply; an L0-tier one does not", () => {
+        expect(activeOfferingOf([e(FRESH, 2, 1)])).toBeNull();
+        expect(activeOfferingOf([e(FRESH, 4, 1)])).toBeNull();
+        expect(activeOfferingOf([e(FRESH, 0, 0)])).toBeNull();
+        expect(activeOfferingOf([e(NODL, 2, 1), e(FRESH, 4, 1)])).toBeNull();
+        expect(activeOfferingOf([e(NODL, 1, 1), e(FRESH, 2, 1)])).toBe(NODL);
     });
     it("a missing read is unknown, not 'free'", () => {
-        expect(activeOfferingOf([e(FRESH, undefined, 1n, 1)])).toBeUndefined();
+        expect(activeOfferingOf([e(FRESH, undefined, 1)])).toBeUndefined();
+        expect(activeOfferingOf([e(FRESH, 0, undefined)])).toBeUndefined();
     });
 });
 

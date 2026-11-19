@@ -12,7 +12,7 @@ import {fmtWhen} from "../lib/format";
 import {OfferingL1Abi} from "../contracts/abisV3L1";
 import {giwaSepolia} from "../config/chain";
 import {OfferingInfo, useOfferingDetailApi} from "../hooks";
-import {afterDeadline, AfterDeadline} from "../lib/offeringPhase";
+import {afterDeadline, AfterDeadline, allowsZeroCommitClose} from "../lib/offeringPhase";
 import {revertName} from "../lib/errors";
 import {fmt} from "../lib/format";
 import {RunFn, TxButton} from "./tx";
@@ -57,6 +57,7 @@ export function RefundPanel({o, myCommitted, onChanged}: {o: OfferingInfo; myCom
     const indexedAmount = lastIndexed ? BigInt(lastIndexed.cumulative) : 0n;
     const myRefunded = !address || !detail.data ? undefined : indexedAmount > 0n && myCommitted === 0n;
 
+    const zeroCommitClose = allowsZeroCommitClose(o.factory);
     if (chainTime.data === undefined) return null;
     const state: AfterDeadline = refundedHere !== null
         ? {kind: "refunding", refunded: true}
@@ -70,6 +71,7 @@ export function RefundPanel({o, myCommitted, onChanged}: {o: OfferingInfo; myCom
               chainTs: chainTime.data,
               myCommitted,
               myRefunded,
+              zeroCommitClose,
           });
 
     /** Simulate, then send; the state is re-read from the chain time at the click. */
@@ -78,8 +80,8 @@ export function RefundPanel({o, myCommitted, onChanged}: {o: OfferingInfo; myCom
         if (!client || !address) return;
         try {
             const now = (await client.getBlock()).timestamp;
-            const s = afterDeadline({settled: o.settled, refunding: o.refunding || startedHere, refundMode: o.refundMode, deadline: o.deadline, totalCommitted: o.totalCommitted, raiseTarget: o.raiseTarget, chainTs: now, myCommitted, myRefunded});
-            const allowed = fn === "enableRefunds" ? s.kind === "canStartRefund" : fn === "emergencyRefund" ? s.kind === "canEmergencyRefund" : s.kind === "claim";
+            const s = afterDeadline({settled: o.settled, refunding: o.refunding || startedHere, refundMode: o.refundMode, deadline: o.deadline, totalCommitted: o.totalCommitted, raiseTarget: o.raiseTarget, chainTs: now, myCommitted, myRefunded, zeroCommitClose});
+            const allowed = fn === "enableRefunds" ? s.kind === "canStartRefund" || s.kind === "canClose" : fn === "emergencyRefund" ? s.kind === "canEmergencyRefund" : s.kind === "claim";
             if (!allowed) {
                 setError(t.errors.stateChanged);
                 onChanged();
@@ -115,6 +117,21 @@ export function RefundPanel({o, myCommitted, onChanged}: {o: OfferingInfo; myCom
                     )}
                 </>
             );
+            break;
+        case "canClose":
+            body = (
+                <>
+                    {note(t.closeNote)}
+                    {address ? (
+                        <TxButton className="w-full mt-4" action={send("enableRefunds", t.closeCta, () => setStartedHere(true))}>{t.closeCta}</TxButton>
+                    ) : (
+                        <p className="m-0 mt-3 text-[13px] text-brass-400">{copy.hints.connectWallet}</p>
+                    )}
+                </>
+            );
+            break;
+        case "closedEmpty":
+            body = note(t.closedEmpty);
             break;
         case "claim":
             body = (
