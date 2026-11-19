@@ -61,7 +61,7 @@ function Pnl({v, unit, bps}: {v: bigint | undefined; unit: Unit; bps?: bigint}) 
     const {text, tone} = signedPnl(v, unit, tr.locale, bps);
     return <span className={TONE[tone]}>{text}</span>;
 }
-const TONE = {up: "text-success", down: "text-error", flat: "text-hanji-100"} as const;
+const TONE = {up: "text-success", down: "text-error", flat: "text-hanji-400"} as const;
 
 /** The P&L band's figure: Pnl's sign and colour rule without the unit (the unit is in the label). */
 function PnlFigure({v, unit}: {v: bigint | undefined; unit: Unit}) {
