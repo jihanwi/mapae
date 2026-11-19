@@ -1,13 +1,13 @@
 // Optional curve metadata inputs (image, one-line description, X / Telegram / website) and the
 // avatar that shows a saved image in place of the initial medallion.
 // Layout note (390px): one column, inputs w-full min-w-0, the preview is a fixed 64px square.
-import {useState} from "react";
+import {useId, useState} from "react";
 import {useCopy} from "../copy";
 import {MAX_DESCRIPTION, descriptionLength, sanitizeDescription, validLink} from "../../api/_lib/validate";
 import {MetaDraft, SaveState} from "../hooks/meta";
 import {prepareImage} from "../lib/metaImage";
 import {saveView, SaveContext} from "../lib/metaStatus";
-import {Medallion} from "./ui";
+import {Icon, Medallion} from "./ui";
 
 const inputCls =
     "w-full min-w-0 bg-ink-900 border border-ink-700 rounded-input px-4 py-3 text-[15px] text-hanji-100 outline-none focus:border-brass-400";
@@ -49,8 +49,22 @@ export function draftValid(d: MetaDraft): boolean {
     );
 }
 
-export function MetaFields({draft, onChange, disabled}: {draft: MetaDraft; onChange: (d: MetaDraft) => void; disabled?: boolean}) {
+/** `variant="launch"` (W-T64, the launch screen only) draws the image picker as a 132px dashed
+ *  square with a plus icon; validation, preview and the other fields are the same in both. */
+export function MetaFields({
+    draft,
+    onChange,
+    disabled,
+    variant = "default",
+}: {
+    draft: MetaDraft;
+    onChange: (d: MetaDraft) => void;
+    disabled?: boolean;
+    variant?: "default" | "launch";
+}) {
     const tr = useCopy();
+    const launch = variant === "launch";
+    const uid = useId();
     const [imgErr, setImgErr] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const descLen = descriptionLength(sanitizeDescription(draft.description));
@@ -65,12 +79,20 @@ export function MetaFields({draft, onChange, disabled}: {draft: MetaDraft; onCha
                 <div className="text-[13px] text-hanji-400 mb-2">{tr.meta.imageLabel}</div>
                 <div className="flex items-center gap-3 flex-wrap">
                     {draft.image && <img src={draft.image.previewUrl} alt="" className="w-16 h-16 rounded-full object-cover flex-none border border-brass-400" />}
-                    <label className={`inline-flex items-center min-h-[40px] px-4 rounded-input border border-ink-700 text-[13px] ${disabled || busy ? "opacity-50" : "cursor-pointer hover:border-brass-600"}`}>
+                    <label
+                        className={
+                            launch
+                                ? `w-[132px] h-[132px] flex-none flex flex-col items-center justify-center gap-2 rounded-[14px] border border-dashed border-hanji-400 bg-ink-900 text-[13px] text-hanji-100 focus-within:border-brass-400 focus-within:border-solid ${disabled || busy ? "opacity-50" : "cursor-pointer hover:border-brass-600"}`
+                                : `inline-flex items-center min-h-[40px] px-4 rounded-input border border-ink-700 text-[13px] ${disabled || busy ? "opacity-50" : "cursor-pointer hover:border-brass-600"}`
+                        }
+                    >
+                        {launch && <Icon name="plus" className="w-5 h-5 text-hanji-400" />}
                         {tr.meta.imagePick}
                         <input
                             type="file"
                             accept="image/png,image/jpeg,image/webp"
-                            className="hidden"
+                            // launch box: visually hidden but focusable, so the picker is reachable by Tab
+                            className={launch ? "sr-only" : "hidden"}
                             disabled={disabled || busy}
                             onChange={async (e) => {
                                 const f = e.target.files?.[0];
@@ -99,10 +121,13 @@ export function MetaFields({draft, onChange, disabled}: {draft: MetaDraft; onCha
             </div>
             <div>
                 <div className="flex justify-between gap-3 flex-wrap mb-2 text-[13px]">
-                    <label className="text-hanji-400">{tr.meta.description}</label>
+                    <label htmlFor={`${uid}-desc`} className="text-hanji-400">
+                        {tr.meta.description}
+                    </label>
                     <span className={`tabular-nums ${descLen > MAX_DESCRIPTION ? "text-error" : "text-hanji-400"}`}>{tr.meta.chars(descLen, MAX_DESCRIPTION)}</span>
                 </div>
                 <input
+                    id={`${uid}-desc`}
                     value={draft.description}
                     disabled={disabled}
                     onChange={(e) => onChange({...draft, description: e.target.value})}
@@ -114,8 +139,11 @@ export function MetaFields({draft, onChange, disabled}: {draft: MetaDraft; onCha
                 const errMsg = linkError(tr, k, draft.links[k]);
                 return (
                     <div key={k}>
-                        <label className="block text-[13px] text-hanji-400 mb-2">{label}</label>
+                        <label htmlFor={`${uid}-${k}`} className="block text-[13px] text-hanji-400 mb-2">
+                            {label}
+                        </label>
                         <input
+                            id={`${uid}-${k}`}
                             value={draft.links[k]}
                             disabled={disabled}
                             inputMode="url"

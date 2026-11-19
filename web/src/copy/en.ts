@@ -633,6 +633,24 @@ export const en = {
         goToken: "Go to the token page",
         viewCurve: "View the bonding curve contract ↗",
         decodeFailed: "The token is live, but its address couldn't be read.",
+        // W-T64 (Eyebrow upper-cases these in English)
+        heading: "Launch",
+        headingSub: "Two ways to start.",
+        wayCurve: {
+            eyebrow: "Bonding curve",
+            title: "Launch a token",
+            points: ["Trading opens now or at a time you set", "When it sells out, it graduates to a pool", "No Dev allocation"],
+        },
+        wayOffering: {
+            eyebrow: "Fixed-price offering",
+            title: "Open an offering",
+            points: ["One price for everyone, for a set period", "Equal allocation, then a lottery", "Full refund or partial issue if the target is missed"],
+        },
+        sectionToken: "Token",
+        sectionTrading: "Trading start",
+        sectionMeta: "Image and description",
+        summaryTitle: "What you are launching",
+        supplyBar: (curvePct: string, poolPct: string) => `Sold on the bonding curve ${curvePct}%, added to the pool at graduation ${poolPct}%`,
     },
     onboardingV3: {
         title: "Get ready to trade",

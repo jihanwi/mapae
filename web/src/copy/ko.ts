@@ -660,6 +660,24 @@ export const ko = {
         goToken: "토큰 페이지로",
         viewCurve: "본딩커브 컨트랙트 보기 ↗",
         decodeFailed: "토큰은 발행됐는데 주소를 읽지 못했어요",
+        // W-T64: launch screen head (two ways to start), form sections and the summary card
+        heading: "발행",
+        headingSub: "시작하는 방법은 두 가지예요",
+        wayCurve: {
+            eyebrow: "본딩커브",
+            title: "토큰 발행",
+            points: ["지금 바로, 또는 정한 시각에 거래가 열려요", "다 팔리면 같은 트랜잭션에서 풀로 졸업해요", "Dev 몫은 없어요"],
+        },
+        wayOffering: {
+            eyebrow: "정가 공모",
+            title: "공모 열기",
+            points: ["정해진 기간 동안 모두 같은 가격이에요", "똑같이 나눈 뒤 남은 물량은 추첨이에요", "목표에 못 미치면 전액 환불하거나 부분 발행해요"],
+        },
+        sectionToken: "토큰",
+        sectionTrading: "거래 시작",
+        sectionMeta: "이미지와 설명",
+        summaryTitle: "발행 내용",
+        supplyBar: (curvePct: string, poolPct: string) => `본딩커브 판매 물량 ${curvePct}%, 졸업 시 풀 공급 물량 ${poolPct}%`,
     },
     // v3 온보딩 모달 (ADDR_V3 의 MockDojang / MockKRW)
     onboardingV3: {

@@ -282,13 +282,14 @@ export function Segmented<K extends string | number>({
 }
 
 /** Small line icons (inline SVG, currentColor, decorative). */
-export function Icon({name, className = "w-4 h-4"}: {name: "copy" | "link" | "share" | "check" | "chevron"; className?: string}) {
+export function Icon({name, className = "w-4 h-4"}: {name: "copy" | "link" | "share" | "check" | "chevron" | "plus"; className?: string}) {
     const paths = {
         copy: <><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a2 2 0 0 1 2-2h9" /></>,
         link: <><path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1" /><path d="M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1" /></>,
         share: <><circle cx="18" cy="5" r="2.5" /><circle cx="6" cy="12" r="2.5" /><circle cx="18" cy="19" r="2.5" /><path d="M8.2 10.8l7.6-4.4M8.2 13.2l7.6 4.4" /></>,
         check: <path d="M5 12.5l4.5 4.5L19 7.5" />,
         chevron: <path d="M6 9l6 6 6-6" />,
+        plus: <path d="M12 5v14M5 12h14" />,
     }[name];
     return (
         <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={`flex-none ${className}`}>
