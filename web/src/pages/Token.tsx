@@ -29,6 +29,7 @@ import {TrustSignals} from "../components/TrustSignals";
 import {NonStandardTicker, useSameTicker} from "../components/TickerBadge";
 import {normalizeTicker} from "../lib/ticker";
 import {CopyAddress} from "../components/CopyAddress";
+import {StatsBand, StatsItem} from "../components/StatsBand";
 import {DevFeeBand} from "../components/DevFees";
 import {WalletLink} from "../components/WalletLink";
 import {useNicknames} from "../hooks/nicknames";
@@ -80,19 +81,9 @@ function usePrice(c: CurveDetail) {
     return {spot, mcap, poolSpot: poolSpot.data as bigint | undefined, spotError: poolSpot.isError};
 }
 
-/** One item of the metrics band: label (12px) over the value (.num 20px 500); never truncated. */
-function Metric({label, children}: {label: string; children: React.ReactNode}) {
-    return (
-        <div className="min-w-0 xl:flex-auto xl:px-5 xl:border-l xl:border-ink-700 xl:first:border-l-0 xl:first:pl-0 xl:last:pr-0">
-            <div className="text-[12px] text-hanji-400 mb-1">{label}</div>
-            <div className="num text-[20px] font-medium text-hanji-100 flex flex-wrap items-baseline gap-x-1.5 break-all">{children}</div>
-        </div>
-    );
-}
-
 /** Market cap, 24 h change, 24 h volume, holders, verified traders: one band. Below xl two columns
  *  with 16px between rows (from xl one row with 1px dividers; the lg left column is too narrow for
- *  five untruncated values). */
+ *  five untruncated values). The band and its items are the shared StatsBand (W-T65). */
 function Metrics({c}: {c: CurveDetail}) {
     const tr = useCopy();
     const unit = quoteUnit(c);
@@ -106,15 +97,15 @@ function Metrics({c}: {c: CurveDetail}) {
     const small = <span className="font-sans font-normal text-[12px] text-hanji-400">{unit}</span>;
     const dash = <span className="text-hanji-400">–</span>;
     return (
-        <div className="bg-ink-900 border border-ink-700 rounded-[14px] px-4 sm:px-5 py-[18px] grid grid-cols-2 gap-x-4 gap-y-4 xl:flex xl:gap-0 min-w-0">
-            <Metric label={tr.curve.marketCap}>
+        <StatsBand oneRowFrom="xl">
+            <StatsItem label={tr.curve.marketCap}>
                 <span>{mcap !== undefined ? fmtRound(mcap, dp, tr.locale) : "…"}</span>
                 {small}
-            </Metric>
-            <Metric label={tr.homeRows.changeCol(86400)}>
+            </StatsItem>
+            <StatsItem label={tr.homeRows.changeCol(86400)}>
                 <Change bps={change} />
-            </Metric>
-            <Metric label={tr.tokenPage.volume}>
+            </StatsItem>
+            <StatsItem label={tr.tokenPage.volume}>
                 {server ? (
                     <>
                         <span>{fmtRound(BigInt(row?.volume24h ?? "0"), dp, tr.locale)}</span>
@@ -123,13 +114,13 @@ function Metrics({c}: {c: CurveDetail}) {
                 ) : (
                     dash
                 )}
-            </Metric>
-            <Metric label={tr.tokenPage.holders}>{holders.isSuccess ? <span>{holders.data.total.toLocaleString(tr.locale)}</span> : dash}</Metric>
-            <Metric label={tr.homeRows.cols.traders}>
+            </StatsItem>
+            <StatsItem label={tr.tokenPage.holders}>{holders.isSuccess ? <span>{holders.data.total.toLocaleString(tr.locale)}</span> : dash}</StatsItem>
+            <StatsItem label={tr.homeRows.cols.traders}>
                 <span>{c.verifiedBuyerCount}</span>
                 <span className="font-sans font-normal text-[12px] text-hanji-400">{tr.tokenPage.exclDev}</span>
-            </Metric>
-        </div>
+            </StatsItem>
+        </StatsBand>
     );
 }
 

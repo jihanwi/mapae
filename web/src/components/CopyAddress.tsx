@@ -8,8 +8,10 @@ import {Icon} from "./ui";
 /** `text` replaces the short address inside the button (e.g. "Copy address" where the address is
  *  already shown right above). */
 /** `variant="outline"` (token page header): radius-8 bordered button, 44px high, the address in
- *  .num and a copy icon. The default pill is unchanged for the other pages. */
-export function CopyAddress({address, label, text, variant = "chip"}: {address: string; label: string; text?: string; variant?: "chip" | "outline"}) {
+ *  .num and a copy icon. `variant="plain"` (wallet profile, W-T65): no border, the short address in
+ *  .num hanji-100 (or `text`) and a copy icon, for a line of 13px text. The default pill is
+ *  unchanged for the other pages. */
+export function CopyAddress({address, label, text, variant = "chip"}: {address: string; label: string; text?: string; variant?: "chip" | "outline" | "plain"}) {
     const tr = useCopy();
     const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
     useEffect(() => {
@@ -40,6 +42,15 @@ export function CopyAddress({address, label, text, variant = "chip"}: {address: 
             >
                 <span className="num">{shortAddr(address)}</span>
                 {state === "copied" ? <span className="text-brass-400">{tr.tokenPage.copied}</span> : <Icon name="copy" className="w-4 h-4 text-hanji-400" />}
+            </button>
+        );
+    }
+    if (variant === "plain") {
+        if (state === "failed") return <span className="num text-hanji-100 break-all select-all min-w-0">{address}</span>;
+        return (
+            <button type="button" aria-label={label} onClick={() => void copy()} className="inline-flex items-center gap-1.5 min-h-[36px] text-hanji-100 hover:text-brass-400">
+                {text === undefined ? <span className="num">{shortAddr(address)}</span> : <span>{text}</span>}
+                {state === "copied" ? <span className="text-brass-400">{tr.tokenPage.copied}</span> : <Icon name="copy" className="w-3.5 h-3.5 text-hanji-400" />}
             </button>
         );
     }

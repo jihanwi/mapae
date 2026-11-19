@@ -973,6 +973,7 @@ export const en = {
     },
     follow: {
         counts: (followers: number, following: number) => `${followers} follower${followers === 1 ? "" : "s"} · ${following} following`,
+        countWords: {numFirst: true as boolean, followers: (n: number): string => (n === 1 ? "follower" : "followers"), following: "following"},
         followersNote: "Verified wallets only",
         follow: "Follow",
         following: "Following",
@@ -993,6 +994,7 @@ export const en = {
         counts: (held: number | null, launched: number) =>
             `${held === null ? "–" : held} token${held === 1 ? "" : "s"} held · ${launched} token${launched === 1 ? "" : "s"} launched`,
         tabs: {holdings: "Holdings", launched: "Launched", trades: "Trades"},
+        tabsLabel: "Wallet details",
         cols: {token: "Token", balance: "Balance", value: "Value", unrealized: "Unrealized P&L", share: "Share"},
         groups: {holding: "Holding", soldOut: "Sold out"},
         note: "P&L uses your average buy price. Tokens received by transfer are left out, and value uses the current price. An actual sale will differ by fees and price impact.",
