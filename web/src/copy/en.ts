@@ -922,6 +922,8 @@ export const en = {
         opensIn: (t: string) => `Trading opens in ${t}`,
         opensAt: (when: string) => `Trading opens ${when}`,
         soon: "Opens soon",
+        upcoming: "Upcoming",
+        daysHours: (d: number, h: number) => `${d}d ${h}h`,
         opening: "Trading is about to open",
         verifiedOnly: "Verified only",
         verifiedOnlyGraduated: "Graduated as verified only",

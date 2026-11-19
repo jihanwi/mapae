@@ -1,10 +1,10 @@
 // W-T61 (v3.6): badges and the pre-start trade panel of scheduled and verified-only curves.
 // "started" is passed in: the chain's CurveSale.started() on the token page, the device clock in
 // lists. The priority window counts from the start, so PriorityBadge only shows once started.
+import {useEffect, useState} from "react";
 import {useCopy} from "../copy";
 import {capPct} from "../copy/ko";
-import {useSecondClock} from "../hooks/curves";
-import {COUNTDOWN_MAX_SEC, startsIn, windowSec} from "../lib/launchState";
+import {daysHours, dayScale, listStartKey, nextTickMs, startsIn, windowSec} from "../lib/launchState";
 import {startLabel} from "../lib/launchOptions";
 import {hms} from "../lib/offeringStrip";
 import {PriorityBadge} from "./PriorityCountdown";
@@ -12,20 +12,43 @@ import {Badge} from "./ui";
 
 type LaunchCurve = {graduated: boolean; startTime: bigint; priorityUntil: bigint; verifiedOnly: boolean};
 
-/** Seconds until `startTime`, ticking every second while the start is ahead. */
+/** Seconds until `startTime` while the start is ahead: redrawn every second below a day, once a
+ *  minute above it, and exactly when it crosses below 24 h (W-T62, nextTickMs). */
 function useStartsIn(startTime: bigint): number {
-    const ahead = startsIn(startTime, Date.now() / 1000) > 0;
-    return startsIn(startTime, useSecondClock(ahead));
+    const [left, setLeft] = useState(() => startsIn(startTime, Date.now() / 1000));
+    useEffect(() => {
+        let id: ReturnType<typeof setTimeout>;
+        const tick = () => {
+            const l = startsIn(startTime, Date.now() / 1000);
+            setLeft(l);
+            if (l > 0) id = setTimeout(tick, nextTickMs(l));
+        };
+        tick();
+        return () => clearTimeout(id);
+    }, [startTime]);
+    return left;
 }
 
-/** "거래 시작까지 01:23:45", or "11월 21일 오후 9:00 시작" more than a day ahead; "곧 거래가 열려요"
- *  once the clock passed the start but the chain has not opened yet. */
+/** "거래 시작까지 01:23:45", or "11월 21일 오후 9:00 시작" a day or more ahead; "곧 거래가 열려요"
+ *  once the clock passed the start but the chain has not opened yet. Lists (compact): "곧 시작 ·
+ *  01:23:45" below a day, "예정 · 11월 26일 오후 8:19" from a day on (W-T62). */
 export function StartBadge({startTime, compact = false}: {startTime: bigint; compact?: boolean}) {
     const tr = useCopy();
     const left = useStartsIn(startTime);
-    const when = left > COUNTDOWN_MAX_SEC ? startLabel(startTime, tr.locale) : hms(left);
-    // lists (compact): "곧 시작 · 01:23:45"
-    const text = left <= 0 ? tr.launch.opening : compact ? `${tr.launch.soon} · ${when}` : left > COUNTDOWN_MAX_SEC ? tr.launch.opensAt(when) : tr.launch.opensIn(when);
+    const far = dayScale(left);
+    const when = far ? startLabel(startTime, tr.locale) : hms(left);
+    if (compact && left > 0) {
+        // two unbreakable pieces, so a narrow row breaks between them, never inside the date
+        return (
+            <Badge kind="frozen" wrap>
+                <span className="num inline-flex flex-wrap gap-x-1 min-w-0">
+                    <span className="whitespace-nowrap">{tr.launch[listStartKey(left)]} ·</span>
+                    <span className="whitespace-nowrap">{when}</span>
+                </span>
+            </Badge>
+        );
+    }
+    const text = left <= 0 ? tr.launch.opening : far ? tr.launch.opensAt(when) : tr.launch.opensIn(when);
     return (
         <Badge kind="frozen">
             <span className="num">{text}</span>
@@ -59,7 +82,10 @@ export function PreStartPanel({c}: {c: LaunchCurve & {priorityMaxHolding: bigint
     return (
         <div className="text-center py-2" role="status">
             <div className="text-[13px] text-hanji-400">{tr.launch.panelTitle}</div>
-            <div className="num mt-2 text-[40px] leading-none font-medium text-hanji-100">{left > 0 ? hms(left) : "00:00:00"}</div>
+            {/* W-T62: "6일 22시간" a day or more ahead, HH:MM:SS below */}
+            <div className="num mt-2 text-[40px] leading-none font-medium text-hanji-100">
+                {left <= 0 ? "00:00:00" : dayScale(left) ? tr.launch.daysHours(daysHours(left).d, daysHours(left).h) : hms(left)}
+            </div>
             {left <= 0 && <div className="mt-2 text-[13px] text-brass-400">{tr.launch.opening}</div>}
             <div className="num mt-3 text-[14px] text-hanji-100">{tr.launch.opensAt(startLabel(c.startTime, tr.locale))}</div>
             <ul className="m-0 mt-5 p-0 list-none text-left flex flex-col gap-2 text-[13px] text-hanji-100 border-t border-ink-700 pt-4">
