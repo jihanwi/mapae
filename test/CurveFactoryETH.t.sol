@@ -51,7 +51,7 @@ contract ReentrantBuyer {
 
     receive() external payable {
         if (mode == 1) cf.buyWithETH{value: msg.value}(curve, 0);
-        else if (mode == 2) cf.createCurveWithETH{value: msg.value}("R", "R", 0);
+        else if (mode == 2) cf.createCurveWithETH{value: msg.value}("R", "R", 0, CurveFactory.LaunchOptions(0, false));
     }
 }
 
@@ -91,7 +91,7 @@ contract CurveFactoryETHTest is MapaeFactoryTestBase {
         dojang.setVerified(dev, true);
         dojang.setVerified(buyer, true);
         vm.prank(dev);
-        (address ca, address ta) = cf.createCurveWithETH("Eth Curve", "ETHC", 0);
+        (address ca, address ta) = cf.createCurveWithETH("Eth Curve", "ETHC", 0, CurveFactory.LaunchOptions(0, false));
         curve = CurveSale(ca);
         token = MembershipToken(ta);
         vm.deal(buyer, 100 ether);
@@ -168,7 +168,8 @@ contract CurveFactoryETHTest is MapaeFactoryTestBase {
     // W4 non-WETH curve and unknown address revert
     function test_W4_WrongCurveReverts() public {
         vm.prank(dev);
-        (address krwCurve,) = cf.createCurve(IERC20(address(krw)), "Krw Curve", "KC", 0, 0);
+        (address krwCurve,) =
+            cf.createCurve(IERC20(address(krw)), "Krw Curve", "KC", 0, 0, CurveFactory.LaunchOptions(0, false));
         vm.prank(buyer);
         vm.expectRevert(abi.encodeWithSelector(CurveFactory.NotWethCurve.selector, krwCurve));
         cf.buyWithETH{value: 1 ether}(CurveSale(krwCurve), 0);
@@ -219,7 +220,7 @@ contract CurveFactoryETHTest is MapaeFactoryTestBase {
     function test_W8_CreateWithETH() public {
         // without first buy
         vm.prank(buyer);
-        (address c0, address t0) = cf.createCurveWithETH("No Buy", "NB", 0);
+        (address c0, address t0) = cf.createCurveWithETH("No Buy", "NB", 0, CurveFactory.LaunchOptions(0, false));
         assertEq(address(CurveSale(c0).quote()), address(weth));
         assertEq(CurveSale(c0).s(), 0);
         assertEq(MembershipToken(t0).balanceOf(buyer), 0);
@@ -227,7 +228,8 @@ contract CurveFactoryETHTest is MapaeFactoryTestBase {
         // with first buy
         uint256 before = buyer.balance;
         vm.prank(buyer);
-        (address c1, address t1) = cf.createCurveWithETH{value: 0.01 ether}("With Buy", "WB", 1);
+        (address c1, address t1) =
+            cf.createCurveWithETH{value: 0.01 ether}("With Buy", "WB", 1, CurveFactory.LaunchOptions(0, false));
         uint256 spent = before - buyer.balance;
         assertGt(MembershipToken(t1).balanceOf(buyer), 0);
         assertLe(spent, 0.01 ether);
@@ -243,7 +245,7 @@ contract CurveFactoryETHTest is MapaeFactoryTestBase {
         uint256 n = cf.allCurves().length;
         vm.prank(dev);
         vm.expectPartialRevert(CurveFactory.DevFirstBuyTooLarge.selector);
-        cf.createCurveWithETH{value: cost * 2}("Grad", "GR", 0);
+        cf.createCurveWithETH{value: cost * 2}("Grad", "GR", 0, CurveFactory.LaunchOptions(0, false));
         assertEq(dev.balance, before, "all ETH back");
         assertEq(cf.allCurves().length, n, "no curve registered");
         _assertFactoryClean(address(curve));
@@ -254,13 +256,13 @@ contract CurveFactoryETHTest is MapaeFactoryTestBase {
         dojang.setVerified(d, true);
         uint256 t0 = block.timestamp;
         vm.startPrank(d);
-        cf.createCurve(IERC20(address(weth)), "A", "A", 0, 0);
-        cf.createCurveWithETH("B", "B", 0);
-        cf.createCurve(IERC20(address(krw)), "C", "C", 0, 0);
+        cf.createCurve(IERC20(address(weth)), "A", "A", 0, 0, CurveFactory.LaunchOptions(0, false));
+        cf.createCurveWithETH("B", "B", 0, CurveFactory.LaunchOptions(0, false));
+        cf.createCurve(IERC20(address(krw)), "C", "C", 0, 0, CurveFactory.LaunchOptions(0, false));
         vm.expectRevert(abi.encodeWithSelector(CurveFactory.CurveRateLimited.selector, t0 + 7 days));
-        cf.createCurveWithETH("D", "D", 0);
+        cf.createCurveWithETH("D", "D", 0, CurveFactory.LaunchOptions(0, false));
         vm.expectRevert(abi.encodeWithSelector(CurveFactory.CurveRateLimited.selector, t0 + 7 days));
-        cf.createCurve(IERC20(address(weth)), "D", "D", 0, 0);
+        cf.createCurve(IERC20(address(weth)), "D", "D", 0, 0, CurveFactory.LaunchOptions(0, false));
         vm.stopPrank();
     }
 
@@ -316,7 +318,8 @@ contract CurveFactoryETHTest is MapaeFactoryTestBase {
 
         // just under: succeeds
         vm.prank(dev);
-        (address c1, address t1) = cf.createCurveWithETH{value: maxIn}("Cap Ok", "CAPOK", 0);
+        (address c1, address t1) =
+            cf.createCurveWithETH{value: maxIn}("Cap Ok", "CAPOK", 0, CurveFactory.LaunchOptions(0, false));
         assertEq(MembershipToken(t1).balanceOf(dev), atMax);
         _assertFactoryClean(c1);
 
@@ -325,7 +328,7 @@ contract CurveFactoryETHTest is MapaeFactoryTestBase {
         uint256 n = cf.allCurves().length;
         vm.prank(dev);
         vm.expectPartialRevert(CurveFactory.DevFirstBuyTooLarge.selector);
-        cf.createCurveWithETH{value: maxIn + 1}("Cap Over", "CAPX", 0);
+        cf.createCurveWithETH{value: maxIn + 1}("Cap Over", "CAPX", 0, CurveFactory.LaunchOptions(0, false));
         assertEq(dev.balance, before, "ETH back");
         assertEq(cf.allCurves().length, n, "no curve registered");
     }
@@ -338,7 +341,7 @@ contract CurveFactoryETHTest is MapaeFactoryTestBase {
             IDojang(address(dojang)), feeRouter, poolFactory, factory, IWETH(address(weth2)), address(this), 200
         );
         vm.prank(dev);
-        (address refA,) = cf2.createCurveWithETH("Ref", "REF", 0);
+        (address refA,) = cf2.createCurveWithETH("Ref", "REF", 0, CurveFactory.LaunchOptions(0, false));
         CurveSale ref = CurveSale(refA);
         uint256 maxIn = _maxFirstBuy(ref);
         emit log_named_decimal_uint("2% first buy, ETH 0.002 testnet, quoteIn (fee incl)", maxIn, 18);
@@ -346,7 +349,7 @@ contract CurveFactoryETHTest is MapaeFactoryTestBase {
 
         // v3.5: the largest first buy under 2% passes
         vm.prank(dev);
-        (, address t1) = cf2.createCurveWithETH{value: maxIn}("Small", "SMALL", 0);
+        (, address t1) = cf2.createCurveWithETH{value: maxIn}("Small", "SMALL", 0, CurveFactory.LaunchOptions(0, false));
         assertGt(MembershipToken(t1).balanceOf(dev), 0);
         assertLe(MembershipToken(t1).balanceOf(dev), (P.TOTAL_SUPPLY * 200 / 10_000));
 
@@ -354,13 +357,13 @@ contract CurveFactoryETHTest is MapaeFactoryTestBase {
         // (W-T54 changes the web default)
         vm.prank(dev);
         vm.expectPartialRevert(CurveFactory.DevFirstBuyTooLarge.selector);
-        cf2.createCurveWithETH{value: 0.000_05 ether}("Default", "DEF", 0);
+        cf2.createCurveWithETH{value: 0.000_05 ether}("Default", "DEF", 0, CurveFactory.LaunchOptions(0, false));
 
         // 0.001 ETH is past 2% on the testnet preset: reverts, ETH back
         uint256 before = dev.balance;
         vm.prank(dev);
         vm.expectPartialRevert(CurveFactory.DevFirstBuyTooLarge.selector);
-        cf2.createCurveWithETH{value: 0.001 ether}("Big", "BIG", 0);
+        cf2.createCurveWithETH{value: 0.001 ether}("Big", "BIG", 0, CurveFactory.LaunchOptions(0, false));
         assertEq(dev.balance, before, "ETH back");
     }
 

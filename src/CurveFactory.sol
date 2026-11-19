@@ -4,6 +4,7 @@ pragma solidity ^0.8.26;
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IDojang} from "./interfaces/IDojang.sol";
 import {IFeeRouter} from "./interfaces/IFeeRouter.sol";
@@ -39,6 +40,18 @@ contract CurveFactory is Ownable, ReentrancyGuard {
     /// @notice v3.5: band for priorityMaxHoldingBps (0.5% to 5% of TOTAL_SUPPLY).
     uint16 public constant MIN_PRIORITY_MAX_HOLDING_BPS = 50;
     uint16 public constant MAX_PRIORITY_MAX_HOLDING_BPS = 500;
+    /// @notice v3.6: band for a scheduled startTime, relative to the creation block.
+    uint256 public constant MIN_START_DELAY = 10 minutes;
+    uint256 public constant MAX_START_DELAY = 7 days;
+
+    /// @notice v3.6 launch options. startTime 0 = trading opens now (same as v3.5); otherwise a
+    ///         scheduled start within [now + MIN_START_DELAY, now + MAX_START_DELAY], with no Dev
+    ///         first buy in the creation tx. verifiedOnly keeps the real-name buy gate until
+    ///         graduation. Both are immutable on the curve.
+    struct LaunchOptions {
+        uint64 startTime;
+        bool verifiedOnly;
+    }
 
     error ZeroAddress();
     error CurvesDisabled();
@@ -55,6 +68,8 @@ contract CurveFactory is Ownable, ReentrancyGuard {
     error PriorityWindowOutOfBand(uint32 window);
     error DevFirstBuyTooLarge(uint256 tokensOut, uint256 maxTokens);
     error PriorityMaxHoldingOutOfBand(uint16 bps);
+    error StartTimeOutOfBand(uint64 startTime);
+    error DevBuyNotAllowedWhenScheduled();
 
     event CurveEnabledSet(bool enabled);
     event PriorityWindowSet(uint32 oldWindow, uint32 newWindow);
@@ -67,7 +82,9 @@ contract CurveFactory is Ownable, ReentrancyGuard {
         uint256 virtualQuote,
         string name,
         string symbol,
-        uint64 priorityUntil
+        uint64 priorityUntil,
+        uint64 startTime,
+        bool verifiedOnly
     );
 
     IDojang public immutable dojang;
@@ -151,27 +168,35 @@ contract CurveFactory is Ownable, ReentrancyGuard {
     ///         v3.5: that buy may deliver at most the curve's priorityMaxHolding (2% of supply by
     ///         default); more reverts the whole creation with DevFirstBuyTooLarge (nothing is
     ///         trimmed). Later buys by the Dev inside the priority window count toward the same cap.
+    ///         v3.6: `opts` (LaunchOptions). A scheduled start forbids the dev first buy
+    ///         (DevBuyNotAllowedWhenScheduled): the Dev buys at startTime under the same cap.
     function createCurve(
         IERC20 quote,
         string calldata name,
         string calldata symbol,
         uint256 devBuyQuoteIn,
-        uint256 minTokensOut
+        uint256 minTokensOut,
+        LaunchOptions calldata opts
     ) external nonReentrant returns (address curve, address token) {
-        (curve, token) = _open(quote, name, symbol);
+        if (opts.startTime != 0 && devBuyQuoteIn > 0) {
+            revert DevBuyNotAllowedWhenScheduled();
+        }
+        (curve, token) = _open(quote, name, symbol, opts);
         if (devBuyQuoteIn > 0) _devFirstBuy(quote, CurveSale(curve), devBuyQuoteIn, minTokensOut);
     }
 
     /// @notice createCurve with quote = WETH and the dev first buy paid in native ETH
     ///         (msg.value; 0 = open only). Unspent ETH is refunded. The same cap as
     ///         createCurve applies; over the cap the whole tx reverts and the ETH stays with the Dev.
-    function createCurveWithETH(string calldata name, string calldata symbol, uint256 minTokensOut)
-        external
-        payable
-        nonReentrant
-        returns (address curve, address token)
-    {
-        (curve, token) = _open(weth, name, symbol);
+    ///         v3.6: a scheduled start with msg.value > 0 reverts DevBuyNotAllowedWhenScheduled.
+    function createCurveWithETH(
+        string calldata name,
+        string calldata symbol,
+        uint256 minTokensOut,
+        LaunchOptions calldata opts
+    ) external payable nonReentrant returns (address curve, address token) {
+        if (opts.startTime != 0 && msg.value > 0) revert DevBuyNotAllowedWhenScheduled();
+        (curve, token) = _open(weth, name, symbol, opts);
         if (msg.value > 0) {
             _checkDevFirstBuy(CurveSale(curve), msg.value);
             _ethBuy(CurveSale(curve), minTokensOut);
@@ -193,16 +218,25 @@ contract CurveFactory is Ownable, ReentrancyGuard {
     }
 
     /// @dev Shared gates of createCurve / createCurveWithETH, then deploy + register.
-    function _open(IERC20 quote, string calldata name, string calldata symbol)
+    function _open(IERC20 quote, string calldata name, string calldata symbol, LaunchOptions calldata opts)
         internal
         returns (address curve, address token)
     {
         if (!curveEnabled) revert CurvesDisabled();
         if (!dojang.isVerified(msg.sender)) revert NotVerified(msg.sender);
         if (!mapaeFactory.isQuoteAllowed(address(quote))) revert QuoteNotAllowed(address(quote));
+        _checkStartTime(opts.startTime);
         _consumeRateLimit(msg.sender);
         _checkNames(name, symbol);
-        return _deploy(quote, name, symbol);
+        return _deploy(quote, name, symbol, opts);
+    }
+
+    /// @dev v3.6: 0 (now) or within [now + MIN_START_DELAY, now + MAX_START_DELAY], both inclusive.
+    function _checkStartTime(uint64 startTime) internal view {
+        if (startTime == 0) return;
+        if (startTime < block.timestamp + MIN_START_DELAY || startTime > block.timestamp + MAX_START_DELAY) {
+            revert StartTimeOutOfBand(startTime);
+        }
     }
 
     /// @dev wrap msg.value → approve → buyFor(msg.sender) → unwrap + refund unspent ETH → reset
@@ -227,7 +261,7 @@ contract CurveFactory is Ownable, ReentrancyGuard {
         if (sl == 0 || sl > MAX_SYMBOL_BYTES) revert InvalidSymbol();
     }
 
-    function _deploy(IERC20 quote, string calldata name, string calldata symbol)
+    function _deploy(IERC20 quote, string calldata name, string calldata symbol, LaunchOptions calldata opts)
         internal
         returns (address curve, address token)
     {
@@ -244,7 +278,9 @@ contract CurveFactory is Ownable, ReentrancyGuard {
                 tokenSymbol: symbol,
                 virtualQuote: virtualQuote,
                 priorityWindow: priorityWindow,
-                priorityMaxHolding: CurvePresets.TOTAL_SUPPLY * priorityMaxHoldingBps / 10_000
+                priorityMaxHolding: CurvePresets.TOTAL_SUPPLY * priorityMaxHoldingBps / 10_000,
+                startTime: opts.startTime,
+                verifiedOnly: opts.verifiedOnly
             })
         );
         curve = address(c);
@@ -255,7 +291,25 @@ contract CurveFactory is Ownable, ReentrancyGuard {
         curveOf[token] = curve;
         devOf[token] = msg.sender;
         isCurve[curve] = true;
-        emit CurveCreated(msg.sender, curve, token, address(quote), virtualQuote, name, symbol, c.priorityUntil());
+        _emitCreated(c, address(quote), virtualQuote);
+    }
+
+    /// @dev Separate frame for the 10-field event (stack depth): name and symbol are read back from
+    ///      the token (memory strings, one slot each) instead of the calldata arguments.
+    function _emitCreated(CurveSale c, address quote, uint256 virtualQuote) internal {
+        IERC20Metadata t = IERC20Metadata(address(c.token()));
+        emit CurveCreated(
+            msg.sender,
+            address(c),
+            address(t),
+            quote,
+            virtualQuote,
+            t.name(),
+            t.symbol(),
+            c.priorityUntil(),
+            c.startTime(),
+            c.verifiedOnly()
+        );
     }
 
     /// @dev Pull → approve → buyFor(dev) → refund unspent → reset allowance. Ends with zero

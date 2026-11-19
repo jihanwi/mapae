@@ -51,7 +51,7 @@ abstract contract CurveFactoryTestBase is MapaeFactoryTestBase {
 
     function _create(address who) internal returns (CurveSale c, MembershipToken t) {
         vm.prank(who);
-        (address ca, address ta) = cf.createCurve(quote, "Curve Coin", "CC", 0, 0);
+        (address ca, address ta) = cf.createCurve(quote, "Curve Coin", "CC", 0, 0, CurveFactory.LaunchOptions(0, false));
         return (CurveSale(ca), MembershipToken(ta));
     }
 
@@ -76,7 +76,7 @@ abstract contract CurveFactoryTestBase is MapaeFactoryTestBase {
         vm.assume(who != address(0) && !dojang.isVerified(who));
         vm.prank(who);
         vm.expectRevert(abi.encodeWithSelector(CurveFactory.NotVerified.selector, who));
-        cf.createCurve(quote, "Curve Coin", "CC", 0, 0);
+        cf.createCurve(quote, "Curve Coin", "CC", 0, 0, CurveFactory.LaunchOptions(0, false));
     }
 
     function test_K1_RevertingDojangFailsClosed() public {
@@ -91,7 +91,7 @@ abstract contract CurveFactoryTestBase is MapaeFactoryTestBase {
         );
         vm.prank(dev);
         vm.expectRevert(bytes("dojang down"));
-        bad.createCurve(quote, "Curve Coin", "CC", 0, 0);
+        bad.createCurve(quote, "Curve Coin", "CC", 0, 0, CurveFactory.LaunchOptions(0, false));
     }
 
     // ---------------------------------------------------------------------
@@ -101,7 +101,7 @@ abstract contract CurveFactoryTestBase is MapaeFactoryTestBase {
     function test_K2_QuoteWhitelist() public {
         vm.prank(dev);
         vm.expectRevert(abi.encodeWithSelector(CurveFactory.QuoteNotAllowed.selector, address(otherQuote)));
-        cf.createCurve(IERC20(address(otherQuote)), "Curve Coin", "CC", 0, 0);
+        cf.createCurve(IERC20(address(otherQuote)), "Curve Coin", "CC", 0, 0, CurveFactory.LaunchOptions(0, false));
 
         (CurveSale c,) = _create(dev);
         assertEq(c.virtualQuote(), _vq(), "virtualQuote from registry");
@@ -110,7 +110,7 @@ abstract contract CurveFactoryTestBase is MapaeFactoryTestBase {
         factory.setQuoteEnabled(address(quote), false);
         vm.prank(dev);
         vm.expectRevert(abi.encodeWithSelector(CurveFactory.QuoteNotAllowed.selector, address(quote)));
-        cf.createCurve(quote, "Curve Coin", "CC", 0, 0);
+        cf.createCurve(quote, "Curve Coin", "CC", 0, 0, CurveFactory.LaunchOptions(0, false));
 
         // disabled quote: existing curve still trades and graduates
         vm.warp(c.priorityUntil()); // v3.5: single-wallet buys past 2% of supply run after the priority window
@@ -143,7 +143,7 @@ abstract contract CurveFactoryTestBase is MapaeFactoryTestBase {
         cf.setCurveEnabled(false);
         vm.prank(dev);
         vm.expectRevert(CurveFactory.CurvesDisabled.selector);
-        cf.createCurve(quote, "Curve Coin", "CC", 0, 0);
+        cf.createCurve(quote, "Curve Coin", "CC", 0, 0, CurveFactory.LaunchOptions(0, false));
 
         // existing curve unaffected
         vm.warp(c.priorityUntil()); // v3.5: single-wallet buys past 2% of supply run after the priority window
@@ -183,7 +183,7 @@ abstract contract CurveFactoryTestBase is MapaeFactoryTestBase {
             assertEq(cf.nextAllowedAt(dev), t0 + 7 days);
             vm.prank(dev);
             vm.expectRevert(abi.encodeWithSelector(CurveFactory.CurveRateLimited.selector, t0 + 7 days));
-            cf.createCurve(quote, "Curve Coin", "CC", 0, 0);
+            cf.createCurve(quote, "Curve Coin", "CC", 0, 0, CurveFactory.LaunchOptions(0, false));
             vm.warp(t0 + 7 days); // oldest creation leaves the window
         }
         _create(dev);
@@ -198,7 +198,7 @@ abstract contract CurveFactoryTestBase is MapaeFactoryTestBase {
         vm.warp(t0 + 7 days - 1);
         vm.prank(dev);
         vm.expectRevert(abi.encodeWithSelector(CurveFactory.CurveRateLimited.selector, t0 + 7 days));
-        cf.createCurve(quote, "Curve Coin", "CC", 0, 0);
+        cf.createCurve(quote, "Curve Coin", "CC", 0, 0, CurveFactory.LaunchOptions(0, false));
         vm.warp(t0 + 7 days);
         _create(dev);
     }
@@ -216,7 +216,8 @@ abstract contract CurveFactoryTestBase is MapaeFactoryTestBase {
         uint256 before = quote.balanceOf(dev);
         vm.recordLogs();
         vm.prank(dev);
-        (address ca, address ta) = cf.createCurve(quote, "Curve Coin", "CC", amount, 1);
+        (address ca, address ta) =
+            cf.createCurve(quote, "Curve Coin", "CC", amount, 1, CurveFactory.LaunchOptions(0, false));
         Vm.Log[] memory logs = vm.getRecordedLogs();
         CurveSale c = CurveSale(ca);
 
@@ -263,7 +264,8 @@ abstract contract CurveFactoryTestBase is MapaeFactoryTestBase {
 
         _fund(dev, address(cf), maxIn * 3);
         vm.prank(dev);
-        (address ca, address ta) = cf.createCurve(quote, "Cap Ok", "CAPOK", maxIn, 0);
+        (address ca, address ta) =
+            cf.createCurve(quote, "Cap Ok", "CAPOK", maxIn, 0, CurveFactory.LaunchOptions(0, false));
         assertEq(MembershipToken(ta).balanceOf(dev), atMax);
         assertEq(quote.balanceOf(address(cf)), 0);
         assertEq(quote.allowance(address(cf), ca), 0);
@@ -272,7 +274,7 @@ abstract contract CurveFactoryTestBase is MapaeFactoryTestBase {
         uint256 n = cf.allCurves().length;
         vm.prank(dev);
         vm.expectPartialRevert(CurveFactory.DevFirstBuyTooLarge.selector);
-        cf.createCurve(quote, "Cap Over", "CAPX", maxIn + 1, 0);
+        cf.createCurve(quote, "Cap Over", "CAPX", maxIn + 1, 0, CurveFactory.LaunchOptions(0, false));
         assertEq(quote.balanceOf(dev), bal, "nothing pulled");
         assertEq(cf.allCurves().length, n, "no curve registered");
     }
@@ -289,7 +291,7 @@ abstract contract CurveFactoryTestBase is MapaeFactoryTestBase {
                 CurveFactory.DevFirstBuyTooLarge.selector, P.CURVE_SUPPLY, P.TOTAL_SUPPLY * 200 / 10_000
             )
         );
-        cf.createCurve(quote, "Curve Coin", "CC", cost * 2, 0);
+        cf.createCurve(quote, "Curve Coin", "CC", cost * 2, 0, CurveFactory.LaunchOptions(0, false));
         assertEq(quote.balanceOf(dev), bal);
         assertEq(cf.allCurves().length, 0);
     }
@@ -379,16 +381,16 @@ abstract contract CurveFactoryTestBase is MapaeFactoryTestBase {
 
         vm.startPrank(dev);
         vm.expectRevert(CurveFactory.InvalidName.selector);
-        cf.createCurve(quote, "", "CC", 0, 0);
+        cf.createCurve(quote, "", "CC", 0, 0, CurveFactory.LaunchOptions(0, false));
         vm.expectRevert(CurveFactory.InvalidName.selector);
-        cf.createCurve(quote, n33, "CC", 0, 0);
+        cf.createCurve(quote, n33, "CC", 0, 0, CurveFactory.LaunchOptions(0, false));
         vm.expectRevert(CurveFactory.InvalidSymbol.selector);
-        cf.createCurve(quote, "N", "", 0, 0);
+        cf.createCurve(quote, "N", "", 0, 0, CurveFactory.LaunchOptions(0, false));
         vm.expectRevert(CurveFactory.InvalidSymbol.selector);
-        cf.createCurve(quote, "N", "ABCDEFGHIJK", 0, 0);
+        cf.createCurve(quote, "N", "ABCDEFGHIJK", 0, 0, CurveFactory.LaunchOptions(0, false));
         // failed attempts do not consume the rate limit
-        cf.createCurve(quote, "N", "A", 0, 0);
-        cf.createCurve(quote, n32, "ABCDEFGHIJ", 0, 0);
+        cf.createCurve(quote, "N", "A", 0, 0, CurveFactory.LaunchOptions(0, false));
+        cf.createCurve(quote, n32, "ABCDEFGHIJ", 0, 0, CurveFactory.LaunchOptions(0, false));
         vm.stopPrank();
         assertEq(cf.curvesByDev(dev).length, 2);
     }
@@ -417,7 +419,7 @@ contract CurveFactoryKrws18Test is CurveFactoryTestBase {
     function test_K9_FullLifecycle() public {
         uint256 g = gasleft();
         vm.prank(dev);
-        (address ca, address ta) = cf.createCurve(quote, "Curve Coin", "CC", 0, 0);
+        (address ca, address ta) = cf.createCurve(quote, "Curve Coin", "CC", 0, 0, CurveFactory.LaunchOptions(0, false));
         emit log_named_uint("gas createCurve", g - gasleft());
         CurveSale c = CurveSale(ca);
         MembershipToken t = MembershipToken(ta);

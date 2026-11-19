@@ -26,6 +26,10 @@ import {CurvePresets} from "./CurvePresets.sol";
 ///           mint TOTAL_SUPPLY to self (mint authority burned).
 ///         - Trading (v3.1): buys are limited to Dojang-verified wallets until priorityUntil
 ///           (fail-closed), then open to anyone; sells are open to any holder.
+///         - v3.6: trading opens at startTime (creation time, or a scheduled time chosen by the
+///           Dev); before it every buy and sell reverts NotStarted, views keep working. The
+///           priority window and the holding cap count from startTime. A verifiedOnly curve keeps
+///           the real-name buy gate (fail-closed) until graduation; sells stay open.
 ///         - Graduation (the buy that reaches CURVE_SUPPLY): create the L0 pool, seed it with
 ///           DEX_SUPPLY tokens and r + lpSeedAccrued quote, LP to 0xdEaD, end the token lock.
 ///
@@ -62,6 +66,10 @@ contract CurveSale is IPrimaryMarket, ReentrancyGuard {
         uint32 priorityWindow;
         /// @notice v3.5: most tokens a wallet may hold after a buy inside the priority window.
         uint256 priorityMaxHolding;
+        /// @notice v3.6: trading start (unix seconds); 0 = now. The factory checks the band.
+        uint64 startTime;
+        /// @notice v3.6: only Dojang-verified wallets may buy until graduation.
+        bool verifiedOnly;
     }
 
     struct BuyQuote {
@@ -96,6 +104,8 @@ contract CurveSale is IPrimaryMarket, ReentrancyGuard {
     error NotFactory(address caller);
     /// @notice v3.5: a buy inside the priority window would leave the recipient above the cap.
     error PriorityHoldingExceeded(uint256 balanceAfter, uint256 maxHolding);
+    /// @notice v3.6: buy or sell before startTime.
+    error NotStarted(uint64 startTime);
 
     event Buy(
         address indexed trader,
@@ -144,8 +154,15 @@ contract CurveSale is IPrimaryMarket, ReentrancyGuard {
     /// @notice Deployer (CurveFactory) — the only caller allowed to use buyFor.
     address public immutable factory;
 
-    /// @notice End of the real-name priority window (creation time + priorityWindow). Before it,
-    ///         only Dojang-verified wallets may buy; from it on (inclusive) anyone may buy.
+    /// @notice v3.6: trading start. Before it buy, buyFor and sell revert NotStarted; from it on
+    ///         (inclusive) trading is open. Creation time when the curve was not scheduled.
+    uint64 public immutable startTime;
+    /// @notice v3.6: when true, only Dojang-verified wallets may buy until graduation (the same
+    ///         fail-closed gate as the priority window). Sells and the graduated pool are not gated.
+    bool public immutable verifiedOnly;
+    /// @notice End of the real-name priority window (startTime + priorityWindow). Before it,
+    ///         only Dojang-verified wallets may buy; from it on (inclusive) anyone may buy unless
+    ///         the curve is verifiedOnly.
     uint64 public immutable priorityUntil;
     /// @notice v3.5: during the priority window no wallet (the Dev included) may hold more than
     ///         this many tokens after a buy; the whole buy reverts (nothing is trimmed). After the
@@ -196,7 +213,10 @@ contract CurveSale is IPrimaryMarket, ReentrancyGuard {
         mapaeFactory = p.mapaeFactory;
         virtualQuote = p.virtualQuote;
         factory = msg.sender;
-        priorityUntil = uint64(block.timestamp + p.priorityWindow);
+        uint64 start = p.startTime == 0 ? uint64(block.timestamp) : p.startTime;
+        startTime = start;
+        verifiedOnly = p.verifiedOnly;
+        priorityUntil = start + p.priorityWindow;
         priorityMaxHolding = p.priorityMaxHolding;
 
         IFeeRouter.CurveFees memory f = p.feeRouter.getCurveFees();
@@ -245,8 +265,9 @@ contract CurveSale is IPrimaryMarket, ReentrancyGuard {
         returns (uint256 tokensOut, uint256 quoteSpent)
     {
         if (graduated) revert AlreadyGraduated();
+        _requireStarted();
         bool priority = _inPriority();
-        bool verified = _buyerVerified(trader, priority);
+        bool verified = _buyerVerified(trader, priority || verifiedOnly);
         BuyQuote memory q = _quoteBuy(quoteIn);
         if (q.tokensOut == 0) revert ZeroTokensOut();
         if (q.tokensOut < minTokensOut) revert InsufficientOutput(q.tokensOut, minTokensOut);
@@ -281,6 +302,7 @@ contract CurveSale is IPrimaryMarket, ReentrancyGuard {
     /// @notice Sell tokens back to the curve. Pays gross − fee out of r. Open to any holder (v3.1).
     function sell(uint256 tokenIn, uint256 minQuoteOut) external nonReentrant returns (uint256 quoteOut) {
         if (graduated) revert AlreadyGraduated();
+        _requireStarted();
         if (tokenIn == 0) revert ZeroAmount();
         SellQuote memory q = _quoteSell(tokenIn);
         if (q.quoteOut < minQuoteOut) revert InsufficientOutput(q.quoteOut, minQuoteOut);
@@ -335,6 +357,11 @@ contract CurveSale is IPrimaryMarket, ReentrancyGuard {
         return _quoteSell(tokenIn);
     }
 
+    /// @notice v3.6: true once trading is open (block.timestamp >= startTime).
+    function started() external view returns (bool) {
+        return block.timestamp >= startTime;
+    }
+
     /// @notice True while only Dojang-verified wallets may buy (block.timestamp < priorityUntil).
     function inPriorityWindow() external view returns (bool) {
         return _inPriority();
@@ -380,13 +407,14 @@ contract CurveSale is IPrimaryMarket, ReentrancyGuard {
         });
     }
 
-    /// @dev Real-name status of a buyer, enforcing the priority window.
+    /// @dev Real-name status of a buyer, enforcing the priority window (and, v3.6, verifiedOnly:
+    ///      the caller passes `priority || verifiedOnly` as `gated`).
     ///      Inside the window the check is fail-closed: an unverified buyer reverts NotVerified and
     ///      a reverting Dojang reverts the buy (no try/catch). After the window anyone may buy; the
     ///      status is only looked up for the verified-buyer count and the Buy event, so a reverting
     ///      Dojang reads as "not verified" instead of blocking the trade.
-    function _buyerVerified(address trader, bool priority) internal view returns (bool) {
-        if (priority) {
+    function _buyerVerified(address trader, bool gated) internal view returns (bool) {
+        if (gated) {
             if (!dojang.isVerified(trader)) revert NotVerified(trader);
             return true;
         }
@@ -395,6 +423,10 @@ contract CurveSale is IPrimaryMarket, ReentrancyGuard {
         } catch {
             return false;
         }
+    }
+
+    function _requireStarted() internal view {
+        if (block.timestamp < startTime) revert NotStarted(startTime);
     }
 
     /// @dev The one priority-window test, shared by the real-name gate and the holding cap.

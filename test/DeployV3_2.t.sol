@@ -54,18 +54,20 @@ contract DeployV3_2Test is Test {
         assertTrue(d.dojang.isVerified(dev));
         vm.deal(dev, 1 ether);
         vm.prank(dev);
-        (address ca,) = d.curveFactory.createCurveWithETH{value: 0.000_03 ether}("Ok", "OK", 0); // v3.5: under the 2% cap (0.00005 is ~2.58%)
+        (address ca,) = d.curveFactory.createCurveWithETH{value: 0.000_03 ether}(
+            "Ok", "OK", 0, CurveFactory.LaunchOptions(0, false)
+        ); // v3.5: under the 2% cap (0.00005 is ~2.58%)
         assertEq(address(CurveSale(ca).quote()), GiwaSepolia.WETH);
         vm.prank(dev);
         vm.expectPartialRevert(CurveFactory.DevFirstBuyTooLarge.selector);
-        d.curveFactory.createCurveWithETH{value: 0.001 ether}("Big", "BIG", 0);
+        d.curveFactory.createCurveWithETH{value: 0.001 ether}("Big", "BIG", 0, CurveFactory.LaunchOptions(0, false));
     }
 
     function test_UnverifiedCannotOpen() public {
         address anon = makeAddr("anon");
         vm.prank(anon);
         vm.expectRevert(abi.encodeWithSelector(CurveFactory.NotVerified.selector, anon));
-        d.curveFactory.createCurve(IERC20(address(v31.krw)), "No", "NO", 0, 0);
+        d.curveFactory.createCurve(IERC20(address(v31.krw)), "No", "NO", 0, 0, CurveFactory.LaunchOptions(0, false));
     }
 
     function test_ReusedLibraryCheck() public {
