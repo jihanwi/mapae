@@ -229,8 +229,12 @@ export function useGuardedSend() {
                 await simulateWithApprovalRetry(() => p.simulate(d.min), !!p.justApproved, revertName, p.sleep);
             } catch (e) {
                 const name = revertName(e);
+                const custom = name === "InsufficientOutput" ? undefined : p.opts.errorText?.(name);
                 if (name === "InsufficientOutput") {
                     dispatch({type: "simulateFailed", reason: "InsufficientOutput", fresh});
+                } else if (custom) {
+                    // W-T61: per-call text (NotVerified on a verified-only token, NotStarted)
+                    push({kind: "error", text: custom});
                 } else if (name === "NotVerified") {
                     // v3.1: the device clock says the priority window is over but the chain does not yet.
                     push({kind: "error", text: tr.priority.stillWindow});

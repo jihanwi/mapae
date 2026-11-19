@@ -68,6 +68,10 @@ const SCHEMA = [
     `ALTER TABLE mapae_trades ADD COLUMN IF NOT EXISTS verified boolean`,
     `ALTER TABLE mapae_curves ADD COLUMN IF NOT EXISTS priority_until bigint`,
     `ALTER TABLE mapae_curves ADD COLUMN IF NOT EXISTS factory text`,
+    // v3.6 (W-T61, additive): trading start and the verified-only option from CurveCreated (NULL on
+    // older rows, which are not listed: the list filters by the current factory).
+    `ALTER TABLE mapae_curves ADD COLUMN IF NOT EXISTS start_ts bigint`,
+    `ALTER TABLE mapae_curves ADD COLUMN IF NOT EXISTS verified_only boolean`,
     `CREATE INDEX IF NOT EXISTS mapae_trades_ts ON mapae_trades (ts DESC)`,
     // Decision 50 (additive): curve reserves after each curve trade; NULL for pool trades.
     `ALTER TABLE mapae_trades ADD COLUMN IF NOT EXISTS r_after numeric(78,0)`,
@@ -219,11 +223,11 @@ export async function withSchemaRetry<T>(label: string, run: () => Promise<T>, e
 }
 
 /** Indexer cursor row per contract version: id 1 = v3, id 31 = v3.1, id 32 = v3.2, id 33 = v3.2
- *  reindex for decision 50 (spot price per curve trade) (all left untouched), id 35 = v3.5 (W-T54,
- *  the CurveFactory with the priority holding cap). A new row starts at ADDR_V3.deployBlock (the
- *  v3.5 deployment), as the v3.1 -> v3.2 switch did; every query filters by ADDR_V3.curveFactory, so
- *  v3.2 rows stay in the database but are no longer listed. */
-export const INDEXER_STATE_ID = 35;
+ *  reindex for decision 50 (spot price per curve trade), id 35 = v3.5 (W-T54, the priority holding
+ *  cap) (all left untouched), id 36 = v3.6 (W-T61, scheduled start and verified-only). A new row
+ *  starts at ADDR_V3.deployBlock (the v3.6 deployment), as the earlier switches did; every query
+ *  filters by ADDR_V3.curveFactory, so v3.5 rows stay in the database but are no longer listed. */
+export const INDEXER_STATE_ID = 36;
 
 /** Cursor row of the L1 offering indexer. Separate from INDEXER_STATE_ID so L0 is never read again;
  *  the catch-up throttle stays on the L0 row. id 132 = W-T33 (v3.2-L1 factory only), id 133 = W-T40
@@ -291,10 +295,24 @@ export async function writeRange(sql: Sql, w: RangeWrite): Promise<void> {
     const x = w.transfers;
     await sql.transaction([
         sql.query(
-            `INSERT INTO mapae_curves (curve, token, dev, quote, virtual_quote, name, symbol, created_block, created_ts, priority_until, factory)
-             SELECT * FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::numeric[], $6::text[], $7::text[], $8::bigint[], $9::bigint[], $10::bigint[], $11::text[])
+            `INSERT INTO mapae_curves (curve, token, dev, quote, virtual_quote, name, symbol, created_block, created_ts, priority_until, factory, start_ts, verified_only)
+             SELECT * FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::numeric[], $6::text[], $7::text[], $8::bigint[], $9::bigint[], $10::bigint[], $11::text[], $12::bigint[], $13::boolean[])
              ON CONFLICT (curve) DO NOTHING`,
-            [c.map((r) => r.curve), c.map((r) => r.token), c.map((r) => r.dev), c.map((r) => r.quote), c.map((r) => r.virtualQuote), c.map((r) => r.name), c.map((r) => r.symbol), c.map((r) => r.createdBlock), c.map((r) => r.createdTs), c.map((r) => r.priorityUntil), c.map((r) => r.factory)]
+            [
+                c.map((r) => r.curve),
+                c.map((r) => r.token),
+                c.map((r) => r.dev),
+                c.map((r) => r.quote),
+                c.map((r) => r.virtualQuote),
+                c.map((r) => r.name),
+                c.map((r) => r.symbol),
+                c.map((r) => r.createdBlock),
+                c.map((r) => r.createdTs),
+                c.map((r) => r.priorityUntil),
+                c.map((r) => r.factory),
+                c.map((r) => r.startTime),
+                c.map((r) => r.verifiedOnly),
+            ]
         ),
         sql.query(
             `UPDATE mapae_curves AS m SET pool = u.pool, graduated_block = u.block
@@ -391,6 +409,9 @@ export type ListRow = {
     symbol: string;
     createdTs: string;
     priorityUntil: string;
+    /** v3.6: trading start (creation time when not scheduled) and the verified-only option. */
+    startTime: string;
+    verifiedOnly: boolean;
     pool: string | null;
     /** r / s after the latest curve trade (r_after / s_after), "0" before any trade. */
     r: string;
@@ -406,7 +427,8 @@ export const LIST_MAX = 500;
 export async function curveList(sql: Sql, factory: string): Promise<ListRow[]> {
     return (await sql.query(
         `SELECT m.curve, m.token, m.dev, m.quote, m.virtual_quote::text AS "virtualQuote", m.name, m.symbol,
-                m.created_ts::text AS "createdTs", COALESCE(m.priority_until, 0)::text AS "priorityUntil", m.pool,
+                m.created_ts::text AS "createdTs", COALESCE(m.priority_until, 0)::text AS "priorityUntil",
+                COALESCE(m.start_ts, m.created_ts)::text AS "startTime", COALESCE(m.verified_only, false) AS "verifiedOnly", m.pool,
                 COALESCE(l.r_after, 0)::text AS r, COALESCE(l.s_after, 0)::text AS s,
                 COALESCE(v.n, 0)::int AS "verifiedBuyers"
          FROM mapae_curves m

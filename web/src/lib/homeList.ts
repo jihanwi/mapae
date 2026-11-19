@@ -1,7 +1,8 @@
 // Pure helpers for the home row list: prices, change vs. the window's reference price, search and
 // the featured row. No RPC, no React.
 import {addrKey} from "./address";
-import {CurveStats, sortCurves, SortCurve} from "./activity";
+import {CurveStats, sortCurves, SortCurve, Tab} from "./activity";
+import {isUpcoming} from "./launchState";
 import type {ServerListRow, ServerSummary} from "./chainMerge";
 import type {CurveInfo} from "../hooks/curves";
 import {costToSellOut, grossForNet, spotPrice} from "./curveMath";
@@ -9,7 +10,7 @@ import {costToSellOut, grossForNet, spotPrice} from "./curveMath";
 type Address = `0x${string}`;
 
 /** The fields the home list needs (CurveInfo satisfies it). */
-export type HomeCurve = SortCurve & {token: Address; name: string; symbol: string; totalFeeBps: number};
+export type HomeCurve = SortCurve & {token: Address; name: string; symbol: string; totalFeeBps: number; startTime?: bigint};
 
 /** Price now, quote per whole token (18-decimal fixed point): the curve spot before graduation,
  *  the pool spot after (undefined while the pool spot is not loaded). */
@@ -78,10 +79,39 @@ export function exactAddressHit<T extends Pick<HomeCurve, "address" | "token">>(
     return curves.find((c) => addrKey(c.address) === k || addrKey(c.token) === k);
 }
 
-/** The first not-yet-graduated entry of the "almost" order. */
-export function featured<T extends HomeCurve>(curves: readonly T[], stats: ReadonlyMap<Address, CurveStats>): T | undefined {
-    return sortCurves("almost", curves.filter((c) => !c.graduated), stats)[0];
+/** The first not-yet-graduated entry of the "almost" order. W-T61: with `nowSec`, curves whose
+ *  trading has not opened yet are left out. */
+export function featured<T extends HomeCurve>(curves: readonly T[], stats: ReadonlyMap<Address, CurveStats>, nowSec?: number): T | undefined {
+    return sortCurves("almost", curves.filter((c) => !c.graduated && !(nowSec !== undefined && upcoming(c, nowSec))), stats)[0];
 }
+
+// ---------------------------------------------------------------------------------------------
+// W-T61 (v3.6): the "upcoming" tab (after "new"). Scheduled curves whose start is still ahead show
+// only there (nearest start first) and in "new" (marked "opens soon"); every trading tab leaves them out.
+// ---------------------------------------------------------------------------------------------
+
+export const HOME_TABS = ["latest", "popular", "mcap", "almost", "new", "upcoming", "graduated"] as const;
+export type HomeTab = (typeof HOME_TABS)[number];
+
+const upcoming = (c: HomeCurve, nowSec: number) => c.startTime !== undefined && isUpcoming({graduated: c.graduated, startTime: c.startTime}, nowSec);
+
+/** Rows of one home tab at `nowSec` (device clock). */
+export function homeTab<T extends HomeCurve>(
+    tab: HomeTab,
+    curves: readonly T[],
+    stats: ReadonlyMap<Address, CurveStats>,
+    graduatedAt: ReadonlyMap<Address, bigint>,
+    nowSec: number
+): T[] {
+    if (tab === "upcoming") {
+        return curves.filter((c) => upcoming(c, nowSec)).sort((a, b) => (a.startTime! === b.startTime! ? b.index - a.index : a.startTime! < b.startTime! ? -1 : 1));
+    }
+    if (tab === "new") return sortCurves("new", curves, stats, graduatedAt);
+    return sortCurves(tab as Tab, curves.filter((c) => !upcoming(c, nowSec)), stats, graduatedAt);
+}
+
+/** How many curves the "upcoming" tab lists. */
+export const upcomingCount = (curves: readonly HomeCurve[], nowSec: number) => curves.filter((c) => upcoming(c, nowSec)).length;
 
 // ---------------------------------------------------------------------------------------------
 // Server-first list (W-T16): the server rows render at once, chain reads overlay a few of them.
@@ -115,6 +145,9 @@ export function serverCurveInfo(row: ServerListRow, index: number, wethAddr: Add
         isEth: row.quote.toLowerCase() === wethAddr.toLowerCase(),
         index,
         priorityUntil: BigInt(row.priorityUntil),
+        // v3.6 rows always carry both; older deployments lack them (start = creation, not verified-only)
+        startTime: BigInt(row.startTime ?? row.createdTs),
+        verifiedOnly: row.verifiedOnly ?? false,
         poolSpot: graduated && lastPriceWad ? BigInt(lastPriceWad) : undefined,
         source: "server",
     };

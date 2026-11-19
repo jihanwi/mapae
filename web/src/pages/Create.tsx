@@ -1,7 +1,7 @@
 // "/create": open a v3 curve through CurveFactory. All limits, fees and virtual reserves are read
 // from the contracts (CurveFactory, FeeRouter, MapaeFactory); nothing is hardcoded here.
 // Layout note (390px): one column (w-full, max-w), inputs flex-1 min-w-0, rows flex-wrap.
-import {useMemo, useState} from "react";
+import {useEffect, useMemo, useState} from "react";
 import {Link} from "react-router-dom";
 import {Abi, parseEventLogs, parseUnits} from "viem";
 import {useAccount, usePublicClient, useReadContracts, useWriteContract} from "wagmi";
@@ -23,6 +23,7 @@ import {modalLabel} from "../components/CurveTradePanel";
 import {draftValid, MetaFields, SaveStatus} from "../components/MetaForm";
 import {draftHasContent, emptyDraft, MetaDraft, useSaveMeta} from "../hooks/meta";
 import {titleOf, useTitle} from "../lib/title";
+import {checkStart, earliestMinutes, launchArgs, parseLocalDateTime, QUICK_DELAYS, StartCheck, startLabel, StartMode, toLocalInput, utcOffsetLabel} from "../lib/launchOptions";
 
 type QuoteKind = "KRWs" | "ETH";
 type QuoteConfig = {registered: boolean; enabled: boolean; decimals: number; curveVirtualQuote: bigint};
@@ -43,6 +44,9 @@ function useCreateReads(account: Address | undefined) {
             {address: ADDR_V3.curveFactory, abi: CurveFactoryAbi as Abi, functionName: "nextAllowedAt", args: [account ?? ZERO], chainId: giwaSepolia.id},
             // v3.5: the Dev first-buy cap is the new curve's holding cap (bps of supply)
             {address: ADDR_V3.curveFactory, abi: CurveFactoryAbi as Abi, functionName: "priorityMaxHoldingBps", chainId: giwaSepolia.id},
+            // v3.6: the band of a scheduled start (seconds from the creation block)
+            {address: ADDR_V3.curveFactory, abi: CurveFactoryAbi as Abi, functionName: "MIN_START_DELAY", chainId: giwaSepolia.id},
+            {address: ADDR_V3.curveFactory, abi: CurveFactoryAbi as Abi, functionName: "MAX_START_DELAY", chainId: giwaSepolia.id},
         ],
         query: {refetchInterval: 10_000},
     });
@@ -61,6 +65,8 @@ function useCreateReads(account: Address | undefined) {
         weth: ok ? (d![5].result as QuoteConfig) : undefined,
         nextAllowedAt: ok && account ? (d![6].result as bigint) : 0n,
         devBuyCap: ok ? devFirstBuyCap(Number(d![7].result as number)) : undefined,
+        minStartDelay: ok ? Number(d![8].result as bigint) : 0,
+        maxStartDelay: ok ? Number(d![9].result as bigint) : 0,
     };
 }
 
@@ -74,6 +80,16 @@ function Field({label, hint, children}: {label: string; hint?: React.ReactNode; 
             {children}
         </div>
     );
+}
+
+/** Seconds since epoch, ticking every `ms` (the scheduled-start check follows the clock). */
+function useClock(ms: number) {
+    const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
+    useEffect(() => {
+        const id = setInterval(() => setNow(Math.floor(Date.now() / 1000)), ms);
+        return () => clearInterval(id);
+    }, [ms]);
+    return now;
 }
 
 const inputCls =
@@ -94,6 +110,12 @@ export default function Create() {
     const [composing, setComposing] = useState(false);
     const [kind, setKind] = useState<QuoteKind>("KRWs");
     const [rawBuy, setRawBuy] = useState("");
+    // v3.6 launch options: start now (default) or at a chosen time; verified-only (default off)
+    const [startMode, setStartMode] = useState<StartMode>("now");
+    const [startSec, setStartSec] = useState<number | null>(null);
+    const [verifiedOnly, setVerifiedOnly] = useState(false);
+    const [staleStart, setStaleStart] = useState<StartCheck | null>(null);
+    const clock = useClock(5_000);
     const [created, setCreated] = useState<{curve: Address; hash: `0x${string}`} | null>(null);
     const [decodeFailed, setDecodeFailed] = useState<`0x${string}` | null>(null);
     // Optional metadata, signed and uploaded after the launch tx (never part of the CTA checks).
@@ -101,13 +123,17 @@ export default function Create() {
     const meta = useSaveMeta();
     const wantsMeta = draftHasContent(draft);
 
-    const devBuy = useMemo(() => {
+    const typedBuy = useMemo(() => {
         try {
             return parseUnits(rawBuy || "0", 18);
         } catch {
             return 0n;
         }
     }, [rawBuy]);
+    const scheduled = startMode === "scheduled";
+    // a scheduled launch never sends a Dev first buy (the factory would revert it)
+    const {options: launchOptions, devBuy} = launchArgs(startMode, startSec, typedBuy, verifiedOnly);
+    const startCheck: StartCheck = scheduled ? checkStart(startSec, clock, r.minStartDelay, r.maxStartDelay) : {ok: true};
     const quote: Address = kind === "KRWs" ? ADDR_V3.mockKRW : ADDR_V3.weth;
     const cfg = kind === "KRWs" ? r.krw : r.weth;
     const vq = cfg?.curveVirtualQuote ?? 0n;
@@ -138,10 +164,19 @@ export default function Create() {
     const quoteOk = !!cfg && cfg.registered && cfg.enabled;
     const formOk =
         r.loaded && !composing && nameT !== "" && symbolT !== "" && withinByteLimit(nameT, r.maxName) && withinByteLimit(symbolT, r.maxSymbol) && isStandardTicker(symbolT) && quoteOk;
-    const blocked = !r.curveEnabled || rateLimited || !formOk || !draftValid(draft) || overCap;
+    const blocked = !r.curveEnabled || rateLimited || !formOk || !draftValid(draft) || overCap || !startCheck.ok;
 
     const action = async (run: RunFn) => {
         if (!address || !client) return;
+        // re-check the start time at the moment of submitting (the clock above ticks every 5 s)
+        if (scheduled) {
+            const c = checkStart(startSec, Math.floor(Date.now() / 1000), r.minStartDelay, r.maxStartDelay);
+            if (!c.ok) {
+                setStaleStart(c);
+                return;
+            }
+        }
+        setStaleStart(null);
         const opts = {
             scope: "v3" as const,
             onRevert: (n: string | undefined) => {
@@ -166,14 +201,14 @@ export default function Create() {
                               address: ADDR_V3.curveFactory,
                               abi: CurveFactoryAbi,
                               functionName: "createCurve",
-                              args: [quote, nameT, symbolT, devBuy, minTokensOut],
+                              args: [quote, nameT, symbolT, devBuy, minTokensOut, launchOptions],
                               chainId: giwaSepolia.id,
                           })
                         : await writeContractAsync({
                               address: ADDR_V3.curveFactory,
                               abi: CurveFactoryAbi,
                               functionName: "createCurveWithETH",
-                              args: [nameT, symbolT, minTokensOut],
+                              args: [nameT, symbolT, minTokensOut, launchOptions],
                               value: devBuy,
                               chainId: giwaSepolia.id,
                           });
@@ -243,6 +278,17 @@ export default function Create() {
     else if (!quoteOk) reason = tr.create.quoteUnavailable;
 
     const openForState = !blocked && opensOnboarding(cta, payToken);
+    const startReason = (c: StartCheck) =>
+        c.ok ? null : c.reason === "pick" ? tr.create.startPick : c.reason === "tooSoon" ? tr.create.startTooSoon(earliestMinutes(r.minStartDelay)) : tr.create.startTooLate(Math.floor(r.maxStartDelay / 86_400));
+    const startError = startReason(staleStart ?? startCheck);
+    const summary = [
+        scheduled && startSec !== null ? tr.create.summaryAt(startLabel(startSec, tr.locale)) : scheduled ? null : tr.create.summaryNow,
+        verifiedOnly ? tr.create.verifiedOnly : null,
+    ].filter(Boolean);
+    const pick = (sec: number) => {
+        setStartSec(sec);
+        setStaleStart(null);
+    };
 
     return wrap(
         <>
@@ -316,28 +362,98 @@ export default function Create() {
                         </div>
                     </div>
                 </div>
-                <Field label={tr.create.devBuy(unit)}>
-                    <div className="flex items-center bg-ink-900 border border-ink-700 rounded-input px-4 focus-within:border-brass-400">
-                        <input
-                            value={rawBuy}
-                            onChange={(e) => setRawBuy(sanitizeAmountInput(e.target.value))}
-                            inputMode="decimal"
-                            placeholder="0"
-                            className="flex-1 min-w-0 bg-transparent border-none outline-none py-3.5 text-[16px] text-hanji-100 tabular-nums"
-                        />
-                        <span className="text-hanji-400 text-[14px] flex-none">{unit}</span>
+                {/* v3.6: when trading opens, and the verified-only option */}
+                <Field label={tr.create.startLabel}>
+                    <div role="radiogroup" aria-label={tr.create.startLabel} className="flex gap-1 rounded-input border border-ink-700 bg-ink-900 p-[3px]">
+                        {(["now", "scheduled"] as const).map((m) => (
+                            <button
+                                key={m}
+                                type="button"
+                                role="radio"
+                                aria-checked={startMode === m}
+                                onClick={() => {
+                                    setStartMode(m);
+                                    setStaleStart(null);
+                                }}
+                                className={`flex-1 min-h-[44px] rounded-[7px] text-[14px] font-semibold ${startMode === m ? "bg-ink-700 text-hanji-100" : "text-hanji-400 hover:text-hanji-100"}`}
+                            >
+                                {m === "now" ? tr.create.startNow : tr.create.startScheduled}
+                            </button>
+                        ))}
                     </div>
-                    <p className="m-0 mt-2 text-[12px] text-hanji-400">{tr.create.devBuyNote(capTokens)}</p>
-                    {preview && (
-                        <div className="mt-2 text-[13px] tabular-nums flex justify-between gap-3 flex-wrap">
-                            <span className="text-hanji-400">{tr.create.devBuyReceive}</span>
-                            <span>
-                                {fmt(preview.tokensOut, 2, tr.locale)} {symbolT || tr.curve.tokenUnit} · {tr.curve.paid} {fmtCeil(preview.quoteSpent, kind === "ETH" ? 8 : 2, tr.locale)} {unit}
-                            </span>
+                    {scheduled && (
+                        <div className="mt-3 flex flex-col gap-3">
+                            <div className="grid grid-cols-3 gap-2">
+                                {QUICK_DELAYS.map((q) => (
+                                    <button
+                                        key={q.key}
+                                        type="button"
+                                        onClick={() => pick(Math.floor(Date.now() / 1000) + q.sec)}
+                                        className="min-h-[44px] px-1 rounded-[8px] border border-ink-700 text-[13px] text-hanji-100 hover:border-brass-600"
+                                    >
+                                        {tr.create.quick[q.key]}
+                                    </button>
+                                ))}
+                            </div>
+                            <label className="flex flex-col gap-1.5 text-[13px] text-hanji-400">
+                                <span>
+                                    {tr.create.startCustom} · {tr.create.startLocal(utcOffsetLabel(startSec ?? clock))}
+                                </span>
+                                <input
+                                    type="datetime-local"
+                                    value={startSec !== null ? toLocalInput(startSec) : ""}
+                                    min={toLocalInput(clock + r.minStartDelay)}
+                                    max={toLocalInput(clock + r.maxStartDelay)}
+                                    onChange={(e) => {
+                                        setStartSec(parseLocalDateTime(e.target.value));
+                                        setStaleStart(null);
+                                    }}
+                                    className={`${inputCls} num [color-scheme:dark]`}
+                                />
+                            </label>
+                            {startSec !== null && startError === null && (
+                                <p className="m-0 text-[13px] text-hanji-100">
+                                    <span className="num">{startLabel(startSec, tr.locale)}</span>
+                                </p>
+                            )}
+                            {startError && <p className="m-0 text-[12px] text-error">{startError}</p>}
+                            <p className="m-0 text-[12px] text-hanji-400">{tr.create.scheduledNote}</p>
                         </div>
                     )}
-                    {overCap && <p className="m-0 mt-2 text-[12px] text-error">{tr.create.devBuyCap(capTokens)}</p>}
                 </Field>
+                <label className="flex items-start gap-3 min-h-[44px] cursor-pointer">
+                    <input type="checkbox" checked={verifiedOnly} onChange={(e) => setVerifiedOnly(e.target.checked)} className="mt-1 w-4 h-4 accent-brass-400 flex-none" />
+                    <span className="min-w-0">
+                        <span className="block text-[14px] font-semibold text-hanji-100">{tr.create.verifiedOnly}</span>
+                        <span className="block text-[12px] text-hanji-400 mt-0.5">{tr.create.verifiedOnlyNote}</span>
+                    </span>
+                </label>
+                {scheduled ? (
+                    <p className="m-0 rounded-input border border-ink-700 bg-ink-900 px-4 py-3 text-[13px] text-hanji-100">{tr.create.scheduledDevNote}</p>
+                ) : (
+                    <Field label={tr.create.devBuy(unit)}>
+                        <div className="flex items-center bg-ink-900 border border-ink-700 rounded-input px-4 focus-within:border-brass-400">
+                            <input
+                                value={rawBuy}
+                                onChange={(e) => setRawBuy(sanitizeAmountInput(e.target.value))}
+                                inputMode="decimal"
+                                placeholder="0"
+                                className="flex-1 min-w-0 bg-transparent border-none outline-none py-3.5 text-[16px] text-hanji-100 tabular-nums"
+                            />
+                            <span className="text-hanji-400 text-[14px] flex-none">{unit}</span>
+                        </div>
+                        <p className="m-0 mt-2 text-[12px] text-hanji-400">{tr.create.devBuyNote(capTokens)}</p>
+                        {preview && (
+                            <div className="mt-2 text-[13px] tabular-nums flex justify-between gap-3 flex-wrap">
+                                <span className="text-hanji-400">{tr.create.devBuyReceive}</span>
+                                <span>
+                                    {fmt(preview.tokensOut, 2, tr.locale)} {symbolT || tr.curve.tokenUnit} · {tr.curve.paid} {fmtCeil(preview.quoteSpent, kind === "ETH" ? 8 : 2, tr.locale)} {unit}
+                                </span>
+                            </div>
+                        )}
+                        {overCap && <p className="m-0 mt-2 text-[12px] text-error">{tr.create.devBuyCap(capTokens)}</p>}
+                    </Field>
+                )}
             </div>
 
             <div className="bg-ink-800 border border-ink-700 rounded-card p-4 sm:p-7 flex flex-col gap-3">
@@ -369,6 +485,7 @@ export default function Create() {
             </div>
 
             <div>
+                {summary.length > 0 && <p className="m-0 mb-3 text-[14px] text-hanji-100 text-center">{summary.join(" · ")}</p>}
                 {openForState ? (
                     <PrimaryBtn className="w-full" onClick={() => openModal({krwNeeded: kind === "KRWs" ? devBuy : 0n, onProgress: refetch})}>
                         {modalLabel(tr, cta)}

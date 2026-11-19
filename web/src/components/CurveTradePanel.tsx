@@ -28,6 +28,8 @@ import {minSec, priorityRemaining} from "../lib/priority";
 import {capFull, capLeft, exceedsCap, maxQuoteForCap, truncateDecimals} from "../lib/priorityCap";
 import {GuardPanel, ImpactRows, SlippageControl, useGuardedSend, useSlippagePref} from "./TradeGuard";
 import {useNow} from "./feed";
+import {PreStartPanel} from "./LaunchStatus";
+import {tradeView} from "../lib/launchState";
 import {useActivity} from "../hooks/activity";
 import {spotPrice} from "../lib/curveMath";
 import {autoSlippageBps, curveBuyAvg, curveSellAvg, minOut, poolImpactBps, priceImpactBps} from "../lib/slippage";
@@ -187,84 +189,91 @@ export function CurveTradePanel({c, side: sideProp, onSideChange, paused = false
                     <p className="m-0 text-[12px] text-hanji-400">{tr.curve.poolNote}</p>
                 </div>
             )}
-            {/* buy / sell segment: the selected side is tinted (success / error at 16%) */}
-            <div className="flex gap-1 rounded-input border border-ink-700 bg-ink-900 p-[3px] mb-5">
-                {(["buy", "sell"] as const).map((d) => (
-                    <button
-                        key={d}
-                        type="button"
-                        aria-pressed={side === d}
-                        onClick={() => setSide(d)}
-                        className={`flex-1 min-h-[44px] rounded-[7px] text-[14px] font-semibold ${
-                            side !== d
-                                ? "text-hanji-400 hover:text-hanji-100"
-                                : d === "buy"
-                                  ? "bg-[rgba(122,155,109,.16)] text-success"
-                                  : "bg-[rgba(201,122,104,.16)] text-error"
-                        }`}
-                    >
-                        {d === "buy" ? tr.curve.buy : tr.curve.sell}
-                    </button>
-                ))}
-            </div>
-            <div className="bg-ink-900 border border-ink-700 rounded-input px-4 pt-3 pb-2 focus-within:border-brass-400 mb-2">
-                <label htmlFor={inputId} className="block text-[12px] text-hanji-400">
-                    {side === "buy" ? tr.curve.payLabel(c.graduated && c.isEth ? "WETH" : unit) : tr.curve.sellLabel}
-                </label>
-                <div className="flex items-baseline gap-2 min-w-0">
-                    <input
-                        id={inputId}
-                        value={raw}
-                        onChange={(e) => setRaw(sanitizeAmountInput(e.target.value))}
-                        inputMode="decimal"
-                        placeholder="0"
-                        className="num flex-1 min-w-0 bg-transparent border-none outline-none py-1 text-[30px] font-medium text-hanji-100 placeholder:text-hanji-400"
-                    />
-                    <span className="text-hanji-400 text-[14px] flex-none">{side === "buy" ? (c.graduated && c.isEth ? "WETH" : unit) : c.symbol}</span>
-                </div>
-            </div>
-            {/* quick amounts; "max" is the former balance button (maxInput) */}
-            <div className="grid grid-cols-4 gap-2 mb-2">
-                {quickAmounts(side, c.isEth, address ? balance : undefined, payNative).map((q) => (
-                    <button
-                        key={q.label}
-                        type="button"
-                        disabled={q.disabled}
-                        onClick={() => setRaw(formatUnits(q.value === "max" ? maxInput(balance ?? 0n, payNative) : q.value, 18))}
-                        className="num min-h-[44px] px-1 rounded-[8px] border border-ink-700 text-[13px] text-hanji-100 whitespace-nowrap hover:border-brass-600 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-ink-700"
-                    >
-                        {q.label === "max" ? tr.curve.useMax : tr.tokenPage.quick[q.label]}
-                    </button>
-                ))}
-            </div>
-            {address && balance !== undefined && (
-                <p className="m-0 text-[12px] text-hanji-400 mb-3 tabular-nums">{tr.curve.balance(fmt(balance, 4, tr.locale), balUnit)}</p>
-            )}
-            {capOn && cap && (
-                <div className="flex items-center justify-between gap-x-3 gap-y-1 flex-wrap mb-3 text-[12px]">
-                    <span className="text-brass-400 tabular-nums min-w-0">
-                        {!full
-                            ? tr.trade.priorityCapLeft(fmt(cap.left, 2, tr.locale))
-                            : tr.trade.priorityCapFull(tr.trade.capTime(minSec(cap.remainingSec).m, minSec(cap.remainingSec).s))}
-                    </span>
-                    {!full && (
-                        <button
-                            type="button"
-                            onClick={fillToCap}
-                            className="min-h-[36px] px-3 rounded-input border border-ink-700 text-[12px] text-hanji-100 whitespace-nowrap hover:border-brass-600"
-                        >
-                            {tr.trade.priorityCapMax}
-                        </button>
-                    )}
-                </div>
-            )}
-            <SlippageControl pref={pref} setPref={setPref} autoBps={autoBps} onBlockedChange={setSlipBlocked} />
-            {c.graduated ? (
-                <PoolSide c={c} side={side} amount={amount} slip={slip} onDone={clear} />
-            ) : side === "buy" ? (
-                <CurveBuy c={c} amount={amount} slip={slip} onDone={clear} capLeft={capOn && cap ? cap.left : undefined} capTokens={cap?.cap} />
+            {/* v3.6: before the chain reports started(), a countdown instead of the trade form */}
+            {tradeView({graduated: c.graduated, started: c.started, priorityUntil: c.priorityUntil, nowSec, verifiedOnly: c.verifiedOnly, verified: undefined}).kind === "preStart" ? (
+                <PreStartPanel c={c} />
             ) : (
-                <CurveSell c={c} amount={amount} slip={slip} onDone={clear} />
+                <>
+                    {/* buy / sell segment: the selected side is tinted (success / error at 16%) */}
+                    <div className="flex gap-1 rounded-input border border-ink-700 bg-ink-900 p-[3px] mb-5">
+                        {(["buy", "sell"] as const).map((d) => (
+                            <button
+                                key={d}
+                                type="button"
+                                aria-pressed={side === d}
+                                onClick={() => setSide(d)}
+                                className={`flex-1 min-h-[44px] rounded-[7px] text-[14px] font-semibold ${
+                                    side !== d
+                                        ? "text-hanji-400 hover:text-hanji-100"
+                                        : d === "buy"
+                                          ? "bg-[rgba(122,155,109,.16)] text-success"
+                                          : "bg-[rgba(201,122,104,.16)] text-error"
+                                }`}
+                            >
+                                {d === "buy" ? tr.curve.buy : tr.curve.sell}
+                            </button>
+                        ))}
+                    </div>
+                    <div className="bg-ink-900 border border-ink-700 rounded-input px-4 pt-3 pb-2 focus-within:border-brass-400 mb-2">
+                        <label htmlFor={inputId} className="block text-[12px] text-hanji-400">
+                            {side === "buy" ? tr.curve.payLabel(c.graduated && c.isEth ? "WETH" : unit) : tr.curve.sellLabel}
+                        </label>
+                        <div className="flex items-baseline gap-2 min-w-0">
+                            <input
+                                id={inputId}
+                                value={raw}
+                                onChange={(e) => setRaw(sanitizeAmountInput(e.target.value))}
+                                inputMode="decimal"
+                                placeholder="0"
+                                className="num flex-1 min-w-0 bg-transparent border-none outline-none py-1 text-[30px] font-medium text-hanji-100 placeholder:text-hanji-400"
+                            />
+                            <span className="text-hanji-400 text-[14px] flex-none">{side === "buy" ? (c.graduated && c.isEth ? "WETH" : unit) : c.symbol}</span>
+                        </div>
+                    </div>
+                    {/* quick amounts; "max" is the former balance button (maxInput) */}
+                    <div className="grid grid-cols-4 gap-2 mb-2">
+                        {quickAmounts(side, c.isEth, address ? balance : undefined, payNative).map((q) => (
+                            <button
+                                key={q.label}
+                                type="button"
+                                disabled={q.disabled}
+                                onClick={() => setRaw(formatUnits(q.value === "max" ? maxInput(balance ?? 0n, payNative) : q.value, 18))}
+                                className="num min-h-[44px] px-1 rounded-[8px] border border-ink-700 text-[13px] text-hanji-100 whitespace-nowrap hover:border-brass-600 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-ink-700"
+                            >
+                                {q.label === "max" ? tr.curve.useMax : tr.tokenPage.quick[q.label]}
+                            </button>
+                        ))}
+                    </div>
+                    {address && balance !== undefined && (
+                        <p className="m-0 text-[12px] text-hanji-400 mb-3 tabular-nums">{tr.curve.balance(fmt(balance, 4, tr.locale), balUnit)}</p>
+                    )}
+                    {capOn && cap && (
+                        <div className="flex items-center justify-between gap-x-3 gap-y-1 flex-wrap mb-3 text-[12px]">
+                            <span className="text-brass-400 tabular-nums min-w-0">
+                                {!full
+                                    ? tr.trade.priorityCapLeft(fmt(cap.left, 2, tr.locale))
+                                    : tr.trade.priorityCapFull(tr.trade.capTime(minSec(cap.remainingSec).m, minSec(cap.remainingSec).s))}
+                            </span>
+                            {!full && (
+                                <button
+                                    type="button"
+                                    onClick={fillToCap}
+                                    className="min-h-[36px] px-3 rounded-input border border-ink-700 text-[12px] text-hanji-100 whitespace-nowrap hover:border-brass-600"
+                                >
+                                    {tr.trade.priorityCapMax}
+                                </button>
+                            )}
+                        </div>
+                    )}
+                    <SlippageControl pref={pref} setPref={setPref} autoBps={autoBps} onBlockedChange={setSlipBlocked} />
+                    {c.graduated ? (
+                        <PoolSide c={c} side={side} amount={amount} slip={slip} onDone={clear} />
+                    ) : side === "buy" ? (
+                        <CurveBuy c={c} amount={amount} slip={slip} onDone={clear} capLeft={capOn && cap ? cap.left : undefined} capTokens={cap?.cap} />
+                    ) : (
+                        <CurveSell c={c} amount={amount} slip={slip} onDone={clear} />
+                    )}
+                </>
             )}
         </div>
     );
@@ -332,6 +341,24 @@ function CtaBlock({
     );
 }
 
+/** v3.6: an unverified wallet on a verified-only curve. The buy button stays disabled with the
+ *  rule; verifying (the onboarding modal) is offered next to it. Sells are not affected. */
+function VerifiedOnlyBlock({amount, refetch}: {amount: bigint; refetch: () => void}) {
+    const tr = useCopy();
+    const openModal = useOnboardingModal();
+    return (
+        <>
+            <PrimaryBtn className="w-full" disabled>
+                {tr.curve.cta.buy}
+            </PrimaryBtn>
+            <p className="text-[12px] text-brass-400 mt-2 mb-0">{tr.launch.verifiedOnlyBlocked}</p>
+            <SecondaryBtn className="w-full mt-2" onClick={() => openModal({krwNeeded: amount, onProgress: refetch, requireVerify: true})}>
+                {tr.curve.cta.modalVerify}
+            </SecondaryBtn>
+        </>
+    );
+}
+
 /** v3 run options: v3 error copy. (v3.1: NotVerified before sending means the device clock is
  *  ahead of the chain inside the priority window; TradeGuard shows that and sends nothing.) */
 function useRunOpts(refetch: () => void, _krwNeeded: bigint): RunOpts {
@@ -365,13 +392,16 @@ function CurveBuy({c, amount, slip, onDone, capLeft: left, capTokens}: {c: Curve
         payToken: c.isEth ? "native" : c.quote,
         amount,
         spender: c.isEth ? undefined : c.address,
-        // v3.1: verified only while the curve's priority window is open
-        verify: {priorityUntil: c.priorityUntil},
+        // v3.1: verified only while the curve's priority window is open; v3.6: a verified-only curve
+        // needs a verified wallet until graduation
+        verify: c.verifiedOnly ? "required" : {priorityUntil: c.priorityUntil},
     });
     const quote = q.settled ? q.data : undefined;
     const effective: CtaState = state.kind === "ready" || state.kind === "approve" ? (quote && quote.tokensOut > 0n ? state : {kind: "loading"}) : state;
     const payToken: Address | "native" = c.isEth ? "native" : c.quote;
-    const opts = useRunOpts(refetch, c.isEth ? 0n : amount);
+    const baseOpts = useRunOpts(refetch, c.isEth ? 0n : amount);
+    // v3.6: NotVerified on a verified-only token reads as the verified-only rule
+    const opts: RunOpts = {...baseOpts, errorText: (n) => (n === "NotVerified" && c.verifiedOnly ? tr.launch.verifiedOnlyBlocked : undefined)};
     const g = useGuardedSend();
     const approval = useApprovalStep(opts);
 
@@ -422,7 +452,11 @@ function CurveBuy({c, amount, slip, onDone, capLeft: left, capTokens}: {c: Curve
                 )}
                 {overCap && capTokens !== undefined && <p className="text-[12px] text-error m-0 mt-2">{tr.trade.priorityCapOver(capTokens)}</p>}
             </div>
-            <CtaBlock state={effective} side="buy" action={(run) => execute(run)} payToken={payToken} amount={amount} refetch={refetch} blocked={slip.blocked || overCap} />
+            {c.verifiedOnly && state.kind === "notVerified" ? (
+                <VerifiedOnlyBlock amount={c.isEth ? 0n : amount} refetch={refetch} />
+            ) : (
+                <CtaBlock state={effective} side="buy" action={(run) => execute(run)} payToken={payToken} amount={amount} refetch={refetch} blocked={slip.blocked || overCap} />
+            )}
             <GuardPanel guard={g.guard} dp={4} unit={c.symbol} retry={execute} autoAvailable={!slip.isAuto} switchToAuto={slip.toAuto} autoBps={slip.autoBps} blocked={slip.blocked} />
         </>
     );

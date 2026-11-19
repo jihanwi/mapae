@@ -5,7 +5,8 @@ import {describe, expect, it} from "vitest";
 import {decodeCtorArgs, encodeCtorArgs} from "../../../script/ctorArgs.mjs";
 import SCRIPT from "../../../script/verify-children.js?raw";
 
-const CURVE_CTOR = "constructor((address,address,address,address,address,address,string,string,uint256,uint32))";
+// v3.6 (W-T61): InitParams gained priorityMaxHolding (v3.5), startTime and verifiedOnly
+const CURVE_CTOR = "constructor((address,address,address,address,address,address,string,string,uint256,uint32,uint256,uint64,bool))";
 const TOKEN_CTOR = "constructor(string,string,address,uint256,uint16,address[])";
 const OFFERING_CTOR =
     "constructor((address,address,address,address,string,string,uint256,uint256,uint256,uint256,uint256,uint256,uint16,uint16,uint16,uint16,uint16,uint8,uint256,uint16,address,address,uint8,address,(address,address)))";
@@ -18,7 +19,8 @@ const A = (n: number) => `0x${n.toString(16).padStart(40, "0")}`;
 const WETH = "0x4200000000000000000000000000000000000006";
 const NAMES = [`<script>"'&</script>`, "a,b", "(x)", "a\\b", "말머리 토큰", "🐎🔥", `"); DROP --`, "", "X&Y"];
 
-const curveInit = (name: string, symbol: string) => [WETH, A(1), A(2), A(3), A(4), A(5), name, symbol, "2000000000000000", "600"];
+const CAP = "20000000000000000000000000";
+const curveInit = (name: string, symbol: string) => [WETH, A(1), A(2), A(3), A(4), A(5), name, symbol, "2000000000000000", "600", CAP, "0", "false"];
 
 describe("constructor args: viem encoding, no text parser", () => {
     it("the script uses the same signatures and no longer calls cast abi-encode", () => {
@@ -58,14 +60,24 @@ describe("constructor args: viem encoding, no text parser", () => {
             "X&Y",
             "2000000000000000",
             "600",
+            CAP,
+            "0",
+            "false",
         ];
         const hex = encodeCtorArgs(CURVE_CTOR, [init]);
-        // one dynamic tuple: offset word + 10 head words + 2 × (length + one data word)
-        expect((hex.length - 2) / 64).toBe(1 + 10 + 4);
+        // one dynamic tuple: offset word + 13 head words + 2 × (length + one data word)
+        expect((hex.length - 2) / 64).toBe(1 + 13 + 4);
         const [t] = decodeCtorArgs(CURVE_CTOR, hex) as [readonly unknown[]];
         expect(t[6]).toBe(`<script>"'&</script>`);
         expect(t[7]).toBe("X&Y");
         expect(String(t[0]).toLowerCase()).toBe(WETH);
+    });
+    it("v3.6: a scheduled, verified-only curve's start time and flag round-trip", () => {
+        const init = [WETH, A(1), A(2), A(3), A(4), A(5), "Sched", "SCH", "2000000000000000", "600", CAP, "1800003600", "true"];
+        const [t] = decodeCtorArgs(CURVE_CTOR, encodeCtorArgs(CURVE_CTOR, [init])) as [readonly unknown[]];
+        expect(t[10]).toBe(20_000_000n * 10n ** 18n);
+        expect(t[11]).toBe(1_800_003_600n);
+        expect(t[12]).toBe(true);
     });
     it("the offering tuple (nested recipients tuple, cast-style numbers) and a pool round-trip", () => {
         const p = [A(1), A(2), A(3), A(4), `Na"me, (1)`, "S\\Y", "1000000000000000000 [1e18]", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "1", "12", "13", A(5), A(6), "2", A(7), [A(8), A(9)]];

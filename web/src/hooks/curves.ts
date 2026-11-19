@@ -33,8 +33,12 @@ export type CurveInfo = {
     isEth: boolean;
     /** Position in allCurves (higher = newer). */
     index: number;
-    /** v3.1: unix seconds until which only verified wallets may buy. */
+    /** v3.1: unix seconds until which only verified wallets may buy (v3.6: startTime + window). */
     priorityUntil: bigint;
+    /** v3.6: trading opens at this unix second (creation time when not scheduled). */
+    startTime: bigint;
+    /** v3.6: only verified wallets may buy until graduation. */
+    verifiedOnly: boolean;
     /** Graduated pool spot (quote per token, 18 decimals); set by useCurves only, after graduation. */
     poolSpot?: bigint;
     /** "server": built from the indexed list (no chain read yet); totalFeeBps is unknown (0). */
@@ -48,6 +52,9 @@ export type CurveDetail = CurveInfo & {
     lpSeedBps: number;
     /** v3.5: the curve's priority-window holding cap in tokens (fixed at creation). */
     priorityMaxHolding: bigint;
+    /** v3.6: CurveSale.started() at the chain's latest block (re-read every 4 s): the pre-start
+     *  panel opens on this, never on the local clock. */
+    started: boolean;
 };
 
 const CURVE_FIELDS = [
@@ -62,8 +69,12 @@ const CURVE_FIELDS = [
     "pool",
     "totalFeeBps",
     "priorityUntil",
+    "startTime",
+    "verifiedOnly",
 ] as const;
-const DETAIL_FIELDS = ["devAccrued", "platformBps", "devBps", "lpSeedBps", "priorityMaxHolding"] as const;
+const DETAIL_FIELDS = ["devAccrued", "platformBps", "devBps", "lpSeedBps", "priorityMaxHolding", "started"] as const;
+
+const detailAt = (k: (typeof DETAIL_FIELDS)[number]) => CURVE_FIELDS.length + DETAIL_FIELDS.indexOf(k);
 
 const curveAbi = CurveSaleAbi as Abi;
 const tokenAbi = MembershipTokenV3Abi as Abi;
@@ -83,6 +94,8 @@ function toInfo(address: Address, r: unknown[], name: unknown, symbol: unknown, 
         pool: r[8] as Address,
         totalFeeBps: Number(r[9] as number),
         priorityUntil: BigInt(r[10] as bigint),
+        startTime: BigInt(r[11] as bigint),
+        verifiedOnly: r[12] as boolean,
         name: name as string,
         symbol: symbol as string,
         isEth: quote.toLowerCase() === ADDR_V3.weth.toLowerCase(),
@@ -213,11 +226,13 @@ export function useCurve(address: Address | undefined) {
         address && r && ns
             ? {
                   ...toInfo(address, r, ns[0], ns[1]),
-                  devAccrued: r[11] as bigint,
-                  platformBps: Number(r[12] as number),
-                  devBps: Number(r[13] as number),
-                  lpSeedBps: Number(r[14] as number),
-                  priorityMaxHolding: r[15] as bigint,
+                  // detail fields follow CURVE_FIELDS (by name, so a new curve field cannot shift them)
+                  devAccrued: r[detailAt("devAccrued")] as bigint,
+                  platformBps: Number(r[detailAt("platformBps")] as number),
+                  devBps: Number(r[detailAt("devBps")] as number),
+                  lpSeedBps: Number(r[detailAt("lpSeedBps")] as number),
+                  priorityMaxHolding: r[detailAt("priorityMaxHolding")] as bigint,
+                  started: r[detailAt("started")] as boolean,
               }
             : undefined;
     // The last good read of this address, kept while later reads fail (W-T16 "stale").

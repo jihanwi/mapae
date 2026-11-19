@@ -57,8 +57,9 @@ describe("feed copy guardrails", () => {
         }
     });
     it("tab names match the spec", () => {
-        expect(Object.values(ko.feed.tabs)).toEqual(["최근 거래", "인기", "시가총액", "졸업 임박", "신규", "졸업"]);
-        expect(Object.values(en.feed.tabs)).toEqual(["Latest", "Popular", "Market cap", "Almost graduated", "New", "Graduated"]);
+        // W-T61: "예정" / "Upcoming" after "신규" / "New"
+        expect(Object.values(ko.feed.tabs)).toEqual(["최근 거래", "인기", "시가총액", "졸업 임박", "신규", "예정", "졸업"]);
+        expect(Object.values(en.feed.tabs)).toEqual(["Latest", "Popular", "Market cap", "Almost graduated", "New", "Upcoming", "Graduated"]);
         expect(en.feed.window(1)).toBe("Based on about the last 1 hour");
     });
 });

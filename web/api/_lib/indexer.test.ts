@@ -50,9 +50,13 @@ const VQ = 2_000_000n * E18; // KRWs preset virtual quote
 
 const raw = (address: A, topics: Hex[], data: Hex, block: bigint, i: number): RawLog => ({address, topics, data, blockNumber: block, logIndex: i, transactionHash: tx(Number(block) * 10 + i)});
 
-function created(block: bigint): RawLog {
+/** v3.6 CurveCreated: immediate launch by default (startTime = the block time, 1050 here). */
+function created(block: bigint, start = 1_050n, verifiedOnly = false): RawLog {
     const topics = encodeEventTopics({abi: CurveFactoryAbi, eventName: "CurveCreated", args: {dev: up(DEV), curve: up(CURVE), token: up(TOKEN)}}) as Hex[];
-    const data = encodeAbiParameters([{type: "address"}, {type: "uint256"}, {type: "string"}, {type: "string"}, {type: "uint64"}], [addr(0x99), 2_000_000n * E18, "Horse", "HRN", 1_650n]);
+    const data = encodeAbiParameters(
+        [{type: "address"}, {type: "uint256"}, {type: "string"}, {type: "string"}, {type: "uint64"}, {type: "uint64"}, {type: "bool"}],
+        [addr(0x99), 2_000_000n * E18, "Horse", "HRN", start + 600n, start, verifiedOnly]
+    );
     return raw(FACTORY, topics, data, block, 0);
 }
 function buy(trader: A, isDev: boolean, quoteSpent: bigint, tokensOut: bigint, block: bigint, i: number, verified = true, r = 0n, s = 0n): RawLog {
@@ -100,9 +104,29 @@ describe("rows", () => {
     it("curve rows from CurveCreated, lowercase, interpolated time", () => {
         const rows = toCurveRows([created(150n)], up(FACTORY), T0, T1);
         expect(rows).toEqual([
-            {curve: CURVE, token: TOKEN, dev: DEV, quote: addr(0x99), virtualQuote: (2_000_000n * E18).toString(), name: "Horse", symbol: "HRN", createdBlock: "150", createdTs: "1050", priorityUntil: "1650", factory: FACTORY},
+            {
+                curve: CURVE,
+                token: TOKEN,
+                dev: DEV,
+                quote: addr(0x99),
+                virtualQuote: (2_000_000n * E18).toString(),
+                name: "Horse",
+                symbol: "HRN",
+                createdBlock: "150",
+                createdTs: "1050",
+                priorityUntil: "1650",
+                startTime: "1050",
+                verifiedOnly: false,
+                factory: FACTORY,
+            },
         ]);
         expect(toCurveRows([created(150n)], addr(0xbad), T0, T1)).toEqual([]);
+    });
+    it("v3.6: immediate launch keeps startTime = creation; a scheduled, verified-only launch carries both", () => {
+        const [now] = toCurveRows([created(150n)], up(FACTORY), T0, T1);
+        expect(now).toMatchObject({startTime: now.createdTs, priorityUntil: "1650", verifiedOnly: false});
+        const [later] = toCurveRows([created(150n, 90_000n, true)], up(FACTORY), T0, T1);
+        expect(later).toMatchObject({createdTs: "1050", startTime: "90000", priorityUntil: "90600", verifiedOnly: true});
     });
     it("trades: Buy, Sell, Swapped both ways, Graduated links the pool, zero token amount skipped", () => {
         const known: KnownCurve[] = [{curve: CURVE, token: TOKEN, dev: DEV, pool: null, virtualQuote: VQ}];
@@ -296,7 +320,7 @@ describe("v3.1 verified status", () => {
 });
 
 describe("db: v3.1 cursor row and factory filter", () => {
-    it("reads and writes indexer state id 35 (v3.5) and loads curves of one factory", async () => {
+    it("reads and writes indexer state id 36 (v3.6) and loads curves of one factory", async () => {
         const seen: {text: string; params: unknown[]}[] = [];
         const fake = {
             query: (text: string, params: unknown[] = []) => {
@@ -305,17 +329,17 @@ describe("db: v3.1 cursor row and factory filter", () => {
             },
             transaction: async (qs: unknown[]) => qs,
         } as unknown as Sql;
-        expect(INDEXER_STATE_ID).toBe(35);
+        expect(INDEXER_STATE_ID).toBe(36);
         await readNextBlock(fake);
         await readState(fake);
         await loadCurves(fake, "0xABC");
         await writeRange(fake, {curves: [], graduations: [], trades: [], transfers: [], nextBlock: 5n, indexedTs: 7});
-        expect(seen[0].params).toEqual([35]);
-        expect(seen[1].params).toEqual([35]);
+        expect(seen[0].params).toEqual([36]);
+        expect(seen[1].params).toEqual([36]);
         expect(seen[2]).toMatchObject({params: ["0xabc"]});
         expect(seen[2].text).toContain("WHERE factory = $1");
         const state = seen.find((q) => q.text.includes("mapae_indexer_state (id"))!;
-        expect(state.params).toEqual(["5", "7", 35]);
+        expect(state.params).toEqual(["5", "7", 36]);
     });
 });
 

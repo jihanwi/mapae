@@ -26,6 +26,9 @@ export type ServerListRow = {
     symbol: string;
     createdTs: string;
     priorityUntil: string;
+    /** v3.6: trading start (unix seconds) and the verified-only option, from CurveCreated. */
+    startTime?: string;
+    verifiedOnly?: boolean;
     pool: Address | null;
     r: string;
     s: string;

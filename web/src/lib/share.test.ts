@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {isMobileBrowser, metamaskDappUrl, shareLink, xIntentUrl} from "./share";
+import {isMobileBrowser, metamaskDappUrl, shareLink, xIntentUrl, opensShareText} from "./share";
 
 const C = "0x00000000000000000000000000000000000000C1";
 
@@ -37,5 +37,16 @@ describe("MetaMask dapp deep link", () => {
     it("the Pages build links to the API deployment", () => {
         expect(metamaskDappUrl(`/t/${C}`, V, "https://jihanwi.github.io")).toBe("https://link.metamask.io/dapp/mapae-snowy.vercel.app/t/0x00000000000000000000000000000000000000c1");
         expect(metamaskDappUrl("/create", V, "https://jihanwi.github.io")).not.toContain("#");
+    });
+});
+
+describe("opensShareText (W-T61)", () => {
+    // 2026-11-21 12:00 UTC = 21:00 in Seoul
+    const START = Date.UTC(2026, 10, 21, 12, 0) / 1000;
+    it("Seoul time is written KST", () => {
+        expect(opensShareText("HRN", START, "Asia/Seoul")).toBe("$HRN opens Nov 21, 21:00 KST on MAPAE. Everyone starts from the same line.");
+    });
+    it("other zones keep their short name", () => {
+        expect(opensShareText("HRN", BigInt(START), "UTC")).toBe("$HRN opens Nov 21, 12:00 UTC on MAPAE. Everyone starts from the same line.");
     });
 });

@@ -1,7 +1,7 @@
 import {describe, expect, it} from "vitest";
 import {CURVE_SUPPLY, spotPrice, VIRTUAL_TOKEN_RESERVE, WAD} from "./curveMath";
 import type {ServerSummary} from "./chainMerge";
-import {changeBps, changeLabel, changeOf, currentPrice, exactAddressHit, featured, HomeCurve, leftToGraduate, openingPrice, refPrice, searchCurves} from "./homeList";
+import {changeBps, changeLabel, changeOf, currentPrice, exactAddressHit, featured, HOME_TABS, HomeCurve, homeTab, leftToGraduate, openingPrice, refPrice, searchCurves, upcomingCount} from "./homeList";
 
 type A = `0x${string}`;
 const addr = (n: number) => `0x${n.toString(16).padStart(40, "0")}` as A;
@@ -132,6 +132,8 @@ function listRow(i: number, over: Partial<ServerListRow> = {}): ServerListRow {
         symbol: `H${i}`,
         createdTs: String(1_000 + i),
         priorityUntil: String(1_600 + i),
+        startTime: String(1_000 + i),
+        verifiedOnly: false,
         pool: null,
         r: (3n * WAD).toString(),
         s: (1000n * WAD).toString(),
@@ -158,6 +160,8 @@ function chainInfo(i: number, index: number, over: Partial<CurveInfo> = {}): Cur
         isEth: false,
         index,
         priorityUntil: BigInt(1_600 + i),
+        startTime: BigInt(1_000 + i),
+        verifiedOnly: false,
         poolSpot: undefined,
         ...over,
     };
@@ -208,5 +212,40 @@ describe("server-first list (W-T16)", () => {
         expect(t[0]).toBe(addr(0x9999));
         expect(new Set(t).size).toBe(t.length);
         expect(overlayTargets([], visible)).toEqual(visible.slice(0, 30));
+    });
+});
+
+describe("upcoming tab (W-T61)", () => {
+    const NOW = 10_000;
+    // 1, 2: trading; 3, 4: scheduled (4 opens first); 5: graduated
+    const list = [
+        curve(1, {startTime: 100n, r: 10n ** 18n}),
+        curve(2, {startTime: 200n}),
+        curve(3, {startTime: BigInt(NOW + 7200)}),
+        curve(4, {startTime: BigInt(NOW + 60)}),
+        curve(5, {startTime: 300n, graduated: true}),
+    ];
+    const ids = (cs: HomeCurve[]) => cs.map((c) => c.index);
+    it("sits right after new", () => {
+        expect(HOME_TABS.indexOf("upcoming")).toBe(HOME_TABS.indexOf("new") + 1);
+    });
+    it("lists only curves not open yet, nearest start first", () => {
+        expect(ids(homeTab("upcoming", list, new Map(), new Map(), NOW))).toEqual([4, 3]);
+        expect(upcomingCount(list, NOW)).toBe(2);
+    });
+    it("new keeps them (newest first); the trading tabs leave them out", () => {
+        expect(ids(homeTab("new", list, new Map(), new Map(), NOW))).toEqual([5, 4, 3, 2, 1]);
+        for (const t of ["latest", "popular", "mcap", "almost", "graduated"] as const) {
+            expect(ids(homeTab(t, list, new Map(), new Map(), NOW)).some((i) => i === 3 || i === 4)).toBe(false);
+        }
+        expect(ids(homeTab("latest", list, new Map(), new Map(), NOW))).toEqual([5, 2, 1]);
+    });
+    it("a curve leaves upcoming once its start passes", () => {
+        expect(ids(homeTab("upcoming", list, new Map(), new Map(), NOW + 60))).toEqual([3]);
+        expect(ids(homeTab("latest", list, new Map(), new Map(), NOW + 60))).toContain(4);
+    });
+    it("featured skips curves that have not opened", () => {
+        const only = [curve(4, {startTime: BigInt(NOW + 60), r: 10n ** 20n}), curve(2, {startTime: 200n})];
+        expect(featured(only, new Map(), NOW)?.index).toBe(2);
     });
 });

@@ -31,3 +31,16 @@ export function isMobileBrowser(ua: string, maxTouchPoints = 0): boolean {
     if (/Android|iPhone|iPod|iPad|Mobile|IEMobile|Opera Mini|webOS|BlackBerry/i.test(ua)) return true;
     return /Macintosh/.test(ua) && maxTouchPoints > 1;
 }
+
+/** W-T61: the default X text for a token whose trading has not opened yet, always in English:
+ *  "$TICKER opens Nov 21, 21:00 KST on MAPAE. Everyone starts from the same line." The time is the
+ *  sharer's local time; UTC+9 is written KST (the launch audience), any other zone with its short
+ *  name from Intl (e.g. "GMT+1"). `timeZone` is for tests. */
+export function opensShareText(symbol: string, startSec: number | bigint, timeZone?: string): string {
+    const d = new Date(Number(startSec) * 1000);
+    const day = d.toLocaleString("en-US", {month: "short", day: "numeric", timeZone});
+    const hm = d.toLocaleString("en-US", {hour: "2-digit", minute: "2-digit", hour12: false, timeZone}).replace(/^24:/, "00:");
+    const zoneName = d.toLocaleString("en-US", {timeZoneName: "short", timeZone}).split(" ").pop() ?? "UTC";
+    const zone = /^(GMT|UTC)\+9$/.test(zoneName) ? "KST" : zoneName;
+    return `${"$"}${symbol} opens ${day}, ${hm} ${zone} on MAPAE. Everyone starts from the same line.`;
+}
