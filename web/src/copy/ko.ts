@@ -35,7 +35,10 @@ export const ko = {
     },
     appTitle: "MAPAE",
     heroTitle: "같은 가격, 같은 기회로 받는 공모",
-    heroSub: "정가 응모 · 균등 배정과 추첨 · 미달 시 환불 또는 부분 발행 · 유동성 영구 잠금",
+    // W-T63: shown as separate points on the offering list
+    heroSub: ["정가 응모", "균등 배정과 추첨", "미달 시 환불 또는 부분 발행", "유동성 영구 잠금"],
+    /** W-T63: the brass part of heroTitle (it must appear in it) */
+    heroAccent: "같은 기회",
     nav: {
         disconnect: "연결 해제",
         logoAlt: "MAPAE 로고",
@@ -85,6 +88,19 @@ export const ko = {
         emptyNote: "공모가 열리면 여기에 표시돼요",
         proceedsShort: (up: string, span: string) => `모금액 즉시 지급 ${up}% · 나머지 ${span} 잠금`,
         proceedsAllUpfront: "모금액 즉시 지급 100%",
+        // W-T63: list layout
+        eyebrow: "정가 공모",
+        howToCheck: "배정 확인 방법",
+        openNow: "응모 중",
+        closedSection: "정산과 종료",
+        committedWallets: (n: number) => `실명 지갑 ${n}개 응모`,
+        closesIn: "마감까지",
+        colOffering: "공모",
+        colStatus: "상태",
+        colRaised: "모금액",
+        actTrade: "거래 →",
+        actRefund: "환불 →",
+        actView: "보기 →",
     },
     // W-T38: 마감 뒤 환불 (환불은 자동이 아니다: enableRefunds / emergencyRefund / refund)
     refund: {
@@ -121,6 +137,8 @@ export const ko = {
     // W-T34 (결정 58): 공모 상세의 "체인에 고정된 조건" 구역
     terms: {
         title: "체인에 고정된 조건",
+        // W-T63: the allocation bar's legend
+        legend: {sale: "판매", issuer: "발행자", lp: "유동성", burn: "소각"},
         note: "컨트랙트에서 읽은 값이에요. 누구도 바꿀 수 없어요",
         price: "정가",
         raiseTarget: "모금 목표",
@@ -424,12 +442,23 @@ export const ko = {
         perToken: (p: string) => `${p} KRWs / 개`,
         claimLabel: "배정 수령",
         backLink: "← 공모 목록",
-        dojangSuffix: " — Dojang Verified",
+        dojangSuffix: " · 도장 인증",
         howToVerify: "검증 방법 보기",
         untilDeadline: (left: string) => `마감까지 ${left}`,
         totalPrefix: "총 응모 ",
         totalPrefixAtClose: "마감 시점 응모 ", // W-T47: 환불 상태
         targetPart: (target: string) => ` / 목표 ${target} KRWs`,
+        // W-T63: detail layout
+        progressEyebrow: "모금 현황",
+        ofTarget: (pct: string) => `목표의 ${pct}%`,
+        targetOf: "/ 목표",
+        commitEyebrow: "응모",
+        afterEyebrow: "마감 뒤",
+        allocEyebrow: "배정 결과",
+        quickMin: "최소",
+        quickUpTo: "한도까지",
+        allocHowTitle: "배정 방식",
+        allocSteps: ["모두 같은 정가로 응모해요", "응모가 넘치면 먼저 모두에게 똑같이 나눠요", "남은 물량은 추첨으로 정해요. 결과는 누구나 다시 계산해 볼 수 있어요"],
         amountLabel: "응모 금액",
         myStatus: "내 응모 현황",
         cancelLocked: "취소 잠김 — 마감 2시간 전",
