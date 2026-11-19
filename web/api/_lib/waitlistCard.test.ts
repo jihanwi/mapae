@@ -1,7 +1,30 @@
 // W-T52: the card's number size rule, its words, and one real render (PNG 1200x630).
-import {describe, expect, it} from "vitest";
-import {CARD_H, CARD_NUMBER_MAX_W, CARD_NUMBER_PX, CARD_TEXT, CARD_W, cardElement, cardNumberPx, cardNumberText, renderCard} from "./waitlistCard.js";
+import {readFile} from "node:fs/promises";
+import {describe, expect, it, vi} from "vitest";
+import {BG_H, BG_TOP, CARD_H, CARD_NUMBER_MAX_W, CARD_NUMBER_PX, CARD_TEXT, CARD_W, cardElement, cardNumberPx, cardNumberText, loadBackdrop, renderCard} from "./waitlistCard.js";
 import {positionWidthEm} from "../../src/lib/positionSize.js";
+
+// W-T69 first in the file: the failure case needs the picture not loaded yet
+describe("W-T69: the backdrop picture", () => {
+    it("covers the card with the picture's 58% line on the card's middle", () => {
+        expect(BG_H).toBe(750);
+        expect(BG_TOP).toBe(-120);
+        expect(Math.abs(BG_TOP + 0.58 * BG_H - CARD_H / 2)).toBeLessThanOrEqual(1);
+    });
+    it("a failed read is logged, not remembered; the next read succeeds", async () => {
+        const err = vi.spyOn(console, "error").mockImplementation(() => {});
+        expect(await loadBackdrop(() => Promise.reject(new Error("ENOENT")))).toBeNull();
+        expect(err).toHaveBeenCalledTimes(1);
+        // the real picture on the next call (no failure memo)
+        expect(await loadBackdrop(() => readFile(new URL("../../public/waitlist-bg.jpg", import.meta.url)))).toMatch(/^data:image\/jpeg;base64,\/9j\//);
+        err.mockRestore();
+    });
+    it("renders a 1200x630 PNG with the picture", async () => {
+        const png = await renderCard(42);
+        const v = new DataView(png.buffer, png.byteOffset);
+        expect([v.getUint32(16), v.getUint32(20)]).toEqual([CARD_W, CARD_H]);
+    }, 30_000);
+});
 
 describe("card number size", () => {
     it("full size up to four digits, smaller from five, always within the column", () => {
@@ -35,6 +58,10 @@ describe("card words", () => {
             else if (n && typeof n === "object" && "props" in n) walk((n as {props: {children?: unknown}}).props.children);
         };
         walk(cardElement(42, "data:image/png;base64,"));
+        expect(texts).toEqual(["MAPAE", "WAITLIST", "#", "42", "Everyone starts from the same line."]);
+        // W-T69: the backdrop adds no words
+        texts.length = 0;
+        walk(cardElement(42, "data:image/png;base64,", "data:image/jpeg;base64,"));
         expect(texts).toEqual(["MAPAE", "WAITLIST", "#", "42", "Everyone starts from the same line."]);
     });
 });
@@ -106,8 +133,10 @@ describe("render", () => {
 
 describe("W-T53: the content sits in the middle of the card", () => {
     for (const n of [1, 42, 1234, 12345]) {
+        // W-T69: measured on the plain card (the picture would count as content); the content row is
+        // the same element with and without the picture
         it(`#${n}: content centre within 8px of (600, 315)`, async () => {
-            const b = await contentBox(await renderCard(n));
+            const b = await contentBox(await renderCard(n, {backdrop: false}));
             console.log(`card #${n}: x ${b.x0}-${b.x1} (centre ${b.cx}), y ${b.y0}-${b.y1} (centre ${b.cy})`);
             expect(Math.abs(b.cx - CARD_W / 2), `x centre ${b.cx}`).toBeLessThanOrEqual(8);
             expect(Math.abs(b.cy - CARD_H / 2), `y centre ${b.cy}`).toBeLessThanOrEqual(8);

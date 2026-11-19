@@ -115,3 +115,32 @@ button, a, [role="button"] { -webkit-tap-highlight-color: transparent; }
 @media (prefers-reduced-motion: reduce) {
     .wl-shine { animation: none; display: none; }
 }
+
+/* W-T69: the joined screen's backdrop. Not fixed: it sits at the top of the page and scrolls with
+   it (absolute to the page, z-index -1 inside the `isolate` shell, so it is under the bar and the
+   content). The gradient ends in solid ink-950 at its bottom edge, so it meets the page background
+   without a seam. Plain ink-950 until the picture loads, or if it fails. */
+.wl-joined-backdrop {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 640px;
+    z-index: -1;
+    pointer-events: none;
+    background-color: theme("colors.ink.950");
+    background-image:
+        linear-gradient(180deg, rgba(26, 21, 16, 0.86) 0px, rgba(26, 21, 16, 0.42) 180px, rgba(26, 21, 16, 0.55) 400px, rgba(26, 21, 16, 1) 640px),
+        url("/waitlist-bg-mobile.jpg");
+    background-size: 100% 100%, cover;
+    background-position: 0 0, center 40%;
+    background-repeat: no-repeat;
+}
+@media (min-width: 640px) {
+    .wl-joined-backdrop {
+        height: 860px;
+        background-image:
+            linear-gradient(180deg, rgba(26, 21, 16, 0.86) 0px, rgba(26, 21, 16, 0.42) 240px, rgba(26, 21, 16, 0.55) 520px, rgba(26, 21, 16, 1) 860px),
+            url("/waitlist-bg.jpg");
+    }
+}

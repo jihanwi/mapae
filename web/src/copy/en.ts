@@ -1153,7 +1153,6 @@ export const en = {
         /** W-T70 */
         points: (p: string) => `${p} points`,
         pointsPlus: (n: number) => `+${n}`,
-        referralEach: (n: number) => `+${n} each`,
         missionsTitle: "Move up the line",
         missionFollow: "Follow @MapaeGiwa",
         missionFollowCta: "Follow",
@@ -1162,6 +1161,11 @@ export const en = {
         missionDone: "Done",
         missionNote: "We check follows and reposts before mainnet opens and recount points.",
         missionError: "Please try again shortly.",
+        /** W-T69 */
+        rankNote: "More points, earlier in line.",
+        inviteTitle: "Invite friends",
+        inviteHint: "For each person who joins with your link",
+        inviteCount: (n: number) => `${n} joined`,
     },
     privacy: {
         title: "Privacy notice (waitlist)",
