@@ -52,6 +52,8 @@ v3에서 바뀐 컨트랙트 구성과 인터페이스. 숫자는 전부 `src/` 
 
 ### v3.6 발행 옵션 (C-T6): 이 항목이 아래 CurveSale, CurveFactory 설명과 상충하면 우선
 
+- 배포: GIWA Sepolia CurveFactory (v3.6) `0xC872B81fBFE7853531970F1aFBC1ab6b47078Cc5` (블록 41712578). 주소는 `docs/DEPLOYMENTS.md`.
+
 - `CurveFactory.LaunchOptions { uint64 startTime; bool verifiedOnly; }`가 `createCurve(quote, name, symbol, devBuyQuoteIn,
   minTokensOut, opts)`와 `createCurveWithETH(name, symbol, minTokensOut, opts)`의 마지막 인자다.
 - 예고 발행: `startTime = 0`이면 생성 시각에 시작(v3.5와 같다). 0이 아니면 `block.timestamp + MIN_START_DELAY(10분) <= startTime <=

@@ -2,17 +2,21 @@
 
 체인: GIWA Sepolia (chain ID `91342`) · Explorer: https://sepolia-explorer.giwa.io
 
-## v3.6 (예고 발행, 실명 전용 토큰): 배포 전
+## v3.6 배포 (예고 발행, 실명 전용 토큰), 2026-11-19 완료
 
 - 바뀐 것: 커브 팩토리가 발행 옵션 `LaunchOptions { startTime, verifiedOnly }`를 받는다. 예고 발행(시작 전 매수·매도 불가, 우선 구간과
   2% 한도는 시작 시각부터, 생성 tx 안 Dev 첫 매수 불가)과 실명 전용(졸업 전까지 실명 지갑만 매수). 옵션을 끄면 v3.5와 같다.
   CurveFactory 하나만 새로 배포하고 나머지는 v3.5(v3.2 인프라)를 재사용한다.
-- 배포 절차: [`docs/DEPLOY_V3_6.md`](DEPLOY_V3_6.md). 주소 기록: `deployments/giwa-sepolia-v3_6.json` (배포 뒤 생성)
+- 배포 절차: [`docs/DEPLOY_V3_6.md`](DEPLOY_V3_6.md). 주소 기록: [`deployments/giwa-sepolia-v3_6.json`](../deployments/giwa-sepolia-v3_6.json)
+- 배포 블록 `41712578` · 배포자 테스트 지갑 [`0xE4D08169f52c065888BeEB6471BBB49d933898C4`](https://sepolia-explorer.giwa.io/address/0xE4D08169f52c065888BeEB6471BBB49d933898C4) · owner
+  [`0x67a29AE83f3320C5E9b81D8a1531dE8FcCBED00C`](https://sepolia-explorer.giwa.io/address/0x67a29AE83f3320C5E9b81D8a1531dE8FcCBED00C) (생성자 인자로 지정)
+- 스크립트(`DeployV3_6.s.sol`)가 아니라 같은 빌드 산출물을 직접 배포했다. Blockscout 소스 검증 완료.
 
 | 컨트랙트 | 주소 | 비고 |
 |---|---|---|
-| CurveFactory (v3.6) | 배포 전 | 신규. priorityWindow 600, priorityMaxHoldingBps 200 |
+| CurveFactory (v3.6) | [`0xC872B81fBFE7853531970F1aFBC1ab6b47078Cc5`](https://sepolia-explorer.giwa.io/address/0xC872B81fBFE7853531970F1aFBC1ab6b47078Cc5) | 신규 · 블록 `41712578` · 배포 tx [`0x59bb7922…`](https://sepolia-explorer.giwa.io/tx/0x59bb79222d19c40b88e99b2e660ff15bb9b36ea146525cc3c5f36d59ee20f1ec). priorityWindow 600, priorityMaxHoldingBps 200, 예고 범위 600~604800초. 웹이 새 커브를 여는 팩토리 |
 | DojangAnyOf, FeeRouter, PoolFactory, MapaeFactory(mock), MockKRW, MembershipTokenDeployer | v3.5와 같은 주소 | 재사용 |
+| CurveFactory (v3.5) | [`0x741E929C7B7c480d04774cBDB5e47A590f626783`](https://sepolia-explorer.giwa.io/address/0x741E929C7B7c480d04774cBDB5e47A590f626783) | 이전 팩토리(`previousCurveFactory`). 그 커브들은 v3.5 규칙 그대로 |
 
 ## v3.3-L1 배포 (L1 공모 수수료 범위 0~5%, 처음 값 0%), 2026-11-17 완료
 
