@@ -131,19 +131,19 @@ function Nav() {
 
     return (
         <div className="border-b border-ink-700 sticky top-0 z-10" style={{background: "rgba(26,21,16,.94)", backdropFilter: "blur(8px)"}}>
-            {/* 1줄: 로고 + (데스크톱 인라인 탭) + [faucet + 지갑] */}
+            {/* 1줄: 로고 + (xl 이상 인라인 탭) + [faucet + 지갑] */}
             <div className="max-w-page mx-auto px-4 sm:px-8 min-h-[60px] sm:min-h-[64px] py-2 flex items-center gap-x-3 sm:gap-x-8">
                 <NavLink to="/" className="flex items-center gap-2.5 flex-none">
                     <img src={`${import.meta.env.BASE_URL}logo.png`} alt={tr.nav.logoAlt} className="h-9 w-auto block" />
                     {/* wordmark hidden below sm so logo + KO/EN + faucet + wallet chip fit in 390px */}
                     <span className="hidden sm:inline font-serif text-[17px] font-bold text-hanji-100" style={{letterSpacing: "0.16em"}}>MAPAE</span>
                 </NavLink>
-                <nav className="hidden sm:flex gap-1 items-center flex-1 min-w-0">
+                <nav className="hidden xl:flex gap-1 items-center flex-1 min-w-0">
                     {tabs.map((t) => (
                         <Link key={t.to} to={t.to} className={inlineCls(t.active)}>{t.label}</Link>
                     ))}
                 </nav>
-                <div className="flex-1 sm:flex-none" />
+                <div className="flex-1 xl:flex-none" />
                 <div className="flex items-center gap-2 flex-none">
                     <LangToggle />
                     {faucetBtn}
@@ -152,8 +152,8 @@ function Nav() {
                     {wallet}
                 </div>
             </div>
-            {/* 2줄(모바일 전용): 상단 탭 3등분 풀폭 */}
-            <nav className={`grid ${tabs.length === 5 ? "grid-cols-5" : tabs.length === 4 ? "grid-cols-4" : "grid-cols-3"} sm:hidden border-t border-ink-700`}>
+            {/* 2줄(xl 미만): 상단 탭 등분 풀폭 */}
+            <nav className={`grid ${tabs.length === 5 ? "grid-cols-5" : tabs.length === 4 ? "grid-cols-4" : "grid-cols-3"} xl:hidden border-t border-ink-700`}>
                 {tabs.map((t) => (
                     <Link key={t.to} to={t.to} className={gridCls(t.active)}>{t.label}</Link>
                 ))}
