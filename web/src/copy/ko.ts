@@ -1057,6 +1057,8 @@ export const ko = {
     // 팔로우와 피드 (결정 53): 따라 사기, 추천, 손익 순위 없음
     follow: {
         counts: (followers: number, following: number) => `팔로워 ${followers} · 팔로잉 ${following}`,
+        /** W-T65: the counts with each number set apart (.num); numFirst: the number before its word */
+        countWords: {numFirst: false as boolean, followers: (_n: number) => "팔로워", following: "팔로잉"},
         followersNote: "실명 지갑 기준",
         follow: "팔로우",
         following: "팔로잉",
@@ -1077,6 +1079,7 @@ export const ko = {
         /** held null: balances could not be read (shown as "–") */
         counts: (held: number | null, launched: number) => `보유 토큰 ${held === null ? "–" : `${held}개`} · 발행한 토큰 ${launched}개`,
         tabs: {holdings: "보유", launched: "발행", trades: "거래"},
+        tabsLabel: "지갑 정보",
         cols: {token: "토큰", balance: "보유 수량", value: "평가 금액", unrealized: "평가 손익", share: "비율"},
         groups: {holding: "보유 중", soldOut: "모두 판 토큰"},
         note: "손익은 매수 평균가 기준이에요. 전송으로 받은 수량은 계산에서 빼고, 평가 금액은 지금 가격으로 계산해요. 실제로 팔 때는 수수료와 가격 영향만큼 달라질 수 있어요",
