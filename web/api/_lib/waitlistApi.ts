@@ -7,15 +7,22 @@
 // GET  ?action=land[&ref][&lang]     -> 302 /#/waitlist (the /waitlist rewrite)
 // GET  ?share=<code>                  -> link preview HTML (no DB read)
 // GET  (no params)                    -> my state (private, no-store)
-// POST {action: wallet | email | email-remove | logout}
+// POST {action: wallet | email | email-remove | logout | mission (W-T70)}
 import {isAddress, recoverMessageAddress} from "viem";
 import {cors, forbiddenOrigin, json} from "./http.js";
 import {paramsAllowed} from "./chainApi.js";
-import type {WaitlistJoin, WaitlistMe} from "./db.js";
+import type {WaitlistJoin, WaitlistMe, WaitlistRank} from "./db.js";
 import {
     appPath,
     authorizeUrl,
     emailConfig,
+    followUrl,
+    isMission,
+    Mission,
+    pointsConfig,
+    POINT_WEIGHTS,
+    pointsOf,
+    repostUrl,
     isRefCode,
     isWaitlistLang,
     maskEmail,
@@ -39,12 +46,14 @@ import {
 
 export type WaitlistStore = {
     join(j: WaitlistJoin): Promise<{inserted: boolean} | "ref_code_taken">;
-    me(xid: string): Promise<WaitlistMe | null>;
+    me(xid: string, rank: WaitlistRank): Promise<WaitlistMe | null>;
     setWallet(xid: string, wallet: string): Promise<"ok" | "taken" | "no_account">;
     setEmail(xid: string, email: string): Promise<boolean>;
     removeEmail(xid: string): Promise<void>;
     /** W-T52: the line number of the account with this referral code, null when none. */
-    positionByCode(code: string): Promise<number | null>;
+    positionByCode(code: string, rank: WaitlistRank): Promise<number | null>;
+    /** W-T70: records a mission's first press; false when the account row is gone. */
+    setMission(xid: string, mission: Mission): Promise<boolean>;
 };
 
 export type WaitlistDeps = {
@@ -209,12 +218,12 @@ const redirect = (location: string, cookies: string[] = []) => {
     return new Response(null, {status: 302, headers: h});
 };
 
-async function card(code: string | null, origin: string, deps: WaitlistDeps): Promise<Response> {
+async function card(code: string | null, origin: string, rank: WaitlistRank, deps: WaitlistDeps): Promise<Response> {
     const fallback = () => redirect(shareImage(origin));
     if (!isRefCode(code)) return fallback();
     let position: number | null;
     try {
-        position = await deps.store().positionByCode(code);
+        position = await deps.store().positionByCode(code, rank);
     } catch (e) {
         console.error("waitlist card: position query failed", e);
         return fallback();
@@ -247,6 +256,43 @@ export async function handleWaitlist(request: Request, deps: WaitlistDeps): Prom
     const cfg = conf.config;
     const email = emailConfig(deps.env);
     if (!email.enabled && email.misconfigured) console.error("waitlist: FEATURE_WAITLIST_EMAIL is on but WAITLIST_CONTACT_EMAIL is missing; the email field stays off");
+    // W-T70: points and missions. Off: every answer and the line order are exactly as before.
+    const pts = pointsConfig(deps.env);
+    if (pts.enabled && pts.repostMisconfigured) console.error("waitlist: WAITLIST_REPOST_POST_ID is not 1 to 20 digits; the repost mission stays off");
+    const rank: WaitlistRank = pts.enabled ? "points" : "referrals";
+    const pointsFields = pts.enabled ? {pointsEnabled: true, weights: POINT_WEIGHTS} : {};
+    const emailFields = {emailEnabled: email.enabled, contact: email.enabled ? email.contact : null};
+    /** My state (GET, and the answer of a mission POST): null when the account row is gone. */
+    const meBody = async (xid: string): Promise<Record<string, unknown> | null> => {
+        const me = await deps.store().me(xid, rank);
+        if (!me) return null;
+        const base = {
+            joined: true,
+            // the wallet message names the X account (walletMessage), so the page needs the id
+            xUserId: xid,
+            username: me.username,
+            position: me.position,
+            referrals: me.referrals,
+            refCode: me.refCode,
+            shareUrl: shareUrl(cfg.origin, me.refCode),
+            wallet: me.wallet,
+            email: maskEmail(me.email),
+            ...emailFields,
+        };
+        if (!pts.enabled) return base;
+        const followed = me.followed === true;
+        const reposted = me.reposted === true;
+        return {
+            ...base,
+            ...pointsFields,
+            points: me.points ?? pointsOf({referrals: me.referrals, followed, reposted, wallet: me.wallet}),
+            missions: {
+                follow: {done: followed, url: followUrl()},
+                repost: pts.repostId ? {done: reposted, url: repostUrl(pts.repostId)} : null,
+                wallet: {done: me.wallet !== null},
+            },
+        };
+    };
     const random = deps.random ?? defaultRandom;
     const now = deps.nowSec();
     const url = new URL(request.url);
@@ -257,7 +303,7 @@ export async function handleWaitlist(request: Request, deps: WaitlistDeps): Prom
         // render error all redirect to the fixed card (errors are logged).
         if (p.has("card")) {
             if (!paramsAllowed(p, ["card"])) return json(400, {error: "bad_request"});
-            return card(p.get("card"), cfg.origin, deps);
+            return card(p.get("card"), cfg.origin, rank, deps);
         }
         // navigations (link previews, the /waitlist address): extra parameters are ignored
         if (p.has("share")) {
@@ -311,25 +357,12 @@ export async function handleWaitlist(request: Request, deps: WaitlistDeps): Prom
         const c = cors(request);
         if (!c.allowed) return forbiddenOrigin(c);
         if (!paramsAllowed(p, [])) return json(400, {error: "bad_request"}, c.headers);
-        const emailFields = {emailEnabled: email.enabled, contact: email.enabled ? email.contact : null};
         const s = await verifyCookie<SessionPayload>(readCookie(request, SESSION_COOKIE), cfg.sessionSecret, now);
-        if (!s) return json(200, {joined: false, ...emailFields}, {...c.headers, ...NO_STORE});
+        if (!s) return json(200, {joined: false, ...emailFields, ...pointsFields}, {...c.headers, ...NO_STORE});
         try {
-            const me = await deps.store().me(s.xid);
-            if (!me) return json(200, {joined: false, ...emailFields}, {...c.headers, ...NO_STORE});
-            return json(200, {
-                joined: true,
-                // the wallet message names the X account (walletMessage), so the page needs the id
-                xUserId: s.xid,
-                username: me.username,
-                position: me.position,
-                referrals: me.referrals,
-                refCode: me.refCode,
-                shareUrl: shareUrl(cfg.origin, me.refCode),
-                wallet: me.wallet,
-                email: maskEmail(me.email),
-                ...emailFields,
-            }, {...c.headers, ...NO_STORE});
+            const body = await meBody(s.xid);
+            if (!body) return json(200, {joined: false, ...emailFields, ...pointsFields}, {...c.headers, ...NO_STORE});
+            return json(200, body, {...c.headers, ...NO_STORE});
         } catch (e) {
             console.error("waitlist: read failed", e);
             return json(503, {error: "unavailable"}, {...c.headers, ...NO_STORE});
@@ -341,7 +374,7 @@ export async function handleWaitlist(request: Request, deps: WaitlistDeps): Prom
     if (!c.allowed) return forbiddenOrigin(c);
     const h = {...c.headers, ...NO_STORE};
     if (!paramsAllowed(p, [])) return json(400, {error: "bad_request"}, h);
-    let body: {action?: unknown; wallet?: unknown; signature?: unknown; email?: unknown; consent?: unknown};
+    let body: {action?: unknown; wallet?: unknown; signature?: unknown; email?: unknown; consent?: unknown; mission?: unknown};
     try {
         const text = await request.text();
         if (text.length > MAX_POST) return json(413, {error: "too_large"}, h);
@@ -382,6 +415,16 @@ export async function handleWaitlist(request: Request, deps: WaitlistDeps): Prom
             if (!e) return json(400, {error: "bad_email"}, h);
             if (!(await deps.store().setEmail(s.xid, e))) return json(401, {error: "no_session"}, h);
             return json(200, {ok: true, email: maskEmail(e)}, h);
+        }
+        if (body.action === "mission") {
+            // W-T70: pressing the button counts at once (no X API call); the first press is kept
+            if (!pts.enabled) return json(404, {error: "disabled"}, h);
+            if (!isMission(body.mission)) return json(400, {error: "bad_mission"}, h);
+            if (body.mission === "repost" && !pts.repostId) return json(404, {error: "disabled"}, h);
+            if (!(await deps.store().setMission(s.xid, body.mission))) return json(401, {error: "no_session"}, h);
+            const state = await meBody(s.xid);
+            if (!state) return json(401, {error: "no_session"}, h);
+            return json(200, state, h);
         }
         if (body.action === "email-remove") {
             await deps.store().removeEmail(s.xid);

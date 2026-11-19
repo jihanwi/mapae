@@ -7,6 +7,7 @@ import type {FoldRow} from "./positions.js";
 import type {Interval, KnownCurve, RangeWrite} from "./indexer.js";
 import type {KnownOffering, RangeWriteL1} from "./indexerL1.js";
 import {ADDR_L1, L1_FACTORIES} from "../../src/contracts/addressesV3L1.js";
+import {POINTS_FOLLOW, POINTS_REFERRAL, POINTS_REPOST, POINTS_WALLET, type Mission} from "./waitlist.js";
 
 export type Sql = NeonQueryFunction<false, false>;
 
@@ -190,6 +191,10 @@ const SCHEMA = [
         created_at timestamptz DEFAULT now()
     )`,
     `CREATE INDEX IF NOT EXISTS mapae_waitlist_rank ON mapae_waitlist (referrals DESC, seq ASC)`,
+    // W-T70: the follow and repost missions (first press only; additive, no index: a full scan is
+    // enough at the 1,000-account target)
+    `ALTER TABLE mapae_waitlist ADD COLUMN IF NOT EXISTS followed_at timestamptz NULL`,
+    `ALTER TABLE mapae_waitlist ADD COLUMN IF NOT EXISTS reposted_at timestamptz NULL`,
 ];
 
 export async function ensureSchema(sql: Sql): Promise<void> {
@@ -1098,12 +1103,55 @@ export const WAITLIST_ME_SQL = `
                  WHERE o.referrals > m.referrals OR (o.referrals = m.referrals AND o.seq < m.seq)))::int AS position
     FROM mapae_waitlist m WHERE m.x_user_id = $1::text`;
 
-/** `email` is the stored address; the API masks it before answering (never sent as is). */
-export type WaitlistMe = {username: string; refCode: string; referrals: number; wallet: string | null; email: string | null; position: number};
+/** W-T70: the points of row `t` in SQL, built from the POINTS_* constants (never typed in twice). */
+export const pointsSql = (t: string) =>
+    `(${t}.referrals * ${POINTS_REFERRAL} + (CASE WHEN ${t}.followed_at IS NOT NULL THEN ${POINTS_FOLLOW} ELSE 0 END)` +
+    ` + (CASE WHEN ${t}.reposted_at IS NOT NULL THEN ${POINTS_REPOST} ELSE 0 END) + (CASE WHEN ${t}.wallet IS NOT NULL THEN ${POINTS_WALLET} ELSE 0 END))`;
 
-export async function waitlistMe(sql: Sql, xid: string): Promise<WaitlistMe | null> {
-    const rows = (await sql.query(WAITLIST_ME_SQL, [xid])) as WaitlistMe[];
+/** W-T70 (FEATURE_WAITLIST_POINTS on): the account with its missions, points and position, in one
+ *  statement: 1 + rows with more points + rows with as many points and a smaller seq. */
+export const WAITLIST_ME_POINTS_SQL = `
+    SELECT m.username, m.ref_code AS "refCode", m.referrals, m.wallet, m.email,
+           (m.followed_at IS NOT NULL) AS followed, (m.reposted_at IS NOT NULL) AS reposted,
+           ${pointsSql("m")}::int AS points,
+           (1 + (SELECT count(*) FROM mapae_waitlist o
+                 WHERE ${pointsSql("o")} > ${pointsSql("m")} OR (${pointsSql("o")} = ${pointsSql("m")} AND o.seq < m.seq)))::int AS position
+    FROM mapae_waitlist m WHERE m.x_user_id = $1::text`;
+
+/** W-T70: the card's position under the points rule (same rule as WAITLIST_ME_POINTS_SQL). */
+export const WAITLIST_POSITION_BY_CODE_POINTS_SQL = `
+    SELECT (1 + (SELECT count(*) FROM mapae_waitlist o
+                 WHERE ${pointsSql("o")} > ${pointsSql("m")} OR (${pointsSql("o")} = ${pointsSql("m")} AND o.seq < m.seq)))::int AS position
+    FROM mapae_waitlist m WHERE m.ref_code = $1::text`;
+
+/** Which rule orders the line: "referrals" (W-T43, the flag off) or "points" (W-T70). */
+export type WaitlistRank = "referrals" | "points";
+
+/** `email` is the stored address; the API masks it before answering (never sent as is).
+ *  followed, reposted and points come only with the "points" rank. */
+export type WaitlistMe = {
+    username: string;
+    refCode: string;
+    referrals: number;
+    wallet: string | null;
+    email: string | null;
+    position: number;
+    followed?: boolean;
+    reposted?: boolean;
+    points?: number;
+};
+
+export async function waitlistMe(sql: Sql, xid: string, rank: WaitlistRank = "referrals"): Promise<WaitlistMe | null> {
+    const rows = (await sql.query(rank === "points" ? WAITLIST_ME_POINTS_SQL : WAITLIST_ME_SQL, [xid])) as WaitlistMe[];
     return rows[0] ?? null;
+}
+
+/** W-T70: records a mission's first press (a second press keeps the first time). False when the
+ *  account row is gone. */
+export async function setWaitlistMission(sql: Sql, xid: string, mission: Mission): Promise<boolean> {
+    const col = mission === "follow" ? "followed_at" : "reposted_at";
+    const rows = (await sql.query(`UPDATE mapae_waitlist SET ${col} = COALESCE(${col}, now()) WHERE x_user_id = $1::text RETURNING x_user_id`, [xid])) as unknown[];
+    return rows.length > 0;
 }
 
 /** W-T52: the position of the account with this referral code (the share card), same rule as
@@ -1113,8 +1161,8 @@ export const WAITLIST_POSITION_BY_CODE_SQL = `
                  WHERE o.referrals > m.referrals OR (o.referrals = m.referrals AND o.seq < m.seq)))::int AS position
     FROM mapae_waitlist m WHERE m.ref_code = $1::text`;
 
-export async function waitlistPositionByCode(sql: Sql, code: string): Promise<number | null> {
-    const rows = (await sql.query(WAITLIST_POSITION_BY_CODE_SQL, [code])) as {position: number}[];
+export async function waitlistPositionByCode(sql: Sql, code: string, rank: WaitlistRank = "referrals"): Promise<number | null> {
+    const rows = (await sql.query(rank === "points" ? WAITLIST_POSITION_BY_CODE_POINTS_SQL : WAITLIST_POSITION_BY_CODE_SQL, [code])) as {position: number}[];
     return rows[0]?.position ?? null;
 }
 

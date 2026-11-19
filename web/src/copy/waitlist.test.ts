@@ -5,6 +5,11 @@ import {en} from "./en";
 import {waitlistShareHtml} from "../../api/_lib/waitlist";
 import indexHtml from "../../index.html?raw";
 
+/** W-T70: the promise wording still forbidden in the waitlist and privacy copy ("포인트" / "points" are allowed). */
+const KO_PROMISE = [/에어드랍/, /에어드롭/, /보상/, /얼리 혜택/, /혜택/, /수익/, /투자/];
+const EN_PROMISE = [/airdrop/i, /reward/i, /early (access|perk|bonus)/i, /profit/i, /invest/i, /—/];
+const promiseHits = (s: string, lang: "ko" | "en") => (lang === "ko" ? KO_PROMISE : EN_PROMISE).filter((w) => w.test(s)).map(String);
+
 const texts = (o: Record<string, unknown>): string[] =>
     Object.entries(o).flatMap(([, v]) => (typeof v === "string" ? [v] : typeof v === "function" ? [String((v as (a: unknown) => unknown)("3"))] : []));
 
@@ -33,14 +38,43 @@ describe("waitlist copy (W-T43)", () => {
         expect(ko.privacy.contact("a@b.co")).toBe("문의: a@b.co");
         expect(en.privacy.contact("a@b.co")).toBe("Contact: a@b.co");
     });
-    it("no airdrop, points, rewards, early perks, profit or investment wording (note1 is a negation and is the only exception)", () => {
+    // W-T70: "포인트" / "points" are allowed in the waitlist and privacy copy (the joined screen shows
+    // them); airdrop, reward, perk, profit and investment wording stays forbidden.
+    it("no airdrop, rewards, early perks, profit or investment wording (note1 is a negation and is the only exception)", () => {
         const koAll = [...texts(ko.waitlist), ...texts(ko.privacy)].filter((s) => s !== ko.waitlist.note1);
         const enAll = [...texts(en.waitlist), ...texts(en.privacy)].filter((s) => s !== en.waitlist.note1);
-        for (const s of koAll) for (const w of [/에어드랍/, /에어드롭/, /포인트/, /보상/, /얼리 혜택/, /혜택/, /수익/, /투자/]) expect(s, `${w} in ${s}`).not.toMatch(w);
-        for (const s of enAll) for (const w of [/airdrop/i, /\bpoints?\b/i, /reward/i, /early (access|perk|bonus)/i, /profit/i, /invest/i, /—/]) expect(s, `${w} in ${s}`).not.toMatch(w);
+        for (const s of koAll) expect(promiseHits(s, "ko"), s).toEqual([]);
+        for (const s of enAll) expect(promiseHits(s, "en"), s).toEqual([]);
         expect(ko.waitlist.note1).toContain("약속하지 않아요");
         expect(en.waitlist.note1).toContain("not a promise");
         for (const s of [...koAll, ...enAll, ko.waitlist.note1, en.waitlist.note1]) expect(s).not.toMatch(/vercel\.app/);
+    });
+});
+
+describe("W-T70: points copy", () => {
+    it("the ticket's sentences", () => {
+        expect(ko.waitlist.points("15")).toBe("15 포인트");
+        expect(en.waitlist.points("15")).toBe("15 points");
+        expect(ko.waitlist.pointsPlus(5)).toBe("+5");
+        expect(ko.waitlist.referralEach(10)).toBe("1명당 +10");
+        expect(en.waitlist.referralEach(10)).toBe("+10 each");
+        expect(ko.waitlist.missionsTitle).toBe("순번 올리기");
+        expect(en.waitlist.missionsTitle).toBe("Move up the line");
+        expect(ko.waitlist.missionFollow).toBe("@MapaeGiwa 팔로우");
+        expect(en.waitlist.missionRepost).toBe("Repost the opening post");
+        expect(ko.waitlist.missionNote).toBe("메인넷이 열리기 전에 실제 팔로우와 리포스트를 확인하고 포인트를 다시 계산해요");
+        expect(en.waitlist.missionNote).toBe("We check follows and reposts before mainnet opens and recount points.");
+        expect(ko.privacy.what).toContain("팔로우, 리포스트 버튼을 누른 기록");
+        expect(en.privacy.what).toContain("and whether you pressed the follow and repost buttons");
+        // note1 is unchanged
+        expect(ko.waitlist.note1).toBe("순번은 오픈 알림을 보내는 순서예요. 토큰이나 보상을 약속하지 않아요");
+    });
+    it("the checker still catches reward wording (and lets points through)", () => {
+        expect(promiseHits("포인트로 보상을 받아요", "ko")).toEqual([String(/보상/)]);
+        expect(promiseHits("에어드랍 혜택", "ko").length).toBe(2);
+        expect(promiseHits("Earn rewards with points", "en")).toEqual([String(/reward/i)]);
+        expect(promiseHits("15 포인트", "ko")).toEqual([]);
+        expect(promiseHits("15 points", "en")).toEqual([]);
     });
 });
 
