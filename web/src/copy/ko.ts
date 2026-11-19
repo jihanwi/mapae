@@ -953,6 +953,9 @@ export const ko = {
         opensIn: (t: string) => `거래 시작까지 ${t}`,
         opensAt: (when: string) => `${when} 시작`,
         soon: "곧 시작",
+        // W-T62: a day or more ahead
+        upcoming: "예정",
+        daysHours: (d: number, h: number) => `${d}일 ${h}시간`,
         opening: "곧 거래가 열려요",
         verifiedOnly: "실명 전용",
         verifiedOnlyGraduated: "실명 전용으로 졸업",

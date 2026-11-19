@@ -50,7 +50,9 @@ export function Medallion({
     );
 }
 
-export function Badge({kind, children}: {kind: "open" | "frozen" | "neutral" | "partial"; children: ReactNode}) {
+/** `wrap` (W-T62): the label may break onto a second line inside the pill on a narrow row instead
+ *  of running past it (the pill keeps one line whenever it fits). */
+export function Badge({kind, children, wrap = false}: {kind: "open" | "frozen" | "neutral" | "partial"; children: ReactNode; wrap?: boolean}) {
     const style = {
         open: {border: "1px solid rgba(122,155,109,.5)", color: "#7A9B6D"},
         frozen: {border: "1px solid rgba(195,154,59,.55)", color: "#C39A3B"},
@@ -58,7 +60,10 @@ export function Badge({kind, children}: {kind: "open" | "frozen" | "neutral" | "
         partial: {border: "1px solid #8A6D2F", color: "#C39A3B"},
     }[kind];
     return (
-        <span className="inline-flex items-center gap-1.5 rounded-full text-[12px] whitespace-nowrap" style={{...style, padding: "4px 10px"}}>
+        <span
+            className={`inline-flex items-center gap-1.5 text-[12px] ${wrap ? "max-w-full rounded-[12px]" : "rounded-full whitespace-nowrap"}`}
+            style={{...style, padding: "4px 10px"}}
+        >
             {(kind === "open" || kind === "frozen") && (
                 <span className="w-[5px] h-[5px] rounded-full" style={{background: style.color}} />
             )}

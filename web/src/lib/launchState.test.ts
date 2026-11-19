@@ -1,5 +1,6 @@
 import {describe, expect, it} from "vitest";
-import {isUpcoming, priorityNotice, startsIn, tradeView, TradeViewInput, windowSec} from "./launchState";
+import {daysHours, dayScale, isUpcoming, listStartKey, nextTickMs, priorityNotice, startsIn, tradeView, TradeViewInput, windowSec} from "./launchState";
+import {hms} from "./offeringStrip";
 import {ko} from "../copy/ko";
 import {en} from "../copy/en";
 
@@ -50,5 +51,41 @@ describe("priority-window notice (W-T61 fix)", () => {
     it("other tokens keep the window line", () => {
         expect(priorityNotice(false)).toBe("window");
         expect(ko.priority.banner("06:52")).toBe("지금은 실명 지갑만 살 수 있어요. 06:52 뒤에는 누구나 살 수 있어요");
+    });
+});
+
+describe("start display a day or more ahead (W-T62)", () => {
+    /** What the trade panel's big line shows, as LaunchStatus renders it. */
+    const panel = (left: number, c: typeof ko | typeof en) => (dayScale(left) ? c.launch.daysHours(daysHours(left).d, daysHours(left).h) : hms(left));
+    const D = 86_400;
+    it("86,399 s: still the HH:MM:SS countdown, list says 'opens soon'", () => {
+        expect(panel(D - 1, ko)).toBe("23:59:59");
+        expect(panel(D - 1, en)).toBe("23:59:59");
+        expect(listStartKey(D - 1)).toBe("soon");
+        expect(ko.launch[listStartKey(D - 1)]).toBe("곧 시작");
+        expect(en.launch[listStartKey(D - 1)]).toBe("Opens soon");
+    });
+    it("86,400 s exactly: days and hours, list says 'upcoming'", () => {
+        expect(panel(D, ko)).toBe("1일 0시간");
+        expect(panel(D, en)).toBe("1d 0h");
+        expect(listStartKey(D)).toBe("upcoming");
+        expect(ko.launch[listStartKey(D)]).toBe("예정");
+        expect(en.launch[listStartKey(D)]).toBe("Upcoming");
+    });
+    it("6 d 22 h 59 m: minutes are dropped", () => {
+        const left = 6 * D + 22 * 3600 + 59 * 60;
+        expect(panel(left, ko)).toBe("6일 22시간");
+        expect(panel(left, en)).toBe("6d 22h");
+        expect(listStartKey(left)).toBe("upcoming");
+    });
+    it("7 days exactly", () => {
+        expect(panel(7 * D, ko)).toBe("7일 0시간");
+        expect(panel(7 * D, en)).toBe("7d 0h");
+    });
+    it("redraws once a minute above a day, but lands exactly on the switch to seconds", () => {
+        expect(nextTickMs(7 * D)).toBe(60_000);
+        expect(nextTickMs(D + 30)).toBe(31_000); // the next draw is at 86,399 s
+        expect(nextTickMs(D)).toBe(1_000);
+        expect(nextTickMs(D - 1)).toBe(1_000);
     });
 });

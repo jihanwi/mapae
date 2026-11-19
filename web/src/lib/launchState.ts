@@ -37,8 +37,23 @@ export const isUpcoming = (c: {graduated: boolean; startTime: bigint}, nowSec: n
 /** Seconds until the start, never negative. */
 export const startsIn = (startTime: bigint, nowSec: number) => Math.max(0, Number(startTime) - Math.floor(nowSec));
 
-/** Over a day away the start is shown as a date, otherwise as an HH:MM:SS countdown. */
+/** W-T62: from exactly 24 h (86,400 s) away the start is shown as days and hours (panel) or a
+ *  date (badges), below it as an HH:MM:SS countdown. */
 export const COUNTDOWN_MAX_SEC = 86_400;
+
+/** True when `left` seconds is a day or more: the day-scale display. */
+export const dayScale = (left: number) => left >= COUNTDOWN_MAX_SEC;
+
+/** Whole days and the hours left over (minutes dropped): 6 d 22 h 59 m -> {d: 6, h: 22}. */
+export const daysHours = (left: number) => ({d: Math.floor(left / 86_400), h: Math.floor((left % 86_400) / 3600)});
+
+/** The list badge's first word: "예정" / "Upcoming" a day or more ahead, "곧 시작" / "Opens soon" below. */
+export type ListStartKey = "upcoming" | "soon";
+export const listStartKey = (left: number): ListStartKey => (dayScale(left) ? "upcoming" : "soon");
+
+/** Delay until the next redraw of a start countdown: every second below a day; above it once a
+ *  minute, but never past the moment the display switches to seconds (left reaching 86,399). */
+export const nextTickMs = (left: number) => (dayScale(left) ? Math.min(60, left - (COUNTDOWN_MAX_SEC - 1)) * 1000 : 1000);
 
 /** The first line of the priority-window notice: a verified-only curve keeps the real-name rule
  *  after the window, so it states that rule instead of "anyone can buy after {t}". The second line
