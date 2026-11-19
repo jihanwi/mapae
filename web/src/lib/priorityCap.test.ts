@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {capLeft, exceedsCap, maxQuoteForCap} from "./priorityCap";
+import {capFull, capLeft, exceedsCap, maxQuoteForCap, truncateDecimals} from "./priorityCap";
 import {CURVE_SUPPLY, quoteBuyWithFees} from "./curveMath";
 import {ko} from "../copy/ko";
 import {en} from "../copy/en";
@@ -76,5 +76,40 @@ describe("errors.ts maps the revert (W-T54)", () => {
         const e = new ContractFunctionRevertedError({abi: CurveSaleAbi, data, functionName: "buy"});
         expect(humanError(e, ko, "v3")).toBe(ko.errors.PriorityHoldingExceeded);
         expect(humanError(e, en, "v3")).toBe(en.errors.PriorityHoldingExceeded);
+    });
+});
+
+describe("W-T54b: limit reached and the input amount", () => {
+    const q = (left: bigint) => maxQuoteForCap(VQ_K, 0n, 0n, FEE, left);
+    it("full when nothing or less than one token is left", () => {
+        expect(capFull(0n, q(0n))).toBe(true);
+        expect(capFull(1n, q(1n))).toBe(true);
+        expect(capFull(E18 - 1n, q(E18 - 1n))).toBe(true);
+        expect(capFull(E18, q(E18))).toBe(false);
+        expect(capFull(CAP, q(CAP))).toBe(false);
+        // a quote of 0 is full whatever the room says
+        expect(capFull(CAP, 0n)).toBe(true);
+    });
+    it("after an 'Up to limit' buy the leftover room counts as full", () => {
+        const bought = quoteBuyWithFees(VQ_K, 0n, 0n, q(CAP), FEE).tokensOut;
+        const left = capLeft(CAP, bought);
+        expect(left).toBeLessThan(E18);
+        expect(capFull(left, maxQuoteForCap(VQ_K, 0n, 0n, FEE, left))).toBe(true);
+    });
+    it("the input amount is cut to 6 decimals, never up, and still fits the cap", () => {
+        expect(truncateDecimals(8602_586373287010229684n)).toBe(8602_586373000000000000n);
+        expect(truncateDecimals(10n ** 12n - 1n)).toBe(0n);
+        expect(truncateDecimals(5n * 10n ** 12n)).toBe(5n * 10n ** 12n);
+        for (const [vq, left] of [
+            [VQ_K, CAP],
+            [VQ_E, CAP],
+            [VQ_K, 1234n * E18],
+        ] as [bigint, bigint][]) {
+            const exact = maxQuoteForCap(vq, 0n, 0n, FEE, left);
+            const cut = truncateDecimals(exact);
+            expect(cut).toBeLessThanOrEqual(exact);
+            expect(exact - cut).toBeLessThan(10n ** 12n);
+            expect(quoteBuyWithFees(vq, 0n, 0n, cut, FEE).tokensOut).toBeLessThanOrEqual(left);
+        }
     });
 });

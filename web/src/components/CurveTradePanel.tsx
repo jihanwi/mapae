@@ -14,7 +14,7 @@ import {
     useTradeCta,
     ZERO,
 } from "../hooks/curves";
-import {CurveFactoryAbi, CurveSaleAbi, MapaePoolV3Abi, MembershipTokenV3Abi} from "../contracts/abisV3";
+import {CurveFactoryAbi, CurveSaleAbi, MapaePoolV3Abi, MembershipTokenV3Abi, MockDojangV3Abi} from "../contracts/abisV3";
 import {ADDR_V3} from "../contracts/addressesV3";
 import {giwaSepolia} from "../config/chain";
 import {fmt, fmtCeil, sanitizeAmountInput} from "../lib/format";
@@ -25,7 +25,7 @@ import {useApprovalStep} from "../hooks/approval";
 import {PrimaryBtn, SecondaryBtn} from "./ui";
 import {opensOnboarding, useOnboardingModal} from "./OnboardingModal";
 import {minSec, priorityRemaining} from "../lib/priority";
-import {capLeft, exceedsCap, maxQuoteForCap} from "../lib/priorityCap";
+import {capFull, capLeft, exceedsCap, maxQuoteForCap, truncateDecimals} from "../lib/priorityCap";
 import {GuardPanel, ImpactRows, SlippagePicker, useGuardedSend, useSlippagePref} from "./TradeGuard";
 import {useNow} from "./feed";
 import {useActivity} from "../hooks/activity";
@@ -92,7 +92,8 @@ function useAmount(raw: string) {
 
 /** W-T54 (v3.5): the priority-window holding cap for the connected wallet on a curve that has not
  *  graduated (the curve's priorityMaxHolding, read with the detail fields). null outside the window,
- *  without a wallet, or until the wallet's token balance is read. */
+ *  without a wallet, until the wallet's token balance is read, or (W-T54b) when the wallet is not
+ *  real-name verified: it cannot buy in the window at all, so no cap line is shown. */
 type PriorityCap = {cap: bigint; held: bigint; left: bigint; remainingSec: number};
 function usePriorityCap(c: CurveDetail, address: Address | undefined): PriorityCap | null {
     const openNow = !c.graduated && priorityRemaining(c.priorityUntil, Date.now() / 1000) > 0;
@@ -107,7 +108,15 @@ function usePriorityCap(c: CurveDetail, address: Address | undefined): PriorityC
         chainId: giwaSepolia.id,
         query: {enabled: active, refetchInterval: 6_000},
     });
-    if (!active || bal.data === undefined) return null;
+    const verified = useReadContract({
+        address: ADDR_V3.dojangAnyOf,
+        abi: MockDojangV3Abi,
+        functionName: "isVerified",
+        args: [address ?? ZERO],
+        chainId: giwaSepolia.id,
+        query: {enabled: active, refetchInterval: 15_000},
+    });
+    if (!active || bal.data === undefined || verified.data !== true) return null;
     const cap = c.priorityMaxHolding;
     const held = bal.data as bigint;
     return {cap, held, left: capLeft(cap, held), remainingSec};
@@ -160,9 +169,12 @@ export function CurveTradePanel({c, side: sideProp, onSideChange, paused = false
     const clear = () => setRaw("");
     const cap = usePriorityCap(c, address);
     const capOn = side === "buy" && !c.graduated && cap !== null;
+    // exact wei amount that stays within the cap; W-T54b: the input gets it cut down to 6 decimals
+    const capQuote = cap ? maxQuoteForCap(c.virtualQuote, c.r, c.s, BigInt(c.totalFeeBps), cap.left) : 0n;
+    const full = cap ? capFull(cap.left, capQuote) : false;
     const fillToCap = () => {
         if (!cap) return;
-        setRaw(formatUnits(maxQuoteForCap(c.virtualQuote, c.r, c.s, BigInt(c.totalFeeBps), cap.left), 18));
+        setRaw(formatUnits(truncateDecimals(capQuote, 6), 18));
     };
 
     return (
@@ -217,11 +229,11 @@ export function CurveTradePanel({c, side: sideProp, onSideChange, paused = false
             {capOn && cap && (
                 <div className="flex items-center justify-between gap-x-3 gap-y-1 flex-wrap mb-3 text-[12px]">
                     <span className="text-brass-400 tabular-nums min-w-0">
-                        {cap.left > 0n
+                        {!full
                             ? tr.trade.priorityCapLeft(fmt(cap.left, 2, tr.locale))
                             : tr.trade.priorityCapFull(tr.trade.capTime(minSec(cap.remainingSec).m, minSec(cap.remainingSec).s))}
                     </span>
-                    {cap.left > 0n && (
+                    {!full && (
                         <button
                             type="button"
                             onClick={fillToCap}

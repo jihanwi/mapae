@@ -33,3 +33,18 @@ export function maxQuoteForCap(vq: bigint, r: bigint, s: bigint, feeBps: bigint,
     }
     return lo;
 }
+
+/** One whole token: below this the remaining room is treated as used up. */
+const ONE_TOKEN = 10n ** 18n;
+
+/** W-T54b: "limit reached" for the screen. True when no quote amount buys anything within the room
+ *  (`maxQuote` is maxQuoteForCap's result) or less than one whole token is left; then the screen
+ *  shows the countdown sentence and no "Up to limit" button. */
+export const capFull = (left: bigint, maxQuote: bigint): boolean => maxQuote === 0n || left < ONE_TOKEN;
+
+/** W-T54b: the "Up to limit" amount for the input, cut down to `decimals` places (never rounded up),
+ *  so it buys at most what the exact amount buys. */
+export function truncateDecimals(wei: bigint, decimals = 6): bigint {
+    const step = 10n ** BigInt(18 - decimals);
+    return wei - (wei % step);
+}
