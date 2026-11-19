@@ -13,15 +13,49 @@ import {OfferingInfo, useOfferingDetailApi} from "../hooks";
 import {fmt, fmtWhen} from "../lib/format";
 import {allocationBps, allocationOf} from "../lib/offeringMath";
 import {bpsPct, spanText} from "../lib/proceedsText";
+import {Eyebrow} from "./ui";
+import {NumText} from "./NumText";
 
 const OFFERING_FNS = ["minCommit", "walletLimit", "cBps", "creatorTokenBps", "lpTokenBps", "swapRoyaltyBps", "swapBurnBps", "offeringFeeBps", "feeRouter"] as const;
 
+/** One dl row (W-T63): name 13.5px hanji-400, value 14px; figures in the value set in .num. */
 function Row({k, v}: {k: string; v: React.ReactNode}) {
     return (
-        <>
-            <span className="text-hanji-400">{k}</span>
-            <span className="text-hanji-100 text-right tabular-nums break-words">{v}</span>
-        </>
+        <div className="flex justify-between gap-4 py-2.5 min-w-0">
+            <dt className="text-[13.5px] text-hanji-400 flex-none max-w-[45%]">{k}</dt>
+            <dd className="m-0 text-[14px] text-hanji-100 text-right min-w-0 break-words">{typeof v === "string" ? <NumText text={v} /> : v}</dd>
+        </div>
+    );
+}
+
+/** W-T63: sale / issuer / liquidity / burned as one bar (2px gaps) with a legend. */
+function AllocationBar({fBps, creatorTokenBps, cBps}: {fBps: number; creatorTokenBps: number; cBps: number}) {
+    const copy = useCopy();
+    const a = allocationBps({fBps, creatorTokenBps, cBps});
+    const parts = (
+        [
+            ["sale", a.sale, "bg-brass-400"],
+            ["issuer", a.issuer, "bg-brass-600"],
+            ["lp", a.lp, "bg-success"],
+            ["burn", a.burn, "bg-hanji-400"],
+        ] as const
+    ).filter(([, bps]) => bps > 0);
+    return (
+        <div className="mb-4">
+            <div role="img" aria-label={allocationText(fBps, creatorTokenBps, cBps, copy)} className="flex gap-[2px] h-[10px] rounded-full overflow-hidden">
+                {parts.map(([k, bps, cls]) => (
+                    <div key={k} className={cls} style={{width: `${bps / 100}%`}} />
+                ))}
+            </div>
+            <ul className="m-0 mt-2.5 p-0 list-none flex flex-wrap gap-x-4 gap-y-1 text-[12.5px] text-hanji-400">
+                {parts.map(([k, bps, cls]) => (
+                    <li key={k} className="inline-flex items-center gap-1.5">
+                        <span aria-hidden="true" className={`w-2 h-2 rounded-full ${cls}`} />
+                        {copy.terms.legend[k]} <span className="num text-hanji-100">{bpsPct(bps)}%</span>
+                    </li>
+                ))}
+            </ul>
+        </div>
     );
 }
 
@@ -75,12 +109,17 @@ export function ChainTerms({o}: {o: OfferingInfo}) {
         [t.mint, t.mintValue],
     ];
     return (
-        <section className="mt-7 bg-ink-800 border border-ink-700 rounded-card p-4 sm:p-6">
-            <h2 className="m-0 text-[17px] font-bold">{t.title}</h2>
-            <p className="m-0 mt-1 mb-4 text-[12px] text-hanji-400">{t.note}</p>
-            <div className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-2 text-[13px]">
-                {rows.map(([k, val]) => <Row key={k} k={k} v={val} />)}
+        <section className="bg-ink-800 border border-ink-700 rounded-card p-4 sm:p-6 min-w-0">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 mb-4">
+                <h2 className="m-0">
+                    <Eyebrow locale={copy.locale}>{t.title}</Eyebrow>
+                </h2>
+                <p className="m-0 text-[12.5px] text-hanji-400">{t.note}</p>
             </div>
+            {creatorBps !== undefined && cBps !== undefined && <AllocationBar fBps={o.fBps} creatorTokenBps={creatorBps} cBps={cBps} />}
+            <dl className="m-0 divide-y divide-ink-800">
+                {rows.map(([k, val]) => <Row key={k} k={k} v={val} />)}
+            </dl>
             {creatorBps !== undefined && cBps !== undefined && allocationBps({fBps: o.fBps, creatorTokenBps: creatorBps, cBps}).burn > 0 && (
                 <p className="m-0 mt-3 text-[12px] text-hanji-400">{t.allocationNote}</p>
             )}

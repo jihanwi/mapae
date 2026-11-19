@@ -35,10 +35,10 @@ describe("offering copy is issuer-neutral (decision 55)", () => {
         expect(texts(scope).filter((t) => t.includes(word))).toEqual([]);
     });
     it("no 장 as a unit", () => {
-        expect(texts(scope).filter((t) => /\d장|\/장|장 |^장$|장\)/.test(t))).toEqual([]);
+        expect(texts(scope).filter((t) => /\d장|\/장|(?<!도)장 |^장$|장\)/.test(t))).toEqual([]);
     });
     it("the confirmed title and subtitle", () => {
         expect(ko.heroTitle).toBe("같은 가격, 같은 기회로 받는 공모");
-        expect(ko.heroSub).toBe("정가 응모 · 균등 배정과 추첨 · 미달 시 환불 또는 부분 발행 · 유동성 영구 잠금");
+        expect(ko.heroSub).toEqual(["정가 응모", "균등 배정과 추첨", "미달 시 환불 또는 부분 발행", "유동성 영구 잠금"]); // W-T63: an array of points
     });
 });

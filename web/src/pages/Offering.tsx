@@ -4,7 +4,7 @@ import {allocationUrl} from "../lib/allocationUrl";
 import {Link, useParams} from "react-router-dom";
 import {useQuery} from "@tanstack/react-query";
 import {useAccount, useReadContracts, useWriteContract} from "wagmi";
-import {Abi, parseUnits} from "viem";
+import {Abi, formatUnits, parseUnits} from "viem";
 import {useCopy} from "../copy";
 import {ADDR_L1} from "../contracts/addressesV3L1";
 import {MapaeVestingL1Abi, OfferingL1Abi} from "../contracts/abisV3L1";
@@ -17,7 +17,10 @@ import {DisclosureSection} from "../components/DisclosureSection";
 import {spanText} from "../lib/proceedsText";
 import {commitBlock, isIssuerWallet} from "../lib/commitGuard";
 import {needsApproval, useApprovalStep} from "../hooks/approval";
-import {Badge, Gauge, Medallion, NetError, PrimaryBtn, SecondaryBtn, Skeleton, TextSkeleton} from "../components/ui";
+import {Badge, Eyebrow, Gauge, Icon, Medallion, NetError, PrimaryBtn, SecondaryBtn, Skeleton, TextSkeleton} from "../components/ui";
+import {ALLOC_README} from "../lib/allocationUrl";
+import {NumText} from "../components/NumText";
+import {quickCommits} from "../lib/offeringList";
 import {RunFn, TxButton} from "../components/tx";
 import {countdown, fmt, sanitizeAmountInput} from "../lib/format";
 import {explorerAddr, giwaSepolia} from "../config/chain";
@@ -157,64 +160,90 @@ function OfferingView() {
         }
     };
 
+    const quick = quickCommits(minC, wl, myCommitted);
+    const statusBadge = o.settled ? <Badge kind="neutral">{copy.badge.settled}</Badge>
+        : o.refunding ? <Badge kind="neutral">{copy.badge.refunding}</Badge>
+        : ended ? <Badge kind="neutral">{copy.badge.ended}</Badge>
+        : frozen ? <Badge kind="frozen">{copy.badge.frozen}</Badge>
+        : <Badge kind="open">{copy.badge.open}</Badge>;
+    const initial = c ? [...c.name][0] : "…";
+
+    // W-T63 layout. Below lg one column in this order: header, committed card, commit panel, how
+    // allocation works, then the description, chain terms, proceeds and disclosure (the two column
+    // wrappers are display:contents there and order-* interleaves their blocks).
     return (
         <div className="max-w-page mx-auto px-4 sm:px-8 pt-8 sm:pt-10 pb-16 sm:pb-20">
             <Link to="/offerings" className="text-[14px]">{copy.offering.backLink}</Link>
-            <div className="flex flex-col sm:flex-row flex-wrap gap-6 sm:gap-7 mt-5 sm:mt-6 items-start">
-                {/* 좌: 발행자와 공모 설명 (모바일에선 응모 패널 아래로) */}
-                <div className="w-full sm:flex-1 order-2 sm:order-1" style={{minWidth: 0}}>
-                    <div className="flex items-center gap-4 sm:gap-5 mb-6 sm:mb-7">
-                        <Medallion char={c ? [...c.name][0] : "…"} size={104} glow />
-                        <div className="min-w-0">
-                            <h1 className="m-0 text-[24px] sm:text-[28px] font-bold break-words">
-                                {c ? <>{c.name} <span className="text-hanji-400 font-normal">{c.symbol}</span></> : <TextSkeleton w={180} h={28} />}
-                            </h1>
-                            <div className="flex items-center gap-2 mt-2 text-[13px] text-success">
-                                <span>✓</span> {copy.home.verifiedCreator}{copy.offering.dojangSuffix}
-                            </div>
+            <header className="mt-5 sm:mt-6 flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4 min-w-0">
+                <div className="flex items-center gap-4 sm:gap-5 min-w-0">
+                    <span className="sm:hidden flex-none"><Medallion char={initial} size={64} /></span>
+                    <span className="hidden sm:inline-flex flex-none"><Medallion char={initial} size={88} /></span>
+                    <div className="min-w-0">
+                        <h1 className="m-0 flex flex-wrap items-baseline gap-x-3 gap-y-1 min-w-0">
+                            {c ? (
+                                <>
+                                    <span className="font-serif text-[28px] sm:text-[38px] font-bold leading-[1.15] [overflow-wrap:anywhere]">{c.name}</span>
+                                    <span className="text-[15px] font-normal text-hanji-400">{c.symbol}</span>
+                                </>
+                            ) : <TextSkeleton w={180} h={28} />}
+                        </h1>
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mt-2 text-[13px]">
+                            <span className="inline-flex items-center gap-1.5 text-success">
+                                <Icon name="check" className="w-4 h-4" />
+                                {copy.home.verifiedCreator}{copy.offering.dojangSuffix}
+                            </span>
+                            {statusBadge}
                         </div>
                     </div>
-                    <div className="text-[15px] leading-relaxed text-hanji-100 space-y-4">
+                </div>
+                {live ? (
+                    <div className="flex-none lg:text-right">
+                        <div className="text-[12px] text-hanji-400">{copy.home.closesIn}</div>
+                        <div className="num text-[30px] font-medium text-brass-400 leading-tight">{countdown(o.deadline, now, copy.offering.deadline).replace(/^D-0 /, "")}</div>
+                    </div>
+                ) : (
+                    <a className="flex-none text-[13px] inline-flex items-center min-h-[44px]" href={explorerAddr(o.address)} target="_blank" rel="noreferrer">{copy.tx.viewOnChain}</a>
+                )}
+            </header>
+
+            <div className="mt-6 sm:mt-8 flex flex-col gap-5 lg:flex-row lg:items-start lg:gap-8 min-w-0">
+                <div className="contents lg:flex lg:flex-col lg:gap-6 lg:flex-1 lg:min-w-0">
+                    {!o.settled && (
+                        <section className="order-1 lg:order-none bg-ink-800 border border-ink-700 rounded-card p-4 sm:p-6 min-w-0">
+                            <div className="flex items-baseline justify-between gap-3 flex-wrap">
+                                <Eyebrow locale={copy.locale}>{copy.offering.progressEyebrow}</Eyebrow>
+                                <span className="num text-[15px] text-brass-400">
+                                    {copy.offering.ofTarget(pctNum.toFixed(0))}{pctNum > 100 ? ` · ${copy.home.over}` : ""}
+                                </span>
+                            </div>
+                            <div className="mt-3 flex flex-wrap items-baseline gap-x-2">
+                                <span className="num text-[36px] font-medium leading-none">{fmt(o.totalCommitted, 0)}</span>
+                                <span className="text-[12px] text-hanji-400">{copy.offering.targetOf} <span className="num">{fmt(o.raiseTarget, 0)}</span> KRWs</span>
+                            </div>
+                            <div className="mt-4"><Gauge committed={o.totalCommitted} target={o.raiseTarget} height={10} /></div>
+                            <div className="mt-2 text-[13px] text-hanji-400">
+                                {atClose ? copy.offering.totalPrefixAtClose : copy.offering.totalPrefix}<span className="num text-hanji-100">{fmt(o.totalCommitted, 0)}</span>{copy.offering.targetPart(fmt(o.raiseTarget, 0))}
+                                {participants !== undefined && <> · {atClose ? copy.home.participantsAtClose(participants) : copy.home.participants(participants)}</>}
+                            </div>
+                        </section>
+                    )}
+                    <div className="order-4 lg:order-none text-[15px] leading-relaxed text-hanji-100 space-y-4 min-w-0">
                         <p className="m-0">{copy.offering.about(c ? c.name : null, fmt(o.qSale, 2))}</p>
                         <RedeemNote offering={o.address} redeemManager={o.redeemManager} factory={o.factory} />
                         <VestingNote vesting={o.vesting} />
                     </div>
-                    <div className="mt-7 rounded-input px-4 py-3.5 text-[13px] text-hanji-400"
-                        style={{background: "rgba(195,154,59,.08)", border: "1px solid rgba(195,154,59,.3)"}}>
-                        {copy.offering.allocNote} <a href="https://github.com/jihanwi/mapae/blob/main/script/allocation/README.md" target="_blank" rel="noreferrer">{copy.offering.howToVerify}</a>
-                    </div>
                     {/* decision 58: chain-fixed terms and the issuer's own document, kept apart */}
-                    <ChainTerms o={o} />
-                    <ProceedsPanel o={o} />
-                    <DisclosureSection o={o} />
+                    <div className="order-5 lg:order-none min-w-0"><ChainTerms o={o} /></div>
+                    <div className="order-6 lg:order-none min-w-0"><ProceedsPanel o={o} /></div>
+                    <div className="order-7 lg:order-none min-w-0"><DisclosureSection o={o} /></div>
                 </div>
 
-                {/* 우: 응모 패널 (모바일 최상단 — CTA 우선) */}
-                <div className="w-full sm:flex-1 order-1 sm:order-2" style={{minWidth: 0}}>
-                    <div className="bg-ink-800 border border-ink-700 rounded-card p-4 sm:p-7">
-                        <div className="flex justify-between items-center mb-5">
-                            {o.settled ? <Badge kind="neutral">{copy.badge.settled}</Badge>
-                                : o.refunding ? <Badge kind="neutral">{copy.badge.refunding}</Badge>
-                                : ended ? <Badge kind="neutral">{copy.badge.ended}</Badge>
-                                : frozen ? <Badge kind="frozen">{copy.badge.frozen}</Badge>
-                                : <Badge kind="open">{copy.badge.open}</Badge>}
-                            {live ? (
-                                <span className="text-[13px] text-brass-400 font-semibold tabular-nums">{copy.offering.untilDeadline(countdown(o.deadline, now, copy.offering.deadline).replace(/^D-0 /, ""))}</span>
-                            ) : (
-                                <a className="text-[13px]" href={explorerAddr(o.address)} target="_blank" rel="noreferrer">{copy.tx.viewOnChain}</a>
-                            )}
+                <div className="contents lg:flex lg:flex-col lg:gap-4 lg:w-[420px] lg:flex-none lg:sticky lg:top-6">
+                    <div className="order-2 lg:order-none min-w-0">
+                    <div className="bg-ink-800 border border-[rgba(195,154,59,.55)] rounded-card p-4 sm:p-7">
+                        <div className="mb-4">
+                            <Eyebrow locale={copy.locale}>{live ? copy.offering.commitEyebrow : o.settled ? copy.offering.allocEyebrow : copy.offering.afterEyebrow}</Eyebrow>
                         </div>
-
-                        {!o.settled && (
-                            <>
-                                <div className="mb-2"><Gauge committed={o.totalCommitted} target={o.raiseTarget} height={10} /></div>
-                                <div className="text-[13px] text-hanji-400 mb-5 tabular-nums">
-                                    {atClose ? copy.offering.totalPrefixAtClose : copy.offering.totalPrefix}<span className="text-hanji-100 font-semibold">{fmt(o.totalCommitted, 0)}</span>{copy.offering.targetPart(fmt(o.raiseTarget, 0))}
-                                    {participants !== undefined && <> · {atClose ? copy.home.participantsAtClose(participants) : copy.home.participants(participants)}</>}
-                                    {" · "}<span className={pctNum > 100 ? "text-brass-400 font-semibold" : ""}>{pctNum.toFixed(0)}%</span>
-                                </div>
-                            </>
-                        )}
 
                         <InfoGrid o={o} walletLimit={wl} minCommit={minC} />
 
@@ -229,15 +258,27 @@ function OfferingView() {
                                 {issuer ? (
                                     <p className="m-0 text-[14px] text-brass-400">{copy.offering.issuerCannotCommit}</p>
                                 ) : (<>
-                                <label className="block text-[13px] text-hanji-400 mb-2">{copy.offering.amountLabel}</label>
-                                <div className="flex items-center bg-ink-900 border border-ink-700 rounded-input px-4 focus-within:border-brass-400 mb-1.5">
-                                    <input value={amount} onChange={(e) => setAmount(sanitizeAmountInput(e.target.value))}
-                                        placeholder={copy.offering.amountPlaceholder} inputMode="decimal"
-                                        className="flex-1 min-w-0 bg-transparent border-none outline-none py-3.5 text-[16px] text-hanji-100 tabular-nums" />
-                                    <span className="text-hanji-400 text-[14px] flex-none">KRWs</span>
+                                <div className="bg-ink-900 border border-ink-700 rounded-input px-4 pt-3 pb-2 focus-within:border-brass-400 mb-2">
+                                    <label htmlFor="commit-amount" className="block text-[12px] text-hanji-400">{copy.offering.amountLabel}</label>
+                                    <div className="flex items-baseline gap-2 min-w-0">
+                                        <input id="commit-amount" value={amount} onChange={(e) => setAmount(sanitizeAmountInput(e.target.value))}
+                                            placeholder={copy.offering.amountPlaceholder} inputMode="decimal"
+                                            className="num flex-1 min-w-0 bg-transparent border-none outline-none py-1 text-[30px] font-medium text-hanji-100 placeholder:text-hanji-400 placeholder:text-[16px] placeholder:font-sans" />
+                                        <span className="text-hanji-400 text-[14px] flex-none">KRWs</span>
+                                    </div>
                                 </div>
-                                <div className="text-[12px] text-hanji-400 mb-4 tabular-nums">
-                                    ≈ {o.price > 0n ? fmt((amountWei * 10n ** 18n) / o.price) : "0"}{copy.offering.unit}
+                                {/* W-T63: quick amounts from the limits already read */}
+                                <div className="grid grid-cols-2 gap-2 mb-2">
+                                    {([[copy.offering.quickMin, quick.min], [copy.offering.quickUpTo, quick.upTo]] as const).map(([label, value]) => (
+                                        <button key={label} type="button" disabled={value === null}
+                                            onClick={() => value !== null && setAmount(formatUnits(value, 18))}
+                                            className="num min-h-[44px] px-1 rounded-[8px] border border-ink-700 text-[13px] text-hanji-100 whitespace-nowrap hover:border-brass-600 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-ink-700">
+                                            {label}
+                                        </button>
+                                    ))}
+                                </div>
+                                <div className="text-[12px] text-hanji-400 mb-4">
+                                    ≈ <span className="num">{o.price > 0n ? fmt((amountWei * 10n ** 18n) / o.price) : "0"}</span>{copy.offering.unit}
                                 </div>
                                 <TxButton className="w-full" disabled={commitDisabled} action={commit}>
                                     {allowanceLoading ? copy.curve.cta.loading
@@ -251,7 +292,7 @@ function OfferingView() {
                                     <div className="mt-5 pt-5 border-t border-ink-700">
                                         <div className="flex justify-between text-[13px] mb-3">
                                             <span className="text-hanji-400">{copy.offering.myStatus}</span>
-                                            <span className="text-hanji-100 font-semibold tabular-nums">{fmt(myCommitted, 0)} KRWs</span>
+                                            <span className="text-hanji-100 font-semibold"><span className="num">{fmt(myCommitted, 0)}</span> KRWs</span>
                                         </div>
                                         {frozen ? (
                                             <SecondaryBtn className="w-full" disabled>{copy.offering.cancelLocked}</SecondaryBtn>
@@ -278,10 +319,24 @@ function OfferingView() {
                             } />}
                     </div>
                     {live && (
-                        <p className="text-[12px] text-hanji-400 mt-3">
+                        <p className="text-[12px] text-hanji-400 mt-3 mb-0">
                             {copy.offering.cancelFrozenNote}. {o.refundMode === 0 ? copy.refund.modeNote : copy.refund.partialModeNote}
                         </p>
                     )}
+                    </div>
+                    {/* W-T63: how allocation works (moved from the left column's note) */}
+                    <section className="order-3 lg:order-none bg-ink-800 border border-ink-700 rounded-card p-4 sm:p-6 min-w-0">
+                        <Eyebrow locale={copy.locale}>{copy.offering.allocHowTitle}</Eyebrow>
+                        <ol className="m-0 mt-3 p-0 list-none flex flex-col gap-2.5">
+                            {copy.offering.allocSteps.map((step, i) => (
+                                <li key={step} className="flex items-start gap-3 text-[13.5px] text-hanji-100">
+                                    <span className="num flex-none text-brass-400">{String(i + 1).padStart(2, "0")}</span>
+                                    <span className="min-w-0">{step}</span>
+                                </li>
+                            ))}
+                        </ol>
+                        <a className="mt-4 inline-flex items-center min-h-[44px] text-[13px]" href={ALLOC_README} target="_blank" rel="noreferrer">{copy.offering.howToVerify}</a>
+                    </section>
                 </div>
             </div>
         </div>
@@ -298,21 +353,22 @@ function InfoGrid({o, walletLimit, minCommit}: {o: OfferingInfo; walletLimit: bi
         [copy.offering.ifMissed, o.refundMode === 0 ? copy.terms.refundAll : copy.terms.refundPartial],
     ];
     return (
-        <div className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-2 text-[13px] mb-5 pb-5 border-b border-ink-700">
+        <dl className="m-0 text-[13px] mb-5 pb-1 border-b border-ink-700 divide-y divide-ink-800">
             {rows.map(([k, v]) => (
                 <FragmentRow key={k} k={k} v={v} />
             ))}
             {/* C1: 총공급 분리 표기 */}
             {o.settled && <FragmentRow k={copy.terms.supply} v={copy.offering.totalSupplyLine(fmt(o.totalSupply, 2))} />}
-        </div>
+        </dl>
     );
 }
+/** One dl row; the figures inside the value are set in .num (W-T63). */
 function FragmentRow({k, v}: {k: string; v: string}) {
     return (
-        <>
-            <span className="text-hanji-400">{k}</span>
-            <span className="text-hanji-100 text-right tabular-nums">{v}</span>
-        </>
+        <div className="flex justify-between gap-4 py-2 min-w-0">
+            <dt className="text-hanji-400 flex-none">{k}</dt>
+            <dd className="m-0 text-hanji-100 text-right min-w-0 break-words"><NumText text={v} /></dd>
+        </div>
     );
 }
 
@@ -333,17 +389,17 @@ function SettledPanel({o, account, alloc, claimed, myCommitted, claim}: {
         <div>
             <div className="bg-ink-900 rounded-stat p-5 text-center mb-4">
                 <div className="text-[12px] text-hanji-400 mb-2">{copy.offering.myAllocResult}</div>
-                <div className="font-serif text-[42px] font-semibold tabular-nums leading-none">
+                <div className="font-serif text-[42px] font-semibold tabular-nums leading-none">{/* the big serif figure keeps its face */}
                     {fmt(alloc.allocation, 2)}<span className="text-[19px] text-hanji-400 font-sans">{copy.offering.allocUnit}</span>
                 </div>
                 {alloc.refund > 0n && (
-                    <div className="text-[13px] text-hanji-400 mt-2">+ {copy.offering.myRefund} <span className="text-hanji-100">{fmt(alloc.refund, 0)} KRWs</span></div>
+                    <div className="text-[13px] text-hanji-400 mt-2">+ {copy.offering.myRefund} <span className="num text-hanji-100">{fmt(alloc.refund, 0)}</span> <span className="text-hanji-100">KRWs</span></div>
                 )}
             </div>
-            <div className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-2 text-[13px] mb-4">
+            <dl className="m-0 text-[13px] mb-4 divide-y divide-ink-800">
                 <FragmentRow k={copy.offering.myCommitShort} v={myCommitted > 0n ? `${fmt(myCommitted, 0)} KRWs` : "—"} />
                 <FragmentRow k={copy.offering.allocMethod} v={copy.offering.allocMethodValue} />
-            </div>
+            </dl>
             {claimed ? (
                 <SecondaryBtn className="w-full" disabled>{copy.offering.claimed}</SecondaryBtn>
             ) : (

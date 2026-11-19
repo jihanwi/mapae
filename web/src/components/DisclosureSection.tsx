@@ -11,7 +11,7 @@ import {OfferingInfo} from "../hooks";
 import {clearDraft, loadDraft, saveDraft, SaveResult, useDisclosure, useSaveDisclosure} from "../hooks/disclosure";
 import {addendumProblems, cleanText, DisclosureDoc, docProblems, EMPTY_DOC, LIMITS, LINK_KEYS, normalizeDoc} from "../../api/_lib/disclosure";
 import {DisclosureForm, problemText} from "./DisclosureForm";
-import {PrimaryBtn, SecondaryBtn, TextSkeleton} from "./ui";
+import {Eyebrow, PrimaryBtn, SecondaryBtn, TextSkeleton} from "./ui";
 
 const whenIn = (iso: string, locale: string) => fmtWhen(new Date(iso).getTime(), locale, true);
 
@@ -132,8 +132,10 @@ export function DisclosureSection({o}: {o: OfferingInfo}) {
     };
 
     return (
-        <section className="mt-7 bg-ink-800 border border-ink-700 rounded-card p-4 sm:p-6">
-            <h2 className="m-0 text-[17px] font-bold">{t.title}</h2>
+        <section className="bg-ink-800 border border-ink-700 rounded-card p-4 sm:p-6 min-w-0">
+            <h2 className="m-0">
+                <Eyebrow locale={copy.locale}>{t.title}</Eyebrow>
+            </h2>
             <p className="m-0 mt-1 mb-4 text-[12px] text-brass-400">{t.note}</p>
 
             {q.isLoading && <TextSkeleton w={240} h={14} />}
@@ -148,7 +150,8 @@ export function DisclosureSection({o}: {o: OfferingInfo}) {
                 <>
                     {d.disclosure ? (
                         <>
-                            <div className="flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-hanji-400 mb-4">
+                            {/* W-T63: hash, version and edit notes in one box */}
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12.5px] text-hanji-400 mb-4 rounded-[8px] border border-ink-700 bg-ink-900 px-3 py-2">
                                 <HashChip hash={d.disclosure.sha256} />
                                 <span>{t.version(d.disclosure.version)}</span>
                                 <span>{t.edits(d.disclosure.edits, when(d.disclosure.savedAt))}</span>

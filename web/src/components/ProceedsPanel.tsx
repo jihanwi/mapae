@@ -16,7 +16,8 @@ import {proceedsStatus} from "../lib/proceeds";
 import {fmt} from "../lib/format";
 import {bpsPct, spanText} from "../lib/proceedsText";
 import {RunFn, TxButton} from "./tx";
-import {TextSkeleton} from "./ui";
+import {Eyebrow, TextSkeleton} from "./ui";
+import {NumText} from "./NumText";
 
 export const PROCEEDS_DISTRIBUTED = "event ProceedsDistributed(uint256 platformProceeds, uint256 upfront, uint256 locked, address proceedsLock)";
 
@@ -33,7 +34,7 @@ function Row({k, v}: {k: string; v: React.ReactNode}) {
     return (
         <>
             <span className="text-hanji-400">{k}</span>
-            <span className="text-hanji-100 text-right tabular-nums">{v}</span>
+            <span className="text-hanji-100 text-right">{typeof v === "string" ? <NumText text={v} /> : v}</span>
         </>
     );
 }
@@ -112,7 +113,7 @@ export function ProceedsPanel({o}: {o: OfferingInfo}) {
                     <div className="mt-4">
                         <div className="flex justify-between text-[13px] mb-2">
                             <span className="text-hanji-400">{copy.offering.proceedsReleasable}</span>
-                            <span className="text-hanji-100 font-semibold tabular-nums">{fmt(s.releasable, 0)} KRWs</span>
+                            <span className="text-hanji-100 font-semibold "><span className="num">{fmt(s.releasable, 0)}</span> KRWs</span>
                         </div>
                         <TxButton className="w-full" disabled={s.releasable === 0n} action={(run: RunFn) =>
                             run(copy.offering.releaseLabel, () =>
@@ -125,8 +126,10 @@ export function ProceedsPanel({o}: {o: OfferingInfo}) {
     }
 
     return (
-        <div className="mt-7 bg-ink-800 border border-ink-700 rounded-card p-4 sm:p-6">
-            <h2 className="m-0 mb-3 text-[17px] font-bold">{copy.offering.proceedsTitle}</h2>
+        <div className="bg-ink-800 border border-ink-700 rounded-card p-4 sm:p-6 min-w-0">
+            <h2 className="m-0 mb-3">
+                <Eyebrow locale={copy.locale}>{copy.offering.proceedsTitle}</Eyebrow>
+            </h2>
             {terms}
             {settledBlock}
             {lock && <p className="m-0 mt-4 text-[12px] text-hanji-400">{copy.offering.proceedsNote}</p>}
