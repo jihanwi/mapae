@@ -133,7 +133,7 @@ contract CurveHoldingCapTest is CurvePriorityBase {
 
     function test_cap_BuyWithEthRevertReturnsAllEth() public {
         vm.prank(dev);
-        (address ca, address ta) = cf.createCurveWithETH("Eth Cap", "ECAP", 0);
+        (address ca, address ta) = cf.createCurveWithETH("Eth Cap", "ECAP", 0, CurveFactory.LaunchOptions(0, false));
         CurveSale c = CurveSale(ca);
         address buyer = verified1;
         vm.deal(buyer, 10 ether);
@@ -193,13 +193,14 @@ contract CurveHoldingCapTest is CurvePriorityBase {
         uint256 bal = krw.balanceOf(dev);
         vm.prank(dev);
         vm.expectPartialRevert(CurveFactory.DevFirstBuyTooLarge.selector);
-        cf.createCurve(IERC20(address(krw)), "Over", "OVER", maxIn + 1, 0);
+        cf.createCurve(IERC20(address(krw)), "Over", "OVER", maxIn + 1, 0, CurveFactory.LaunchOptions(0, false));
         assertEq(cf.allCurves().length, n, "no curve registered");
         assertEq(krw.balanceOf(dev), bal, "nothing pulled");
 
         vm.warp(block.timestamp + 7 days + 1); // the Dev's rate limit (setUp opened one)
         vm.prank(dev);
-        (address ca, address ta) = cf.createCurve(IERC20(address(krw)), "Under", "UNDER", maxIn, 0);
+        (address ca, address ta) =
+            cf.createCurve(IERC20(address(krw)), "Under", "UNDER", maxIn, 0, CurveFactory.LaunchOptions(0, false));
         assertLe(MembershipToken(ta).balanceOf(dev), CAP);
         assertGt(MembershipToken(ta).balanceOf(dev), CAP - 1e6);
 
@@ -221,7 +222,7 @@ contract CurveHoldingCapTest is CurvePriorityBase {
         uint256 tokensOut = curve.quoteBuy(over).tokensOut; // fresh-curve quote (curve is untraded)
         vm.prank(dev);
         vm.expectRevert(abi.encodeWithSelector(CurveFactory.DevFirstBuyTooLarge.selector, tokensOut, CAP));
-        cf.createCurve(IERC20(address(krw)), "Over", "OVER", over, 0);
+        cf.createCurve(IERC20(address(krw)), "Over", "OVER", over, 0, CurveFactory.LaunchOptions(0, false));
     }
 
     // ------------------------------------------------------------------ graduation in the window

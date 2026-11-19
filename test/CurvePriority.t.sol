@@ -23,7 +23,7 @@ abstract contract CurvePriorityBase is MapaeFactoryTestBase {
     bytes32 internal constant BUY_SIG =
         keccak256("Buy(address,bool,bool,uint256,uint256,uint256,uint256,uint256,uint256,uint256)");
     bytes32 internal constant CREATED_SIG =
-        keccak256("CurveCreated(address,address,address,address,uint256,string,string,uint64)");
+        keccak256("CurveCreated(address,address,address,address,uint256,string,string,uint64,uint64,bool)");
 
     TestWETH9 internal weth;
     CurveFactory internal cf;
@@ -52,7 +52,8 @@ abstract contract CurvePriorityBase is MapaeFactoryTestBase {
 
     function _open(address who) internal returns (CurveSale c, MembershipToken t) {
         vm.prank(who);
-        (address ca, address ta) = cf.createCurve(IERC20(address(krw)), "Priority", "PRI", 0, 0);
+        (address ca, address ta) =
+            cf.createCurve(IERC20(address(krw)), "Priority", "PRI", 0, 0, CurveFactory.LaunchOptions(0, false));
         return (CurveSale(ca), MembershipToken(ta));
     }
 
@@ -205,14 +206,16 @@ contract CurvePriorityTest is CurvePriorityBase {
         krw.approve(address(cf), amount);
         // rate limit: dev already opened one curve in setUp
         vm.prank(dev);
-        (address ca,) = cf.createCurve(IERC20(address(krw)), "Dev Buy", "DB", amount, 1);
+        (address ca,) =
+            cf.createCurve(IERC20(address(krw)), "Dev Buy", "DB", amount, 1, CurveFactory.LaunchOptions(0, false));
         CurveSale c = CurveSale(ca);
         assertGt(c.s(), 0, "dev bought inside the window");
         assertEq(c.verifiedBuyerCount(), 0, "dev not counted");
 
         vm.deal(dev, 1 ether);
         vm.prank(dev);
-        (address ce,) = cf.createCurveWithETH{value: 0.01 ether}("Dev Eth", "DE", 1); // v3.5: under the 2% first-buy cap
+        (address ce,) =
+            cf.createCurveWithETH{value: 0.01 ether}("Dev Eth", "DE", 1, CurveFactory.LaunchOptions(0, false)); // v3.5: under the 2% first-buy cap
         assertGt(CurveSale(ce).s(), 0, "dev ETH buy inside the window");
         assertEq(CurveSale(ce).verifiedBuyerCount(), 0);
         assertFalse(CurveSale(ce).countedVerifiedBuyer(dev));
@@ -220,7 +223,7 @@ contract CurvePriorityTest is CurvePriorityBase {
 
     function test_priority_EthBuyRespectsWindow() public {
         vm.prank(dev);
-        (address ce,) = cf.createCurveWithETH("Eth", "ETH1", 0);
+        (address ce,) = cf.createCurveWithETH("Eth", "ETH1", 0, CurveFactory.LaunchOptions(0, false));
         vm.deal(anon, 1 ether);
         vm.prank(anon);
         vm.expectRevert(abi.encodeWithSelector(CurveSale.NotVerified.selector, anon));
@@ -264,7 +267,7 @@ contract CurvePriorityTest is CurvePriorityBase {
     function test_priority_CurveCreatedCarriesPriorityUntil() public {
         vm.recordLogs();
         vm.prank(verified1);
-        (address ca,) = cf.createCurve(IERC20(address(krw)), "Event", "EVT", 0, 0);
+        (address ca,) = cf.createCurve(IERC20(address(krw)), "Event", "EVT", 0, 0, CurveFactory.LaunchOptions(0, false));
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool found;
         for (uint256 i; i < logs.length; ++i) {

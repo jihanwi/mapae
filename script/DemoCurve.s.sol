@@ -122,7 +122,10 @@ contract DemoCurve is Script {
         c.dojang.selfVerify();
         c.krw.faucet(firstBuy);
         c.krw.approve(address(c.curveFactory), firstBuy);
-        (address ca,) = c.curveFactory.createCurve(IERC20(address(c.krw)), "MAPAE Demo Curve KRW", "DCK", firstBuy, 1);
+        (address ca,) = c.curveFactory
+            .createCurve(
+                IERC20(address(c.krw)), "MAPAE Demo Curve KRW", "DCK", firstBuy, 1, CurveFactory.LaunchOptions(0, false)
+            );
         curve = CurveSale(ca);
         vm.stopBroadcast();
         require(curve.token().balanceOf(dev) > 0 && curve.verifiedBuyerCount() == 0, "A: dev first buy");
@@ -192,7 +195,8 @@ contract DemoCurve is Script {
         _topUp(c, wallet, _budget(vq, 0, 0, _curveFeeBps()));
         vm.startBroadcast(key);
         c.dojang.selfVerify();
-        (address ca,) = c.curveFactory.createCurveWithETH("MAPAE Demo Curve ETH", "DCE", 0);
+        (address ca,) =
+            c.curveFactory.createCurveWithETH("MAPAE Demo Curve ETH", "DCE", 0, CurveFactory.LaunchOptions(0, false));
         vm.stopBroadcast();
         curve = CurveSale(ca);
     }

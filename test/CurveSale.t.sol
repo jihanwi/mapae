@@ -95,7 +95,9 @@ abstract contract CurveSaleTestBase is Test {
                 tokenSymbol: "CRV",
                 virtualQuote: vq,
                 priorityWindow: PRIORITY_WINDOW,
-                priorityMaxHolding: P.TOTAL_SUPPLY * 200 / 10_000
+                priorityMaxHolding: P.TOTAL_SUPPLY * 200 / 10_000,
+                startTime: 0,
+                verifiedOnly: false
             })
         );
     }
@@ -609,7 +611,9 @@ abstract contract CurveSaleTestBase is Test {
                 tokenSymbol: "X",
                 virtualQuote: 0,
                 priorityWindow: PRIORITY_WINDOW,
-                priorityMaxHolding: P.TOTAL_SUPPLY * 200 / 10_000
+                priorityMaxHolding: P.TOTAL_SUPPLY * 200 / 10_000,
+                startTime: 0,
+                verifiedOnly: false
             })
         );
         vm.expectRevert(CurveSale.ZeroAddress.selector);
@@ -625,7 +629,9 @@ abstract contract CurveSaleTestBase is Test {
                 tokenSymbol: "X",
                 virtualQuote: vq,
                 priorityWindow: PRIORITY_WINDOW,
-                priorityMaxHolding: P.TOTAL_SUPPLY * 200 / 10_000
+                priorityMaxHolding: P.TOTAL_SUPPLY * 200 / 10_000,
+                startTime: 0,
+                verifiedOnly: false
             })
         );
     }

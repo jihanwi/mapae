@@ -64,7 +64,8 @@ contract DeployV3_5Test is Test {
         vm.prank(dev);
         v31.mockDojang.selfVerify();
         vm.prank(dev);
-        (address ca,) = f.createCurve(IERC20(address(v31.krw)), "Cap", "CAP", 0, 0);
+        (address ca,) =
+            f.createCurve(IERC20(address(v31.krw)), "Cap", "CAP", 0, 0, CurveFactory.LaunchOptions(0, false));
         assertEq(CurveSale(ca).priorityMaxHolding(), 20_000_000e18);
     }
 

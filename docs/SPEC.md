@@ -50,6 +50,21 @@ v3에서 바뀐 컨트랙트 구성과 인터페이스. 숫자는 전부 `src/` 
 - `costToSellOut(p, r, s)`, `spotPrice(p, r, s)`(분자, 분모), `validate(p)`.
 - 상태 불변식: 라이브러리 결과만 반영하면 `Vq + r == ceil(Vq × Vt / (Vt − s))`가 항상 성립한다.
 
+### v3.6 발행 옵션 (C-T6): 이 항목이 아래 CurveSale, CurveFactory 설명과 상충하면 우선
+
+- `CurveFactory.LaunchOptions { uint64 startTime; bool verifiedOnly; }`가 `createCurve(quote, name, symbol, devBuyQuoteIn,
+  minTokensOut, opts)`와 `createCurveWithETH(name, symbol, minTokensOut, opts)`의 마지막 인자다.
+- 예고 발행: `startTime = 0`이면 생성 시각에 시작(v3.5와 같다). 0이 아니면 `block.timestamp + MIN_START_DELAY(10분) <= startTime <=
+  block.timestamp + MAX_START_DELAY(7일)`, 밖이면 `StartTimeOutOfBand(startTime)`. 예고 발행에서 `devBuyQuoteIn > 0` 또는
+  `msg.value > 0`이면 `DevBuyNotAllowedWhenScheduled()`로 전체 revert. 7일 3개 발행 한도는 생성 시점에 쓴다. 취소와 시각 변경은 없다.
+- CurveSale: immutable `startTime`(생성 시각 또는 예고 시각), `verifiedOnly`, view `started()`(block.timestamp >= startTime).
+  `startTime` 전에는 `buy`, `buyFor`, `sell`이 `NotStarted(startTime)`로 revert하고 view(`quoteBuy`, `quoteSell`, `spotPrice`)는 동작한다.
+  `priorityUntil = startTime + priorityWindow`이고 우선 구간 판정은 `_inPriority()` 하나다(실명 게이트와 v3.5 보유 한도 공용).
+- 실명 전용: `verifiedOnly`면 매수 판정이 `_buyerVerified(trader, priority || verifiedOnly)`라 졸업 전까지 실명 지갑만 산다
+  (미인증 `NotVerified`, Dojang revert 시 매수 revert). 매도는 판정이 없다. 보유자 간 전송은 졸업 전까지 토큰의 전송 잠금으로 막혀 있어
+  매수만 막으면 실명 지갑만 보유하게 된다. 2% 보유 한도는 우선 구간에만 있다. 졸업 뒤 풀은 누구나.
+- `CurveCreated(dev, curve, token, quote, virtualQuote, name, symbol, priorityUntil, startTime, verifiedOnly)` (끝 두 필드 추가).
+
 ### CurveSale
 
 - 생성자 `InitParams { quote, dojang, dev, feeRouter, poolFactory, mapaeFactory, tokenName, tokenSymbol, virtualQuote, priorityWindow }`

@@ -2,6 +2,18 @@
 
 체인: GIWA Sepolia (chain ID `91342`) · Explorer: https://sepolia-explorer.giwa.io
 
+## v3.6 (예고 발행, 실명 전용 토큰): 배포 전
+
+- 바뀐 것: 커브 팩토리가 발행 옵션 `LaunchOptions { startTime, verifiedOnly }`를 받는다. 예고 발행(시작 전 매수·매도 불가, 우선 구간과
+  2% 한도는 시작 시각부터, 생성 tx 안 Dev 첫 매수 불가)과 실명 전용(졸업 전까지 실명 지갑만 매수). 옵션을 끄면 v3.5와 같다.
+  CurveFactory 하나만 새로 배포하고 나머지는 v3.5(v3.2 인프라)를 재사용한다.
+- 배포 절차: [`docs/DEPLOY_V3_6.md`](DEPLOY_V3_6.md). 주소 기록: `deployments/giwa-sepolia-v3_6.json` (배포 뒤 생성)
+
+| 컨트랙트 | 주소 | 비고 |
+|---|---|---|
+| CurveFactory (v3.6) | 배포 전 | 신규. priorityWindow 600, priorityMaxHoldingBps 200 |
+| DojangAnyOf, FeeRouter, PoolFactory, MapaeFactory(mock), MockKRW, MembershipTokenDeployer | v3.5와 같은 주소 | 재사용 |
+
 ## v3.3-L1 배포 (L1 공모 수수료 범위 0~5%, 처음 값 0%), 2026-11-17 완료
 
 - 바뀐 것: L1/L2 공모 수수료(offeringFeeBps)의 허용 범위가 0~500 bps가 됐고 처음 값은 0이다(결정 59). 거래 수수료는 그대로다

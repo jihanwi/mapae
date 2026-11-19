@@ -800,3 +800,46 @@ Dev 첫 매수 상한도 5%에서 2%로 맞춘다. 우선 구간이 끝나면 �
   - 다시 씀: `CurvePriority.test_priority_GraduateInWindowPoolOpenToAnyone`(한 지갑 졸업 → 40개 지갑 + 먼지 매수 졸업).
 - 합계 461 → **476 그린 + 포크 스위트 1건 건너뜀**. CurveFactory 런타임 20,327 바이트(여유 4,249), CurveSale 8,980 바이트(여유 15,596).
 
+## v3.6 (C-T6, 2026-11-19): 예고 발행(startTime)과 실명 전용 토큰(verifiedOnly), 배포 전
+
+배경: v3.5는 커브가 열리는 순간 거래가 시작돼 10분 우선 구간을 발행자 주변만 알 수 있었고, 구간 뒤에도 실명 보유자로만 시작하고 싶은
+발행자에게 선택지가 없었다. 발행자가 고르는 옵션 두 개를 넣었다. 둘 다 꺼짐이 기본이고, 끄면 v3.5와 같다.
+
+### 바뀐 규칙
+
+- `CurveFactory.LaunchOptions { uint64 startTime; bool verifiedOnly; }`(팩토리 안 구조체, ABI에서 튜플 한 인자)를 `createCurve`,
+  `createCurveWithETH`의 마지막 인자로 받는다.
+- 예고 범위 `MIN_START_DELAY = 10 minutes`, `MAX_START_DELAY = 7 days`(양끝 포함), 밖이면 `StartTimeOutOfBand`. 검사는 실명·호가 검사 뒤,
+  발행 빈도 소모 전에 한다(범위 밖이면 빈도를 쓰지 않는다). 예고 + Dev 첫 매수는 `DevBuyNotAllowedWhenScheduled`(팩토리 첫 줄에서 검사).
+- CurveSale: `startTime`, `verifiedOnly` immutable, `started()`. `_requireStarted()`를 `_buy`와 `sell`의 졸업 검사 바로 뒤에 둔다.
+  `priorityUntil = startTime + priorityWindow`. 매수 실명 판정은 `_buyerVerified(trader, priority || verifiedOnly)`.
+- `CurveCreated` 끝에 `startTime`, `verifiedOnly`. 이벤트 필드가 10개라 스택 깊이를 넘어서, 발행 이벤트를 별도 함수
+  (`_emitCreated`)에서 내고 이름과 심볼은 토큰에서 다시 읽는다(같은 값).
+- 전제 확인: `MembershipToken._update`는 전송 잠금 중 `from != offering && from != pool && to != offering`인 전송을 막는다. 커브 토큰은
+  100년 잠금이고 졸업 때 `endTransferLock`으로 풀리므로, 졸업 전 보유자 간 전송은 불가하다. 실명 전용은 매수만 막으면 된다.
+
+### 크기 (runtime / initcode, 바이트)
+
+| 컨트랙트 | 변경 전 | 변경 뒤 | EIP-170 여유 |
+|---|---|---|---|
+| CurveFactory | 20,327 / 21,215 | 21,858 / 22,746 | 2,718 |
+| CurveSale | 8,980 / 11,576 | 9,315 / 12,135 | 15,261 |
+
+### 배포 준비
+
+- `script/DeployV3_6.s.sol`: v3.5 json에서 재사용 주소를 읽어 기대 주소와 비교하고 CurveFactory 하나만 새로 배포한다(600초, 200 bps).
+  v3.5 스크립트와 달리 broadcast(또는 resume)일 때만 `deployments/giwa-sepolia-v3_6.json`을 쓴다. 리허설이 시뮬레이션 주소로 기록을
+  덮어쓰지 않게 하려는 것이다. 절차: `docs/DEPLOY_V3_6.md`.
+- 작업 세션에서 GIWA RPC에 연결할 수 없어 RPC 리허설은 실행하지 못했다. 로컬 스택 리허설(`DeployV3_6.t.sol`)만 통과.
+
+### 테스트
+
+- 신규 `CurveScheduled.t.sol` (10): S1 즉시 발행, S2 범위(경계 포함), S3 시작 전 buy·buyFor·sell·buyWithETH revert와 view 동작,
+  S4 시작 정각, S5 우선 구간이 시작부터, S6 예고 + Dev 첫 매수 revert(KRWs, ETH 반환), S7 시작 뒤 Dev 2% 한도, S8 발행 빈도 소모,
+  S9 이벤트 값, S16 퍼즈(시작 전 어떤 매수도 실패, KRWs·ETH).
+- 신규 `CurveVerifiedOnly.t.sol` (6): V10 구간 뒤 실명만(buyWithETH 포함), V11 구간 뒤 한도 없음, V12 fail-closed(실명 전용만),
+  V13 인증 풀린 보유자 매도, V14 졸업 뒤 풀 개방, V15 두 옵션 함께.
+- 신규 `DeployV3_6.t.sol` (2).
+- 기존 테스트: 호출부에 `CurveFactory.LaunchOptions(0, false)` 인자 추가, `CurveSale.t.sol`의 `InitParams`에 `startTime: 0, verifiedOnly: false`
+  추가. 기대값 변경은 `CurvePriority.t.sol`의 `CREATED_SIG`(이벤트 시그니처에 두 필드 추가) 하나다.
+
