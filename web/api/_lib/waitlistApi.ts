@@ -171,6 +171,33 @@ const defaultRandom = (n: number) => crypto.getRandomValues(new Uint8Array(n));
 
 export type XUser = {id: string; username: string; createdAt: string | null; followers: number | null};
 
+const X_FIELD_MAX = 200;
+/** A string value cut to 200 characters, else null (W-T73: only these go into the logs). */
+const xStr = (v: unknown): string | null => (typeof v === "string" ? v.slice(0, X_FIELD_MAX) : null);
+
+export type XErrorFields = {
+    title: string | null;
+    detail: string | null;
+    type: string | null;
+    reason: string | null;
+    first: {title: string | null; detail: string | null; type: string | null; message: string | null} | null;
+};
+
+/** W-T73: the reason X gives in an error body, for the log. Only these string fields (each cut to
+ *  200 characters), never the whole body, its `data`, a token or a header. */
+export function xErrorFields(body: unknown): XErrorFields {
+    const b = body && typeof body === "object" ? (body as Record<string, unknown>) : null;
+    const errors = b && Array.isArray(b.errors) ? b.errors : null;
+    const e0 = errors && errors.length > 0 && errors[0] && typeof errors[0] === "object" ? (errors[0] as Record<string, unknown>) : null;
+    return {
+        title: xStr(b?.title),
+        detail: xStr(b?.detail),
+        type: xStr(b?.type),
+        reason: xStr(b?.reason),
+        first: errors ? {title: xStr(e0?.title), detail: xStr(e0?.detail), type: xStr(e0?.type), message: xStr(e0?.message)} : null,
+    };
+}
+
 /** Token exchange then users/me once. "x" for any X failure (logged without secrets or tokens);
  *  missing id or username in users/me is a failure, missing created_at or followers is stored null. */
 export async function xSignIn(cfg: WaitlistConfig, code: string, verifier: string, f: typeof fetch): Promise<XUser | "x"> {
@@ -182,9 +209,9 @@ export async function xSignIn(cfg: WaitlistConfig, code: string, verifier: strin
             headers: {Authorization: `Basic ${basic}`, "Content-Type": "application/x-www-form-urlencoded"},
             body: new URLSearchParams({code, grant_type: "authorization_code", redirect_uri: redirectUri(cfg.origin), code_verifier: verifier}).toString(),
         });
-        const body = (await r.json().catch(() => null)) as {access_token?: unknown; error?: unknown} | null;
+        const body = (await r.json().catch(() => null)) as {access_token?: unknown; error?: unknown; error_description?: unknown} | null;
         if (!r.ok || typeof body?.access_token !== "string") {
-            console.error("waitlist: X token exchange failed", {status: r.status, error: typeof body?.error === "string" ? body.error : null});
+            console.error("waitlist: X token exchange failed", {status: r.status, error: typeof body?.error === "string" ? body.error : null, errorDescription: xStr(body?.error_description)});
             return "x";
         }
         token = body.access_token;
@@ -197,7 +224,7 @@ export async function xSignIn(cfg: WaitlistConfig, code: string, verifier: strin
         const body = (await r.json().catch(() => null)) as {data?: {id?: unknown; username?: unknown; created_at?: unknown; public_metrics?: {followers_count?: unknown}}} | null;
         const d = body?.data;
         if (!r.ok || typeof d?.id !== "string" || typeof d.username !== "string" || !d.id || !d.username) {
-            console.error("waitlist: X users/me failed", {status: r.status, hasData: !!d});
+            console.error("waitlist: X users/me failed", {status: r.status, hasData: !!d, ...xErrorFields(body)});
             return "x";
         }
         const followers = d.public_metrics?.followers_count;
@@ -360,10 +387,26 @@ export async function handleWaitlist(request: Request, deps: WaitlistDeps): Prom
         if (action === "callback") {
             if (!paramsAllowed(p, ["action", "code", "state", "error", "error_description"])) return json(400, {error: "bad_request"});
             const clear = clearCookie(OAUTH_COOKIE);
-            const o = await verifyCookie<OAuthPayload>(readCookie(request, OAUTH_COOKIE), cfg.sessionSecret, now);
+            const raw = readCookie(request, OAUTH_COOKIE);
+            const o = await verifyCookie<OAuthPayload>(raw, cfg.sessionSecret, now);
             const code = p.get("code");
             const state = p.get("state");
-            if (p.has("error") || !code || !state || !o || !sameString(o.state, state)) {
+            // W-T73: one reason per denial, logged once (never the code, the state, the cookie or
+            // X's error_description); the answer is the same for every reason
+            const reason = p.has("error")
+                ? "x_error"
+                : !code || !state
+                  ? "missing_code_or_state"
+                  : !raw
+                    ? "no_cookie"
+                    : !o || typeof o.state !== "string" || typeof o.verifier !== "string"
+                      ? "bad_cookie"
+                      : !sameString(o.state, state)
+                        ? "state_mismatch"
+                        : null;
+            if (reason || !o || !code) {
+                const xe = p.get("error");
+                console.warn("waitlist: callback denied", {reason, xError: reason === "x_error" ? (xe !== null && /^[a-z_]{1,40}$/.test(xe) ? xe : "other") : null});
                 return redirect("/#/waitlist?error=denied", [clear]);
             }
             const user = await xSignIn(cfg, code, o.verifier, deps.fetch);

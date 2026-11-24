@@ -1,5 +1,9 @@
 {
-  "crons": [{"path": "/api/cron/index", "schedule": "*/15 * * * *"}],
+  "crons": [{"path": "/api/cron/index", "schedule": "0 * * * *"}],
+  "redirects": [
+    {"source": "/t/:path*", "has": [{"type": "host", "value": "mapae\\.fun"}], "destination": "/waitlist", "permanent": false},
+    {"source": "/:path((?!api/).*)", "has": [{"type": "host", "value": "mapae-snowy\\.vercel\\.app"}], "destination": "https://mapae.fun/:path*", "permanent": false}
+  ],
   "rewrites": [
     {"source": "/t/:curve", "destination": "/api/meta?share=:curve"},
     {"source": "/waitlist/callback", "destination": "/api/waitlist?action=callback"},
