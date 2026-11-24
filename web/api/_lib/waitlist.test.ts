@@ -38,6 +38,7 @@ import {
     X_SCOPE,
     X_TOKEN,
 } from "./waitlist.js";
+import {xErrorFields} from "./waitlistApi.js";
 import {b64url, fromB64url, handleWaitlist, MAX_REF_DRAWS, OAuthPayload, readCookie, signCookie, verifyCookie, WaitlistDeps, WaitlistStore} from "./waitlistApi.js";
 import {pointsSql, suspectSql, WAITLIST_STATS_TOP_SQL, WAITLIST_STATS_TOTALS_SQL, WAITLIST_JOIN_SQL, WAITLIST_ME_POINTS_SQL, WAITLIST_ME_SQL, WAITLIST_POSITION_BY_CODE_POINTS_SQL, WaitlistJoin, WaitlistMe} from "./db.js";
 
@@ -812,5 +813,128 @@ describe("W-T72 stats: handler", () => {
         expect(head.status).toBe(400);
         expect(h.db.statsCalls()).toBe(0);
         expect(await h.me(null)).toEqual({joined: false, emailEnabled: false, contact: null});
+    });
+});
+
+// ---------------------------------------------------------------------------------------------
+// W-T73: X error reasons and denial reasons in the logs (answers unchanged)
+// ---------------------------------------------------------------------------------------------
+
+describe("W-T73 xErrorFields", () => {
+    it("top-level fields, the first errors item, neither, null, non-strings, 200-character cut", () => {
+        expect(xErrorFields({title: "Forbidden", detail: "d", type: "about:blank", reason: "client-not-enrolled"})).toEqual({
+            title: "Forbidden",
+            detail: "d",
+            type: "about:blank",
+            reason: "client-not-enrolled",
+            first: null,
+        });
+        expect(xErrorFields({errors: [{title: "t", detail: "x", type: "y", message: "m"}, {title: "second"}]})).toEqual({
+            title: null,
+            detail: null,
+            type: null,
+            reason: null,
+            first: {title: "t", detail: "x", type: "y", message: "m"},
+        });
+        expect(xErrorFields({errors: []})).toMatchObject({first: {title: null, detail: null, type: null, message: null}});
+        expect(xErrorFields({data: {id: "1"}})).toEqual({title: null, detail: null, type: null, reason: null, first: null});
+        expect(xErrorFields(null)).toEqual({title: null, detail: null, type: null, reason: null, first: null});
+        expect(xErrorFields("text")).toEqual({title: null, detail: null, type: null, reason: null, first: null});
+        expect(xErrorFields({title: 3, detail: {a: 1}, type: ["x"], reason: true, errors: [{title: 1, message: null}]})).toEqual({
+            title: null,
+            detail: null,
+            type: null,
+            reason: null,
+            first: {title: null, detail: null, type: null, message: null},
+        });
+        expect(xErrorFields({detail: "a".repeat(500)}).detail).toBe("a".repeat(200));
+        expect(xErrorFields({errors: [{message: "b".repeat(500)}]}).first?.message).toBe("b".repeat(200));
+    });
+});
+
+describe("W-T73 callback logs", () => {
+    /** A callback round with X answered by `x` (token, then users/me). */
+    async function round(x: (url: string) => Response) {
+        const f = (async (input: RequestInfo | URL) => x(String(input))) as typeof fetch;
+        let n = 0;
+        const deps: WaitlistDeps = {env: ENV, store: () => memStore().store, fetch: f, nowSec: () => NOW, random: (k) => new Uint8Array(k).map((_, i) => (i + 7 * ++n) % 248)};
+        const call = (path: string, init: RequestInit = {}) => handleWaitlist(new Request(`${ORIGIN}${path}`, init), deps);
+        const s = await call("/api/waitlist?action=start");
+        const state = new URL(s.headers.get("location")!).searchParams.get("state")!;
+        const oauth = s.headers.getSetCookie()[0].split(";")[0].slice("mapae_wl_oauth=".length);
+        return call(`/api/waitlist?action=callback&code=c1&state=${state}`, {headers: {cookie: `mapae_wl_oauth=${oauth}`}});
+    }
+    it("users/me 403 with X's reason: error=x, the four fields logged, no token in the log", async () => {
+        const err = vi.spyOn(console, "error").mockImplementation(() => {});
+        const r = await round((url) =>
+            url === X_TOKEN
+                ? new Response(JSON.stringify({access_token: "SECRET-TOKEN-123", token_type: "bearer"}), {status: 200})
+                : new Response(JSON.stringify({title: "Client Forbidden", detail: "This request must be made using an approved developer account", type: "https://api.x.com/2/problems/client-forbidden", reason: "client-not-enrolled"}), {status: 403}),
+        );
+        expect(r.status).toBe(302);
+        expect(r.headers.get("location")).toBe("/#/waitlist?error=x");
+        const call = err.mock.calls.find((c) => c[0] === "waitlist: X users/me failed")!;
+        expect(call[1]).toMatchObject({
+            status: 403,
+            hasData: false,
+            title: "Client Forbidden",
+            detail: "This request must be made using an approved developer account",
+            type: "https://api.x.com/2/problems/client-forbidden",
+            reason: "client-not-enrolled",
+            first: null,
+        });
+        const logged = JSON.stringify(err.mock.calls);
+        expect(logged).not.toContain("SECRET-TOKEN-123");
+        expect(logged).not.toContain("csecret");
+        err.mockRestore();
+    });
+    it("users/me not JSON: every reason field null", async () => {
+        const err = vi.spyOn(console, "error").mockImplementation(() => {});
+        await round((url) => (url === X_TOKEN ? new Response(JSON.stringify({access_token: "t"}), {status: 200}) : new Response("<html>", {status: 403})));
+        expect(err.mock.calls.find((c) => c[0] === "waitlist: X users/me failed")![1]).toEqual({status: 403, hasData: false, title: null, detail: null, type: null, reason: null, first: null});
+        err.mockRestore();
+    });
+    it("token exchange 400: error and error_description logged", async () => {
+        const err = vi.spyOn(console, "error").mockImplementation(() => {});
+        const r = await round(() => new Response(JSON.stringify({error: "invalid_request", error_description: "Value passed for the authorization code was invalid."}), {status: 400}));
+        expect(r.headers.get("location")).toBe("/#/waitlist?error=x");
+        expect(err.mock.calls.find((c) => c[0] === "waitlist: X token exchange failed")![1]).toEqual({
+            status: 400,
+            error: "invalid_request",
+            errorDescription: "Value passed for the authorization code was invalid.",
+        });
+        err.mockRestore();
+    });
+    it("denied: one warn with the first matching reason, the same 302 for all", async () => {
+        const h = harness();
+        const s = await h.call("/api/waitlist?action=start");
+        const state = new URL(s.headers.get("location")!).searchParams.get("state")!;
+        const oauth = s.headers.getSetCookie()[0].split(";")[0].slice("mapae_wl_oauth=".length);
+        const noState = await signCookie({verifier: "v".repeat(43), ref: null, lang: null, exp: NOW + 600}, SECRET);
+        const cases: [string, string | null, string, string | null][] = [
+            [`&error=access_denied&state=${state}`, oauth, "x_error", "access_denied"],
+            [`&error=Access%20Denied&state=${state}`, oauth, "x_error", "other"],
+            [`&error=ACCESS_DENIED`, null, "x_error", "other"],
+            [`&state=${state}`, oauth, "missing_code_or_state", null],
+            [`&code=c1`, oauth, "missing_code_or_state", null],
+            [`&code=c1&state=${state}`, null, "no_cookie", null],
+            [`&code=c1&state=${state}`, "garbage.value", "bad_cookie", null],
+            [`&code=c1&state=${state}`, noState, "bad_cookie", null],
+            [`&code=c1&state=WRONG${state.slice(5)}`, oauth, "state_mismatch", null],
+        ];
+        for (const [q, cookie, reason, xError] of cases) {
+            const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+            const r = await h.call(`/api/waitlist?action=callback${q}`, {headers: cookie ? {cookie: `mapae_wl_oauth=${cookie}`} : {}});
+            expect(r.status, q).toBe(302);
+            expect(r.headers.get("location"), q).toBe("/#/waitlist?error=denied");
+            expect(r.headers.getSetCookie().some((c) => c.startsWith("mapae_wl_oauth=;") && c.includes("Max-Age=0")), q).toBe(true);
+            const denied = warn.mock.calls.filter((c) => c[0] === "waitlist: callback denied");
+            expect(denied, q).toHaveLength(1);
+            expect(denied[0][1], q).toEqual({reason, xError});
+            const logged = JSON.stringify(warn.mock.calls);
+            expect(logged).not.toContain(state);
+            if (cookie) expect(logged).not.toContain(cookie);
+            warn.mockRestore();
+        }
     });
 });
