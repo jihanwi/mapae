@@ -1,5 +1,6 @@
 import {useEffect, useMemo, useState} from "react";
-import {isRefundState} from "../lib/offeringPhase";
+import {afterDeadline, allowsZeroCommitClose, isRefundState} from "../lib/offeringPhase";
+import {guideSteps, offeringGuide, type Guide, type GuideStage} from "../lib/offeringGuide";
 import {allocationUrl} from "../lib/allocationUrl";
 import {Link, useParams} from "react-router-dom";
 import {useQuery} from "@tanstack/react-query";
@@ -12,7 +13,7 @@ import {MockKRWV3Abi} from "../contracts/abisV3";
 import {labelOf, OfferingInfo, useOfferings, useOnboarding, useParticipantCount, useRedeemItems} from "../hooks";
 import {ProceedsPanel} from "../components/ProceedsPanel";
 import {ChainTerms} from "../components/ChainTerms";
-import {RefundPanel} from "../components/RefundPanel";
+import {RefundPanel, useChainTime} from "../components/RefundPanel";
 import {DisclosureSection} from "../components/DisclosureSection";
 import {spanText} from "../lib/proceedsText";
 import {commitBlock, isIssuerWallet} from "../lib/commitGuard";
@@ -101,6 +102,10 @@ function OfferingView() {
     const claimed = {data: dv[3] as boolean | undefined};
     const allowance = {data: dv[4] as bigint | undefined};
     const alloc = useAllocation(o?.address, account, o?.settled);
+    // W-T75: the chain time only after the deadline (unsettled, not refunding), when the refund panel
+    // already polls it: this follows the same cache and adds no read
+    const pastDeadline = !!o && !o.settled && !o.refunding && Number(o.deadline) * 1000 <= now;
+    const chainTime = useChainTime({enabled: pastDeadline, poll: false});
 
     const amountWei = useMemo(() => {
         try { return parseUnits(amount || "0", 18); } catch { return 0n; }
@@ -144,6 +149,34 @@ function OfferingView() {
     const allowanceLoading = !!account && amountWei > 0n && commitReason === "" && needs === undefined;
     const commitDisabled = amountWei === 0n || commitReason !== "" || allowanceLoading;
     const issuer = isIssuerWallet(account, o.creator);
+    // W-T75: the step and the "what to do now" line, from the values read above
+    const guide: Guide = offeringGuide({
+        settled: o.settled,
+        refunding: o.refunding,
+        deadline: o.deadline,
+        nowSec: BigInt(Math.floor(now / 1000)),
+        after: o.settled || o.refunding || chainTime.data !== undefined
+            ? afterDeadline({
+                  settled: o.settled,
+                  refunding: o.refunding,
+                  refundMode: o.refundMode,
+                  deadline: o.deadline,
+                  totalCommitted: o.totalCommitted,
+                  raiseTarget: o.raiseTarget,
+                  chainTs: chainTime.data ?? BigInt(Math.floor(now / 1000)),
+                  myCommitted: account ? (myCommit.data as bigint | undefined) : undefined,
+                  zeroCommitClose: allowsZeroCommitClose(o.factory),
+              })
+            : undefined,
+        connected: !!account,
+        verified,
+        issuer,
+        myCommitted,
+        allocation: !account || !o.settled || alloc.data === undefined ? undefined : alloc.data === null ? "none" : "some",
+        claimed: claimed.data,
+    });
+    // the line already says what the cancel window allows: the panel notes drop that part
+    const guideSaysCancel = guide.line === "open" || guide.line === "committed" || guide.line === "frozen";
 
     const commit = async (run: RunFn) => {
         if (!o || amountWei === 0n) return;
@@ -206,6 +239,8 @@ function OfferingView() {
                 )}
             </header>
 
+            <GuideStrip guide={guide} tradeHref={`/trade?o=${o.address}`} />
+
             <div className="mt-6 sm:mt-8 flex flex-col gap-5 lg:flex-row lg:items-start lg:gap-8 min-w-0">
                 <div className="contents lg:flex lg:flex-col lg:gap-6 lg:flex-1 lg:min-w-0">
                     {!o.settled && (
@@ -249,7 +284,7 @@ function OfferingView() {
 
                         {live && (
                             <>
-                                {frozen && (
+                                {frozen && guide.line !== "frozen" && (
                                     <div className="rounded-input px-4 py-3 mb-4 text-[13px] text-brass-400"
                                         style={{background: "rgba(195,154,59,.08)", border: "1px solid rgba(195,154,59,.3)"}}>
                                         {copy.offering.cancelFrozenNote} · {copy.offering.commitStillOpenNote}
@@ -320,7 +355,7 @@ function OfferingView() {
                     </div>
                     {live && (
                         <p className="text-[12px] text-hanji-400 mt-3 mb-0">
-                            {copy.offering.cancelFrozenNote}. {o.refundMode === 0 ? copy.refund.modeNote : copy.refund.partialModeNote}
+                            {guideSaysCancel ? "" : `${copy.offering.cancelFrozenNote}. `}{o.refundMode === 0 ? copy.refund.modeNote : copy.refund.partialModeNote}
                         </p>
                     )}
                     </div>
@@ -368,6 +403,46 @@ function FragmentRow({k, v}: {k: string; v: string}) {
         <div className="flex justify-between gap-4 py-2 min-w-0">
             <dt className="text-hanji-400 flex-none">{k}</dt>
             <dd className="m-0 text-hanji-100 text-right min-w-0 break-words"><NumText text={v} /></dd>
+        </div>
+    );
+}
+
+/** W-T75: the offering's steps (done, now, next; refund replaces claim and trade) and the one thing
+ *  this wallet can do now. */
+function GuideStrip({guide, tradeHref}: {guide: Guide; tradeHref: string}) {
+    const copy = useCopy();
+    const label = (k: GuideStage) =>
+        k === "refund" ? copy.offering.stageRefund : copy.home.guideSteps[k === "commit" ? 0 : k === "close" ? 1 : k === "claim" ? 2 : 3].title;
+    const steps = guideSteps(guide.stage);
+    return (
+        <div className="mt-5 sm:mt-6 min-w-0">
+            <ol aria-label={copy.offering.stagesLabel} className={`m-0 p-0 list-none grid ${steps.length === 3 ? "grid-cols-3" : "grid-cols-4"} gap-2 sm:gap-3`}>
+                {steps.map((s, i) => (
+                    <li
+                        key={s.key}
+                        aria-current={s.state === "now" ? "step" : undefined}
+                        className={`min-w-0 pt-2 border-t-2 text-[12px] sm:text-[13px] leading-snug ${
+                            s.state === "now" ? "border-brass-400 text-brass-400 font-semibold" : s.state === "done" ? "border-ink-700 text-hanji-400" : "border-ink-800 text-hanji-400"
+                        }`}
+                    >
+                        <span className="flex items-start gap-1.5 min-w-0">
+                            {s.state === "done" ? <Icon name="check" className="w-3.5 h-3.5 mt-0.5 flex-none" /> : <span className="num flex-none">{String(i + 1).padStart(2, "0")}</span>}
+                            <span className="min-w-0 break-keep [overflow-wrap:anywhere]">{label(s.key)}</span>
+                        </span>
+                    </li>
+                ))}
+            </ol>
+            {guide.line && (
+                <p className="m-0 mt-3 text-[14px] text-hanji-100 leading-relaxed">
+                    {copy.offering.guideNow[guide.line]}
+                    {guide.line === "tradeOpen" && (
+                        <>
+                            {" · "}
+                            <Link to={tradeHref}>{copy.home.actTrade}</Link>
+                        </>
+                    )}
+                </p>
+            )}
         </div>
     );
 }

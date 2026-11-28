@@ -18,13 +18,14 @@ import {fmt} from "../lib/format";
 import {RunFn, TxButton} from "./tx";
 
 
-/** Latest block time (seconds), re-read every 15 s. */
-export function useChainTime() {
+/** Latest block time (seconds), re-read every 15 s. W-T75: `enabled: false` reads nothing and
+ *  `poll: false` only follows the shared ["chainTime"] cache that a polling user keeps fresh. */
+export function useChainTime(opts: {enabled?: boolean; poll?: boolean} = {}) {
     const client = usePublicClient({chainId: giwaSepolia.id});
     return useQuery({
         queryKey: ["chainTime"],
-        enabled: !!client,
-        refetchInterval: 15_000,
+        enabled: !!client && opts.enabled !== false,
+        refetchInterval: opts.poll === false ? false : 15_000,
         queryFn: async () => (await client!.getBlock()).timestamp,
     });
 }
