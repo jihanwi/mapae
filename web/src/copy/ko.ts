@@ -83,6 +83,17 @@ export const ko = {
         burned: (n: string) => `지금까지 ${n}개 소각됨`,
         goTrade: "거래하기 →",
         footnote: "초과 응모 시 전원에게 최소 수량을 먼저 배정하고, 나머지는 추첨으로 채워요 · 배정 계산은 누구나 다시 확인할 수 있어요",
+        /** W-T75: how an offering works, above the list */
+        guideTitle: "공모는 이렇게 진행돼요",
+        guideHide: "접기",
+        guideShow: "펼치기",
+        guideSteps: [
+            {title: "응모", body: "실명 인증한 지갑으로 정가에 응모해요. 한 지갑이 넣을 수 있는 금액에는 한도가 있어요."},
+            {title: "마감과 배정", body: "응모가 넘치면 모두에게 똑같이 먼저 나누고, 남은 물량은 추첨해요."},
+            {title: "받기", body: "정산이 끝나면 '배정 받기' 한 번으로 토큰과 배정받지 못한 응모금을 함께 받아요."},
+            {title: "거래", body: "공모가 그대로 상장돼요. 유동성은 영구히 잠기고, 이때부터 누구나 거래할 수 있어요."},
+        ],
+        guideNote: "목표에 못 미치면 공모마다 정해 둔 방식대로 처리돼요. 전액 환불 공모는 응모금을 모두 돌려받고, 부분 발행 공모는 팔린 만큼만 발행해요.",
         // W-T32: 새 팩토리에 공모가 0건일 때
         emptyTitle: "아직 열린 공모가 없어요",
         emptyNote: "공모가 열리면 여기에 표시돼요",
@@ -393,6 +404,20 @@ export const ko = {
         cancelFrozenNote: "마감 2시간 전부터는 취소할 수 없어요", // C3
         commitStillOpenNote: "신규 응모와 증액은 마감까지 가능해요",
         issuerCannotCommit: "발행자는 자기 공모에 응모할 수 없어요", // W-T36
+        /** W-T75: the step strip and the "what to do now" line */
+        stagesLabel: "진행 단계",
+        stageRefund: "환불",
+        guideNow: {
+            connect: "지갑을 연결하고 실명 인증을 마치면 응모할 수 있어요",
+            verify: "실명 인증을 마치면 응모할 수 있어요",
+            open: "정가에 응모할 수 있어요. 마감 2시간 전까지는 취소할 수 있어요",
+            committed: "응모했어요. 마감까지 금액을 늘릴 수 있고, 마감 2시간 전까지는 취소할 수 있어요",
+            frozen: "지금은 취소할 수 없어요. 새 응모와 증액은 마감까지 돼요",
+            closedCommitted: "마감됐어요. 정산이 끝나면 여기서 배정을 받을 수 있어요",
+            closedEmpty: "마감됐어요. 정산이 끝나면 거래가 열려요",
+            claimReady: "배정이 나왔어요. '배정 받기'를 누르면 토큰과 배정받지 못한 응모금을 함께 받아요",
+            tradeOpen: "거래가 열렸어요",
+        },
         approveThen: "먼저 KRWs 사용 승인이 필요해요",
         claimCta: "배정 받기",
         claimed: "배정 수령 완료",

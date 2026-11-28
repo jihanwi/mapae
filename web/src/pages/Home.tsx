@@ -15,6 +15,7 @@ import {changeLabel} from "../lib/homeList";
 import {countdown, fmt} from "../lib/format";
 import {bpsPct, spanText} from "../lib/proceedsText";
 import {DEFAULT_TITLE, useTitle} from "../lib/title";
+import {readGuideCollapsed, writeGuideCollapsed} from "../lib/guideCollapse";
 
 function useNow() {
     const [now, setNow] = useState(Date.now());
@@ -233,6 +234,44 @@ export function computeBurned(o: OfferingInfo): bigint {
     return initial > o.totalSupply ? initial - o.totalSupply : 0n;
 }
 
+/** W-T75: "how an offering works", four numbered steps and the shortfall rule, above the list
+ *  (also with no offering). Hidden on request; that choice is remembered (guideCollapse.ts). */
+function GuideBand() {
+    const copy = useCopy();
+    const [collapsed, setCollapsed] = useState(() => readGuideCollapsed());
+    const toggle = () => {
+        const next = !collapsed;
+        setCollapsed(next);
+        writeGuideCollapsed(next);
+    };
+    return (
+        <section aria-labelledby="offering-guide-title" className="mb-10 sm:mb-12 bg-ink-800 border border-ink-700 rounded-card p-4 sm:p-6 min-w-0">
+            <div className="flex items-center justify-between gap-3">
+                <h2 id="offering-guide-title" className="m-0 text-[15px] font-semibold">{copy.home.guideTitle}</h2>
+                <button type="button" onClick={toggle} aria-expanded={!collapsed} aria-controls="offering-guide-body" className="flex-none min-h-[44px] px-2 -mr-2 text-[13px] text-hanji-400 hover:text-brass-400">
+                    {collapsed ? copy.home.guideShow : copy.home.guideHide}
+                </button>
+            </div>
+            {!collapsed && (
+                <div id="offering-guide-body">
+                    <ol className="m-0 mt-3 p-0 list-none grid gap-4 sm:gap-5 lg:grid-cols-4">
+                        {copy.home.guideSteps.map((step, i) => (
+                            <li key={step.title} className="min-w-0 border-t border-ink-700 pt-3">
+                                <div className="flex items-baseline gap-2">
+                                    <span className="num text-[13px] text-brass-400">{String(i + 1).padStart(2, "0")}</span>
+                                    <span className="text-[14px] font-semibold text-hanji-100">{step.title}</span>
+                                </div>
+                                <p className="m-0 mt-1.5 text-[13px] leading-relaxed text-hanji-400">{step.body}</p>
+                            </li>
+                        ))}
+                    </ol>
+                    <p className="m-0 mt-4 text-[12px] leading-relaxed text-hanji-400">{copy.home.guideNote}</p>
+                </div>
+            )}
+        </section>
+    );
+}
+
 export default function Home() {
     const copy = useCopy();
     useTitle(DEFAULT_TITLE);
@@ -284,6 +323,7 @@ export default function Home() {
                     </a>
                 </div>
             </div>
+            <GuideBand />
             <div className="flex items-baseline gap-3 mb-5 flex-wrap justify-end">
                 {isLoading ? (
                     <span className="flex items-center gap-2 text-[13px] text-hanji-400">
@@ -334,7 +374,6 @@ export default function Home() {
                     )}
                 </div>
             )}
-            <p className="mt-12 mb-0 text-[12px] text-hanji-400 text-center">{copy.home.footnote}</p>
         </div>
     );
 }
